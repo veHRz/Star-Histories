@@ -226,6 +226,30 @@ fn walkable(normal: Vec3) -> bool {
     normal.y >= MAX_SLOPE_DEG.to_radians().cos()
 }
 
+/// Le contact d'un lancer de capsule vers le bas repose-t-il sur un sol praticable ?
+/// Sur une arête (nez de marche), la normale du contact suit l'arrondi de la capsule : elle est
+/// d'autant plus inclinée que la capsule déborde peu de l'arête, donc que la frame est courte
+/// (refus des marches au-delà de ≈ 150 i/s). On lit alors la normale de la face elle-même, juste
+/// au-delà du point de contact.
+fn walkable_contact(
+    spatial: &SpatialQuery,
+    filter: &SpatialQueryFilter,
+    center: Vec3,
+    hit: &ShapeHitData,
+) -> bool {
+    if walkable(hit.normal1) {
+        return true;
+    }
+    let outward = Vec2::new(hit.point1.x - center.x, hit.point1.z - center.z).normalize_or_zero();
+    if outward == Vec2::ZERO {
+        return false;
+    }
+    let origin = hit.point1 + Vec3::new(outward.x, 0.0, outward.y) * 0.02 + Vec3::Y * 0.05;
+    spatial
+        .cast_ray(origin, Dir3::NEG_Y, 0.1, true, filter)
+        .is_some_and(|ray| ray.distance > 0.0 && walkable(ray.normal))
+}
+
 fn move_player(
     time: Res<Time>,
     intent: Res<PlayerIntent>,
@@ -376,7 +400,9 @@ fn move_player(
                 &ShapeCastConfig::from_max_distance(lift + GROUND_PROBE),
                 &filter,
             );
-            if let Some(hit) = down.filter(|h| walkable(h.normal1)) {
+            if let Some(hit) =
+                down.filter(|h| walkable_contact(&spatial, &filter, stepped.position, h))
+            {
                 let candidate = stepped.position - Vec3::Y * hit.distance;
                 let gained = Vec2::new(candidate.x - center.x, candidate.z - center.z).length();
                 if gained > achieved.length() + 0.005 {
@@ -400,7 +426,7 @@ fn move_player(
         &ShapeCastConfig::from_max_distance(probe),
         &filter,
     );
-    match ground.filter(|h| walkable(h.normal1)) {
+    match ground.filter(|h| walkable_contact(&spatial, &filter, new_center, h)) {
         Some(hit) if controller.velocity.y <= 0.1 => {
             new_center.y -= (hit.distance - 0.005).max(0.0);
             controller.grounded = true;
