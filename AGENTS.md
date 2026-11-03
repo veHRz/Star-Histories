@@ -241,7 +241,7 @@ L'auteur a imaginé quatre vues pour répartir la charge. Le principe est conser
 - **« Rails souples » du canon** (`assets/data/canon/rails.ron`) : sans intervention du joueur, la simulation suit à peu près les trajectoires connues (la Flotte d'Attaque fédérale reste cachée et n'agit pas avant ≈ 430at, Le Berceau avance…). Le joueur peut les dévier ; la simulation seule, non.
 - **Interdits durs en v1** : l'Essaim ne se manifeste pas (aucun événement, aucune attaque) ; aucun secret n'est révélé publiquement ; aucun vaisseau capitale n'apparaît ; aucune désassimilation ne réussit.
 - **Connaissance du joueur** (`PlayerKnowledge`) : faits, positions de flottes, prix et entrées de codex **connus du joueur**. La carte galactique a un brouillard d'information. Les secrets n'entrent jamais dans cette base en v1.
-- **Temps** : horloge de jeu (date en `at`, jour de l'année). Le rythme du temps dans les vues Locale, Sectorielle et Globale est une **proposition à valider** (`docs/QUESTIONS.md`) ; les voyages hyperspatiaux font passer des jours, simulés à vitesse accélérée.
+- **Temps** : horloge de jeu (date en `at`, jour de l'année). Année de 365 jours, affichage « Day N, 425at ». Rythme du temps dans les vues Locale, Sectorielle et Globale : **×30**, réglable dans les données (validé par l'auteur, P4) ; les voyages hyperspatiaux font passer des jours, simulés à vitesse accélérée.
 - **Budget** : un pas journalier < 2 ms ; une année entière en headless < 1 s. Si c'est plus lourd, exécution sur `AsyncComputeTaskPool`.
 
 ---
@@ -251,7 +251,8 @@ L'auteur a imaginé quatre vues pour répartir la charge. Le principe est conser
 ### 8.1 Principes
 
 - Format **RON**, schémas dans `sh_data`, validation au chargement **et** dans un test (`cargo t` échoue si une donnée est incohérente).
-- **Identifiants** : ASCII en `snake_case`, stables (`concordia`, `vorrh_ii`, `nsu_liberte`). **Noms affichés** : exacts, en français, avec accents.
+- **Identifiants** : ASCII en `snake_case`, stables (`concordia`, `vorrh_ii`, `nsu_liberte`). **Noms propres du canon** : exacts, en français, avec accents (ils ne se traduisent pas, voir `docs/QUESTIONS.md` Q11).
+- **Langue du jeu : l'anglais** (décision de l'auteur, Q8). Tout texte d'interface passe par une clé de `assets/data/lang/en.ron` ; jamais de chaîne visible en dur dans le Rust.
 - Chaque entrée canon porte `source: "§3.3"` (section de l'export) ; chaque entrée inventée porte `status: Proposition` et figure dans `docs/propositions.md` ; chaque fait secret porte `secret: true`.
 - Les textes visibles du joueur vivent dans les données (prêts pour une traduction future), jamais dans le code.
 
@@ -286,7 +287,7 @@ L'auteur a imaginé quatre vues pour répartir la charge. Le principe est conser
 - **Origine** : centre de la base pour props et personnages ; centre de masse pour les vaisseaux ; coin de grille pour les modules.
 - **Noms dans Blender** (relus par le jeu via les extras glTF, `GltfExtras`) : `*_col` collision simplifiée (non rendue), `*_lod1` / `*_lod2` niveaux de détail, empties `SPAWN_<id>`, `CELL_<id>`, `PORTAL_<celluleA>_<celluleB>`, `SOCKET_<usage>`, `INTERACT_<type>`. Les propriétés personnalisées Blender deviennent des extras glTF : sers-t'en pour les métadonnées (type de porte, faction, interaction).
 - **Matériaux** : peu de matériaux PBR partagés (trim sheets, palettes, couleurs de sommets), émissif pour les lumières de décor. Textures 1K par défaut, 2K pour les pièces maîtresses, KTX2 si possible. L'éclairage des intérieurs peut être **précalculé dans Blender** (bake Cycles → `Lightmap` dans Bevy) : c'est le meilleur levier de performance sur GPU intégré.
-- **Identités visuelles** (proposition à valider) : Empire = rigueur, classes uniformes, « une flotte pensée comme un marteau » ; UGL = flotte hétérogène, vaisseaux personnels des héros de la Rébellion ; pirates = assemblages, « facture pirate » ; Hexa-Corp = industriel, neutre, efficace. Ton général : space opera inspiré de Star Wars et Star Trek, **sans emprunt** (tout est original). **Pas de boucliers énergétiques**, jamais : seul le blindage protège.
+- **Identités visuelles** (proposition à valider) : Empire = rigueur, classes uniformes, « une flotte pensée comme un marteau » ; UGL = flotte hétérogène, vaisseaux personnels des héros de la Rébellion ; pirates = assemblages, « facture pirate » ; Hexa-Corp = industriel, neutre, efficace. Ton général : space opera inspiré de Star Wars et Star Trek, **sans emprunt** (tout est original). **Direction artistique validée : réaliste stylisé, géométrie simple et lisible.** **Pas de boucliers énergétiques**, jamais : seul le blindage protège.
 - **Licences** : Poly Haven (CC0) autorisé ; Sketchfab et Poly Pizza seulement avec une licence compatible, vérifiée. Tout asset externe est consigné dans `assets/CREDITS.md` (source, auteur, licence). `generate_3d` (Hyper3D, Tripo, Meshy, Hunyuan) : services payants et licences propres, **uniquement avec l'accord de l'auteur**.
 
 ---
@@ -344,7 +345,7 @@ Détails dans `docs/GDD.md`. Les piliers :
 
 ### 12.3 Code
 
-- Identifiants Rust en **anglais** (conventions de l'écosystème) ; commentaires, docs, messages de commit, journaux et textes du jeu en **français**. Les noms propres du canon restent en français partout, y compris dans les données.
+- Identifiants Rust en **anglais** (conventions de l'écosystème) ; commentaires, docs, messages de commit et journaux en **français** ; **textes visibles du joueur en anglais**, dans les fichiers de langue (§8.1). Les noms propres du canon restent en français partout, y compris dans les données et l'interface.
 - Pas de `unwrap()` / `expect()` dans les systèmes de jeu (sauf invariant de démarrage documenté) : systèmes qui renvoient `Result`, erreurs typées (`thiserror`) dans les crates pures.
 - Pas de `unsafe`. Pas d'état global mutable hors `Resource`. Constantes d'équilibrage dans les données, pas dans le code.
 - Commente le **pourquoi**, pas le quoi. Doc `//!` en tête de chaque module de domaine.

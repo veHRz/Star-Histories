@@ -137,7 +137,7 @@ Fil conducteur proposé, « **Le contrat d'Hexis** » : rembourser sa première 
 - HUD diégétique autant que possible (visière, consoles du vaisseau), minimal à pied.
 - Terminaux en jeu pour le commerce, les contrats, les nouvelles.
 - Carte galactique fidèle à la carte canon (grille A–T × 1–13, zones, Zone Inexplorée en silence).
-- Langue : français. Textes en données pour permettre d'autres langues plus tard.
+- Langue : **anglais** pour commencer (décision de l'auteur, `docs/QUESTIONS.md` Q8). Textes en données pour permettre d'autres langues plus tard ; les noms propres du canon restent en français.
 
 ---
 
