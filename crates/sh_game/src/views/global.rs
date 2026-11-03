@@ -23,9 +23,9 @@ use crate::sector::{ActiveSector, EnterSector};
 use crate::ship::{ShipMotion, SurfaceBody};
 use crate::space::{FloatingOrigin, PositionDriver, SpacePosition, SpaceRotation};
 use crate::state::{CurrentPlace, ViewLevel};
+use crate::transition::{ArrivalRequest, DockBeacon};
 use crate::ui::theme::{self, UiFonts};
-use crate::views::planet::{Look, planet_texture};
-use crate::views::sky::{SkyNebula, SkySpec, cube_image, render_sky};
+use crate::views::procedural::{Procedural, make_planet, make_sky, planet_key, sky_key};
 use crate::views::{WorldLabel, view_banner};
 
 pub struct GlobalViewPlugin;
@@ -47,11 +47,8 @@ const SCOPE: DespawnOnExit<ViewLevel> = DespawnOnExit(ViewLevel::Global);
 /// vu par le hublot, est réglé pour elle (2,7 IL plus sensible que l'exposition par défaut).
 /// Luminance du ciel (cd/m²) pour une valeur 1 de la cubemap.
 const SKY_BRIGHTNESS: f32 = 140.0;
-const SKY_SIZE: usize = 1024;
 /// Éclairement de l'étoile, avec l'exposition par défaut de la caméra (réglage visuel).
 const SUNLIGHT_LUX: f32 = 400.0;
-/// Hauteur des textures de planète (la largeur est double).
-const PLANET_TEXTURE: usize = 512;
 
 /// Le ciel du système, posé sur la caméra du joueur dès qu'elle existe.
 #[derive(Resource)]
@@ -116,13 +113,15 @@ fn spawn_global(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
     sector: Option<Res<ActiveSector>>,
+    request: Option<Res<ArrivalRequest>>,
+    mut cache: ResMut<Procedural>,
 ) {
     let g = &data.galaxy;
     let scale = &data.space.scale;
     let place_id = place.0.clone().unwrap_or_else(|| "test".into());
     let system = system_of(g, &place_id).filter(|s| !s.secret);
     let scene = system.and_then(|s| data.scene(&s.id));
-    let sky = images.add(sky_for(g, system.map(|s| (s.id.as_str(), s.center))));
+    let sky = cache.get(&sky_key(system), &mut images, || make_sky(g, system));
     commands.insert_resource(GlobalAmbientLight {
         color: Color::srgb(0.6, 0.7, 0.9),
         brightness: 2.5,
@@ -204,15 +203,9 @@ fn spawn_global(
                 station.id()
             }
             kind => {
-                let look = match (kind, id.as_deref()) {
-                    (_, Some("hexis")) => Look::Industrial,
-                    (PlacedKind::GasGiant, _) => Look::GasGiant,
-                    _ => Look::Rocky,
-                };
-                let seed = id
-                    .as_deref()
-                    .map_or(0, |i| sh_core::rng::fnv1a(i.as_bytes()));
-                let texture = images.add(planet_texture(look, seed, PLANET_TEXTURE));
+                let body = id.clone().unwrap_or_default();
+                let texture =
+                    cache.get(&planet_key(&body), &mut images, || make_planet(kind, &body));
                 commands
                     .spawn((
                         SurfaceBody { radius: p.radius },
@@ -265,6 +258,41 @@ fn spawn_global(
         commands.spawn(label(&fonts, &name, entity));
         anchors.push((st.id.clone(), pos));
         ports.push(pos);
+    }
+
+    // Balises d'approche des ports (le spatioport d'Hexis) : un fanal et un repère.
+    let beacon_mesh = meshes.add(Sphere::new(30.0).mesh().uv(16, 8));
+    let beacon_material = materials.add(StandardMaterial {
+        base_color: Color::BLACK,
+        emissive: LinearRgba::rgb(400.0, 160.0, 30.0),
+        ..default()
+    });
+    for dock in scene.map(|s| s.docks.as_slice()).unwrap_or_default() {
+        let Some(body) = placed.iter().find(|q| q.id.as_ref() == Some(&dock.around)) else {
+            continue;
+        };
+        let pos = around(
+            body.pos,
+            body.radius * (1.0 + dock.altitude_radii),
+            dock.angle_deg,
+        );
+        let name = texts.get(&dock.name_key);
+        let entity = commands
+            .spawn((
+                Name::new(name.clone()),
+                SCOPE,
+                DockBeacon {
+                    id: dock.id.clone(),
+                    sector: dock.sector.clone(),
+                    range: dock.range,
+                },
+                SpacePosition(pos),
+                Mesh3d(beacon_mesh.clone()),
+                MeshMaterial3d(beacon_material.clone()),
+            ))
+            .id();
+        commands.spawn(label(&fonts, &name, entity));
+        anchors.push((dock.id.clone(), pos));
     }
 
     // Trafic ambiant, réparti de façon déterministe : la moitié des figurants fait la navette
@@ -331,8 +359,12 @@ fn spawn_global(
 
     // Arrivée : du côté de l'étoile, au-dessus du plan, en regardant l'objet visé.
     let arrival = scene.map(|s| &s.arrival);
-    // `SH_ARRIVAL=<objet>,<distance>` (autopilote) : arrivée ailleurs, pour les captures.
-    let forced = arrival_from_env();
+    // Au départ d'un quai, on arrive près de sa balise ; `SH_ARRIVAL=<objet>,<distance>`
+    // (autopilote) : arrivée ailleurs, pour les captures.
+    let forced = request
+        .map(|r| (r.near.clone(), r.distance))
+        .or_else(arrival_from_env);
+    commands.remove_resource::<ArrivalRequest>();
     let near = forced
         .as_ref()
         .map(|f| f.0.as_str())
@@ -400,39 +432,6 @@ fn look_from_env() -> Option<Vec3> {
         .collect();
     let dir = Vec3::new(*values.first()?, *values.get(1)?, *values.get(2)?);
     (dir.length_squared() > 0.0).then_some(dir)
-}
-
-/// Le ciel vu depuis un système (ou depuis le centre de la carte, faute de système).
-fn sky_for(galaxy: &Galaxy, system: Option<(&str, sh_core::MapPos)>) -> Image {
-    let frame = &galaxy.frame;
-    let observer = system.map_or([frame.center.0, frame.center.1 + 100.0], |(_, c)| {
-        [c.x, c.y]
-    });
-    let nebulae = galaxy
-        .phenomena
-        .iter()
-        .filter(|p| !p.secret && p.kind_note.to_lowercase().contains("nébuleuse"))
-        .filter_map(|p| {
-            Some(SkyNebula {
-                center: [p.pos?.x, p.pos?.y],
-                radius: p.radius?,
-            })
-        })
-        .collect();
-    let spec = SkySpec {
-        observer,
-        galaxy_center: [frame.center.0, frame.center.1],
-        galaxy_radii: [frame.radius_x, frame.radius_y],
-        nebulae,
-        seed: system.map_or(0, |(id, _)| sh_core::rng::fnv1a(id.as_bytes())),
-    };
-    let start = std::time::Instant::now();
-    let image = cube_image(&render_sky(&spec, SKY_SIZE));
-    info!(
-        "ciel généré en {:.0} ms",
-        start.elapsed().as_secs_f64() * 1000.0
-    );
-    image
 }
 
 fn label(fonts: &UiFonts, name: &str, target: Entity) -> impl Bundle {

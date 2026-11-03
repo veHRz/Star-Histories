@@ -26,7 +26,7 @@ Step "cargo t" { cargo t }
 Step "import du canon à jour" { cargo run -q -p sh_import -- --check }
 
 # Chaque point d'entrée de l'autopilote doit démarrer, charger les données et quitter sans panique.
-$starts = @("menu", "galaxy", "global:hexis", "sector:test", "sector:player_ship")
+$starts = @("menu", "galaxy", "global:hexis", "sector:test", "sector:player_ship", "sector:hexis_spaceport")
 foreach ($start in $starts) {
     Step "fumée SH_START=$start" {
         $env:SH_START = $start
@@ -70,6 +70,17 @@ Step "scénario fly_ship" {
     $code = $LASTEXITCODE
     Remove-Item Env:SH_START, Env:SH_SCENARIO
     $log | Select-String -Pattern "ERROR|panicked|sc.{1,3}nario" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
+# Critère de M2 : quai → cockpit → départ → vol → amarrage → quai.
+Step "scénario port_loop" {
+    $env:SH_START = "sector:hexis_spaceport"
+    $env:SH_SCENARIO = "port_loop"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_START, Env:SH_SCENARIO
+    $log | Select-String -Pattern "ERROR|panicked|sc.{1,3}nario .*termin" | ForEach-Object { "   $_" }
     $global:LASTEXITCODE = $code
 }
 

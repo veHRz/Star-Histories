@@ -15,6 +15,7 @@ use crate::ui::theme::{self, UiFonts};
 pub mod galaxy;
 pub mod global;
 pub mod planet;
+pub mod procedural;
 pub mod sector;
 pub mod sky;
 
@@ -26,6 +27,7 @@ impl Plugin for ViewsPlugin {
             galaxy::GalaxyViewPlugin,
             global::GlobalViewPlugin,
             sector::SectorViewPlugin,
+            procedural::ProceduralPlugin,
         ))
         .add_observer(on_pause)
         // GlobalTransform de la caméra du frame précédent : un frame de retard, invisible.

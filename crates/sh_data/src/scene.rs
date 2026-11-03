@@ -27,6 +27,9 @@ pub struct SystemScene {
     pub station_models: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub traffic: Option<Traffic>,
+    /// Ports d'amarrage : la balise d'approche d'un secteur qui accueille le vaisseau.
+    #[serde(default)]
+    pub docks: Vec<DockPort>,
     /// Où apparaît le joueur en arrivant dans le système.
     pub arrival: Arrival,
 }
@@ -46,6 +49,20 @@ pub struct Structure {
     pub angle_deg: f64,
     /// Modèle, sous `assets/`.
     pub model: String,
+}
+
+/// Balise d'approche d'un port : à portée, on demande l'amarrage et le vaisseau rejoint le
+/// secteur `sector` (son point d'attache « @ship »).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DockPort {
+    pub id: String,
+    pub sector: String,
+    pub name_key: String,
+    pub around: Id<Place>,
+    pub altitude_radii: f64,
+    pub angle_deg: f64,
+    /// Portée de la demande d'amarrage (m).
+    pub range: f64,
 }
 
 /// Trafic ambiant : des figurants qui font la navette entre les stations et les structures du

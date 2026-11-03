@@ -236,43 +236,95 @@ mod tests {
 /// Parcours scripté du vaisseau du joueur, du sas au cockpit, en passant par toutes les
 /// cellules et toutes les portes. Coordonnées Blender (x = tribord, y = avant) : le jeu reçoit
 /// (x, −y). `Some(portail)` : porte à ouvrir avant de rejoindre le point.
-const WALK_SHIP: &[(f32, f32, Option<&str>)] = &[
-    (-2.4, -3.0, Some("couloir_arriere__sas")),
-    (0.0, -3.0, None),
-    (0.0, -12.6, None),
-    (0.0, -15.6, Some("couloir_arriere__machines")),
-    (0.0, -17.0, None),
-    (0.0, -12.8, Some("couloir_arriere__machines")),
-    (0.0, -7.0, None),
-    (2.6, -7.0, Some("couloir_arriere__soute")),
-    (5.2, -7.5, None),
-    (2.6, -7.0, None),
-    (0.0, -7.0, Some("couloir_arriere__soute")),
-    (0.0, 6.0, None),
-    (-2.6, 6.0, Some("couloir_avant__quartiers")),
-    (-4.5, 5.5, None),
-    (-2.6, 6.0, None),
-    (0.0, 6.0, Some("couloir_avant__quartiers")),
-    (2.6, 6.0, Some("couloir_avant__carre")),
-    (3.2, 8.5, None),
-    (2.6, 6.0, None),
-    (0.0, 6.0, Some("couloir_avant__carre")),
-    (0.0, 12.8, None),
-    (0.0, 15.0, Some("couloir_avant__cockpit")),
-    (0.0, 16.4, None),
-    (0.0, 17.4, None),
-    (0.0, 18.4, None),
+const WALK_SHIP: &[Step] = &[
+    w(-2.4, -3.0, Some("couloir_arriere__sas")),
+    w(0.0, -3.0, None),
+    w(0.0, -12.6, None),
+    w(0.0, -15.6, Some("couloir_arriere__machines")),
+    w(0.0, -17.0, None),
+    w(0.0, -12.8, Some("couloir_arriere__machines")),
+    w(0.0, -7.0, None),
+    w(2.6, -7.0, Some("couloir_arriere__soute")),
+    w(5.2, -7.5, None),
+    w(2.6, -7.0, None),
+    w(0.0, -7.0, Some("couloir_arriere__soute")),
+    w(0.0, 6.0, None),
+    w(-2.6, 6.0, Some("couloir_avant__quartiers")),
+    w(-4.5, 5.5, None),
+    w(-2.6, 6.0, None),
+    w(0.0, 6.0, Some("couloir_avant__quartiers")),
+    w(2.6, 6.0, Some("couloir_avant__carre")),
+    w(3.2, 8.5, None),
+    w(2.6, 6.0, None),
+    w(0.0, 6.0, Some("couloir_avant__carre")),
+    w(0.0, 12.8, None),
+    w(0.0, 15.0, Some("couloir_avant__cockpit")),
+    w(0.0, 16.4, None),
+    w(0.0, 17.4, None),
+    w(0.0, 18.4, None),
 ];
 
 /// Fin du scénario `fly_ship` : du poste de pilotage au couloir avant, à pied, en plein vol.
-const FLY_SHIP_WALK: &[(f32, f32, Option<&str>)] = &[
-    (0.0, 20.3, None),
-    (0.0, 18.0, None),
-    (0.0, 16.4, None),
-    (0.0, 15.0, Some("couloir_avant__cockpit")),
-    (0.0, 12.8, None),
-    (0.0, 10.0, None),
+const FLY_SHIP_WALK: &[Step] = &[
+    w(0.0, 20.3, None),
+    w(0.0, 18.0, None),
+    w(0.0, 16.4, None),
+    w(0.0, 15.0, Some("couloir_avant__cockpit")),
+    w(0.0, 12.8, None),
+    w(0.0, 10.0, None),
 ];
+
+/// Une étape de scénario.
+#[derive(Clone, Copy, Debug)]
+enum Step {
+    /// Marcher jusqu'au point (x, y) du repère Blender du vaisseau — transformé par son placement
+    /// quand il est amarré — après avoir ouvert la porte du portail donné.
+    Walk(f32, f32, Option<&'static str>),
+    /// S'asseoir au poste de pilotage (le joueur est à côté).
+    SitAtHelm,
+    /// Se lever.
+    StandUp,
+    /// Poussée vers l'avant pendant tant de secondes.
+    Thrust(f32),
+    /// Demander l'amarrage (en vol) ou le départ (à quai), puis attendre l'arrivée.
+    DockOrDepart,
+}
+
+const fn w(x: f32, y: f32, door: Option<&'static str>) -> Step {
+    Step::Walk(x, y, door)
+}
+
+/// `port_loop` : du quai au cockpit, départ, vol, amarrage, et retour au quai (critère de M2).
+/// Le quai est à 2,6 m de l'écoutille, côté passerelle (x < −5,8 dans le repère du vaisseau).
+const PORT_LOOP: &[Step] = &[
+    w(-6.4, -3.0, Some("sas__passerelle")),
+    w(-3.8, -3.0, None),
+    w(-2.4, -3.0, Some("couloir_arriere__sas")),
+    w(0.0, -3.0, None),
+    w(0.0, 12.8, None),
+    w(0.0, 15.0, Some("couloir_avant__cockpit")),
+    w(0.0, 16.4, None),
+    w(0.0, 17.4, None),
+    w(0.0, 18.6, None),
+    Step::SitAtHelm,
+    Step::DockOrDepart,
+    Step::Thrust(4.0),
+    Step::DockOrDepart,
+    Step::StandUp,
+    w(0.0, 20.3, None),
+    w(0.0, 18.0, None),
+    w(0.0, 16.4, None),
+    w(0.0, 15.0, Some("couloir_avant__cockpit")),
+    w(0.0, 12.8, None),
+    w(0.0, -3.0, None),
+    w(-2.4, -3.0, Some("couloir_arriere__sas")),
+    w(-3.8, -3.0, None),
+    w(-6.4, -3.0, Some("sas__passerelle")),
+    w(-8.3, -3.0, None),
+];
+
+/// Délai maximal d'une transition de vue (amarrage, départ) dans un scénario.
+const TRANSITION_SECONDS: f32 = 30.0;
 
 /// Les phases de vol du scénario `fly_ship`, chronométrées.
 #[derive(Default)]
@@ -289,7 +341,11 @@ const STUCK_SECONDS: f32 = 8.0;
 #[derive(Resource)]
 struct Scenario {
     name: String,
-    path: &'static [(f32, f32, Option<&'static str>)],
+    steps: &'static [Step],
+    /// Une étape non marchée a été lancée (siège, transition) ; vue au moment du lancement.
+    issued: Option<Option<ViewLevel>>,
+    step_time: f32,
+    views_seen: Vec<ViewLevel>,
     /// `fly_ship` : les phases de vol précèdent la marche.
     flight: Option<FlightCheck>,
     index: usize,
@@ -309,13 +365,14 @@ impl Plugin for ScenarioPlugin {
         let Ok(name) = std::env::var("SH_SCENARIO") else {
             return;
         };
-        let (path, flight) = match name.as_str() {
+        let (steps, flight) = match name.as_str() {
             "walk_ship" => (WALK_SHIP, None),
             "fly_ship" => (FLY_SHIP_WALK, Some(FlightCheck::default())),
+            "port_loop" => (PORT_LOOP, None),
             _ => (WALK_SHIP, None),
         };
-        if name != "walk_ship" && name != "fly_ship" {
-            error!("SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship)");
+        if !matches!(name.as_str(), "walk_ship" | "fly_ship" | "port_loop") {
+            error!("SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop)");
             app.add_systems(Startup, |mut exit: MessageWriter<AppExit>| {
                 exit.write(AppExit::error());
             });
@@ -323,7 +380,10 @@ impl Plugin for ScenarioPlugin {
         }
         app.insert_resource(Scenario {
             name,
-            path,
+            steps,
+            issued: None,
+            step_time: 0.0,
+            views_seen: Vec::new(),
             flight,
             index: 0,
             best_distance: f32::MAX,
@@ -363,6 +423,12 @@ fn run_scenario(
         &mut crate::ship::ShipMotion,
     )>,
     mut doors: Query<&mut crate::sector::doors::Door>,
+    (sector, docked, view, sequence): (
+        Res<crate::sector::ActiveSector>,
+        Option<Res<crate::sector::Docked>>,
+        Res<State<ViewLevel>>,
+        Option<Res<crate::transition::Sequence>>,
+    ),
     mut exit: MessageWriter<AppExit>,
 ) {
     use crate::sector::doors::DoorState;
@@ -413,7 +479,7 @@ fn run_scenario(
         info!(
             "scénario {} : départ ({} étapes)",
             scenario.name,
-            scenario.path.len()
+            scenario.steps.len()
         );
         info!(
             "scénario : joueur posé en {:?}, hauteur {:.2}",
@@ -430,7 +496,11 @@ fn run_scenario(
         scenario.over_33ms += 1;
     }
 
-    let Some(&(x, y, door)) = scenario.path.get(scenario.index) else {
+    let current_view = *view.get();
+    if scenario.views_seen.last() != Some(&current_view) {
+        scenario.views_seen.push(current_view);
+    }
+    let Some(&step) = scenario.steps.get(scenario.index) else {
         let mean = scenario.total_ms / f64::from(scenario.frames.max(1));
         // `fly_ship` : le vaisseau a continué sur sa lancée pendant la marche.
         if let Some(start) = scenario.flight.as_ref().and_then(|f| f.walk_start)
@@ -451,11 +521,74 @@ fn run_scenario(
             }
         }
         info!(
-            "scénario {} terminé : {} transitions de cellule, temps de frame moyen {mean:.2} ms, pire {:.2} ms, {} frame(s) > 33 ms",
-            scenario.name, cells.transitions, scenario.worst_ms, scenario.over_33ms
+            "scénario {} terminé : {} transitions de cellule, vues {:?}, temps de frame moyen {mean:.2} ms, pire {:.2} ms, {} frame(s) > 33 ms",
+            scenario.name,
+            cells.transitions,
+            scenario.views_seen,
+            scenario.worst_ms,
+            scenario.over_33ms
         );
         exit.write(AppExit::Success);
         return;
+    };
+
+    let seated = matches!(controller.mode, crate::player::PlayerMode::Seated { .. });
+    let dt = time.delta_secs();
+    let advance = |scenario: &mut Scenario| {
+        scenario.index += 1;
+        scenario.issued = None;
+        scenario.step_time = 0.0;
+        scenario.best_distance = f32::MAX;
+        scenario.since_progress = 0.0;
+    };
+    let (x, y, door) = match step {
+        Step::Walk(x, y, door) => (x, y, door),
+        Step::Thrust(seconds) => {
+            pilot.thrust = Vec3::NEG_Z;
+            scenario.step_time += dt;
+            if scenario.step_time >= seconds {
+                advance(&mut scenario);
+            }
+            return;
+        }
+        Step::SitAtHelm | Step::StandUp | Step::DockOrDepart => {
+            let done = match step {
+                Step::SitAtHelm => seated,
+                Step::StandUp => !seated,
+                _ => {
+                    scenario.issued.is_some_and(|v| v != Some(current_view))
+                        && sequence.is_none()
+                        && seated
+                }
+            };
+            if done {
+                info!(
+                    "scénario {} : étape {:?} faite ({current_view:?})",
+                    scenario.name, step
+                );
+                advance(&mut scenario);
+                return;
+            }
+            if scenario.issued.is_none() {
+                scenario.issued = Some(Some(current_view));
+                match step {
+                    Step::SitAtHelm => commands.queue(|world: &mut World| {
+                        crate::interaction::sit_at(world, "pilot");
+                    }),
+                    Step::StandUp => commands.queue(crate::interaction::stand_up),
+                    _ => commands.queue(crate::transition::request_dock),
+                }
+            }
+            scenario.step_time += dt;
+            if scenario.step_time > TRANSITION_SECONDS {
+                error!(
+                    "scénario {} bloqué à l'étape {} ({step:?}, vue {current_view:?})",
+                    scenario.name, scenario.index
+                );
+                exit.write(AppExit::error());
+            }
+            return;
+        }
     };
 
     // Porte à ouvrir d'abord : on attend qu'elle soit grande ouverte.
@@ -468,14 +601,19 @@ fn run_scenario(
         return;
     }
 
-    let target = Vec3::new(x, 0.0, -y);
+    // Repère du vaisseau ; amarré, ses cellules sont placées dans celui du quartier.
+    let placement = docked
+        .is_some()
+        .then(|| sector.sector.cells.iter().find_map(|c| c.placement))
+        .flatten();
+    let target = placement.map_or(Vec3::new(x, 0.0, -y), |p| {
+        crate::sector::v3(p.apply((x, 0.0, -y)))
+    });
     let pos = transform.translation();
     let to = Vec2::new(target.x - pos.x, target.z - pos.z);
     let distance = to.length();
     if distance < 0.35 {
-        scenario.index += 1;
-        scenario.best_distance = f32::MAX;
-        scenario.since_progress = 0.0;
+        advance(&mut scenario);
         return;
     }
     if distance < scenario.best_distance - 0.05 {

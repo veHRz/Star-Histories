@@ -42,7 +42,7 @@ step "cargo t" cargo t
 step "import du canon à jour" cargo run -q -p sh_import -- --check
 
 # Chaque point d'entrée de l'autopilote doit démarrer, charger les données et quitter sans panique.
-for start in menu galaxy global:hexis sector:test sector:player_ship; do
+for start in menu galaxy global:hexis sector:test sector:player_ship sector:hexis_spaceport; do
     step "fumée SH_START=${start}" \
         run_game "ERROR|panicked|donn.{1,3}es charg|temps de frame" SH_START="$start" SH_EXIT_AFTER_FRAMES=150
 done
@@ -58,5 +58,9 @@ step "scénario walk_ship" \
 # Vol aux commandes (assisté, croisière, découplé), puis marche dans le vaisseau en plein vol.
 step "scénario fly_ship" \
     run_game "ERROR|panicked|sc.{1,3}nario" SH_START=global:hexis SH_SCENARIO=fly_ship
+
+# Critère de M2 : quai → cockpit → départ → vol → amarrage → quai.
+step "scénario port_loop" \
+    run_game "ERROR|panicked|sc.{1,3}nario .*termin" SH_START=sector:hexis_spaceport SH_SCENARIO=port_loop
 
 echo "${green}Tout est vert.${reset}"

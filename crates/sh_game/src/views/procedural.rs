@@ -1,0 +1,179 @@
+//! Cache des images générées de la vue Globale (ciel, textures de planète).
+//!
+//! Les générer prend quelques centaines de millisecondes : faites au changement de vue, elles
+//! figeraient l'écran. Elles sont donc gardées d'une vue à l'autre et **préparées en tâche de
+//! fond** quand le vaisseau est à quai (le système du port est celui où l'on repartira) : au
+//! départ, tout est prêt. À défaut, la vue Globale les calcule sur place (premier démarrage).
+
+use std::collections::BTreeMap;
+
+use bevy::prelude::*;
+use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, futures::check_ready};
+use sh_data::{Galaxy, PlacedKind, StarSystem, system_layout};
+
+use crate::data::Data;
+use crate::sector::Docked;
+use crate::views::planet::{Look, planet_texture};
+use crate::views::sky::{SkyNebula, SkySpec, cube_image, render_sky};
+
+pub struct ProceduralPlugin;
+
+impl Plugin for ProceduralPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<Procedural>().add_systems(
+            Update,
+            (
+                prewarm_departure.run_if(resource_exists::<Docked>),
+                collect_ready,
+            )
+                .chain()
+                .run_if(resource_exists::<Data>),
+        );
+    }
+}
+
+/// Côté d'une face du ciel, et hauteur des textures de planète (la largeur est double).
+pub const SKY_SIZE: usize = 1024;
+pub const PLANET_TEXTURE: usize = 512;
+
+/// Les images prêtes, et celles en cours de calcul, par clé (`sky:<système>`, `planet:<astre>`).
+#[derive(Resource, Default)]
+pub struct Procedural {
+    ready: BTreeMap<String, Handle<Image>>,
+    pending: BTreeMap<String, Task<Image>>,
+}
+
+impl Procedural {
+    /// L'image de cette clé : prête, attendue si elle est en cours, sinon calculée sur place.
+    pub fn get(
+        &mut self,
+        key: &str,
+        images: &mut Assets<Image>,
+        make: impl FnOnce() -> Image,
+    ) -> Handle<Image> {
+        if let Some(handle) = self.ready.get(key) {
+            return handle.clone();
+        }
+        let image = match self.pending.remove(key) {
+            Some(task) => block_on(task),
+            None => {
+                let start = std::time::Instant::now();
+                let image = make();
+                debug!(
+                    "{key} généré sur place en {:.0} ms",
+                    start.elapsed().as_secs_f64() * 1e3
+                );
+                image
+            }
+        };
+        let handle = images.add(image);
+        self.ready.insert(key.to_owned(), handle.clone());
+        handle
+    }
+
+    /// Lance le calcul en tâche de fond, s'il n'est ni prêt ni en cours.
+    pub fn prewarm(&mut self, key: String, make: impl FnOnce() -> Image + Send + 'static) {
+        if self.ready.contains_key(&key) || self.pending.contains_key(&key) {
+            return;
+        }
+        let task = AsyncComputeTaskPool::get().spawn(async move { make() });
+        self.pending.insert(key, task);
+    }
+}
+
+pub fn sky_key(system: Option<&StarSystem>) -> String {
+    format!("sky:{}", system.map_or("-", |s| s.id.as_str()))
+}
+
+pub fn planet_key(id: &str) -> String {
+    format!("planet:{id}")
+}
+
+/// Le ciel vu depuis un système (ou depuis le centre de la carte, faute de système).
+pub fn make_sky(galaxy: &Galaxy, system: Option<&StarSystem>) -> Image {
+    let frame = &galaxy.frame;
+    let observer = system.map_or([frame.center.0, frame.center.1 + 100.0], |s| {
+        [s.center.x, s.center.y]
+    });
+    let nebulae = galaxy
+        .phenomena
+        .iter()
+        .filter(|p| !p.secret && p.kind_note.to_lowercase().contains("nébuleuse"))
+        .filter_map(|p| {
+            Some(SkyNebula {
+                center: [p.pos?.x, p.pos?.y],
+                radius: p.radius?,
+            })
+        })
+        .collect();
+    let spec = SkySpec {
+        observer,
+        galaxy_center: [frame.center.0, frame.center.1],
+        galaxy_radii: [frame.radius_x, frame.radius_y],
+        nebulae,
+        seed: system.map_or(0, |s| sh_core::rng::fnv1a(s.id.as_str().as_bytes())),
+    };
+    cube_image(&render_sky(&spec, SKY_SIZE))
+}
+
+/// Apparence d'un astre (Hexis : monde industriel).
+pub fn look_of(kind: PlacedKind, id: &str) -> Look {
+    match (kind, id) {
+        (_, "hexis") => Look::Industrial,
+        (PlacedKind::GasGiant, _) => Look::GasGiant,
+        _ => Look::Rocky,
+    }
+}
+
+pub fn make_planet(kind: PlacedKind, id: &str) -> Image {
+    planet_texture(
+        look_of(kind, id),
+        sh_core::rng::fnv1a(id.as_bytes()),
+        PLANET_TEXTURE,
+    )
+}
+
+/// À quai : préparer le ciel et les astres du système où l'on repartira.
+fn prewarm_departure(data: Res<Data>, docked: Res<Docked>, mut cache: ResMut<Procedural>) {
+    let Some(scene) = data
+        .scenes
+        .iter()
+        .find(|s| s.docks.iter().any(|d| d.sector == docked.district))
+    else {
+        return;
+    };
+    let Some(system) = data.galaxy.system(&scene.system) else {
+        return;
+    };
+    let shared = data.clone();
+    let id = scene.system.clone();
+    cache.prewarm(sky_key(Some(system)), move || {
+        make_sky(&shared.galaxy, shared.galaxy.system(&id))
+    });
+    for p in system_layout(&data.galaxy, system, &data.space.scale) {
+        let Some(id) = p.id.map(|i| i.to_string()) else {
+            continue;
+        };
+        if matches!(
+            p.kind,
+            PlacedKind::Planet | PlacedKind::GasGiant | PlacedKind::Moon
+        ) {
+            let kind = p.kind;
+            cache.prewarm(planet_key(&id), move || make_planet(kind, &id));
+        }
+    }
+}
+
+fn collect_ready(mut cache: ResMut<Procedural>, mut images: ResMut<Assets<Image>>) {
+    let done: Vec<(String, Image)> = cache
+        .pending
+        .iter_mut()
+        .filter_map(|(key, task)| check_ready(task).map(|image| (key.clone(), image)))
+        .collect();
+    for (key, image) in done {
+        cache.pending.remove(&key);
+        let handle = images.add(image);
+        info!("{key} prêt (préparé en tâche de fond)");
+        cache.ready.insert(key, handle);
+    }
+}

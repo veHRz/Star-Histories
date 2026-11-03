@@ -607,6 +607,43 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
             &ctx,
             "distance d'arrivée invalide",
         );
+        for station in scene.station_models.keys() {
+            c.check(
+                system.stations.iter().any(|s| s.as_str() == station),
+                &ctx,
+                format!("modèle pour une station hors du système : {station}"),
+            );
+        }
+        if let Some(traffic) = &scene.traffic {
+            c.check(traffic.speed > 0.0, &ctx, "vitesse du trafic invalide");
+        }
+        for dock in &scene.docks {
+            c.check(
+                in_system(dock.around.as_str()),
+                &ctx,
+                format!("port {} : astre {} hors du système", dock.id, dock.around),
+            );
+            c.check(
+                data.sectors
+                    .iter()
+                    .any(|s| s.id.as_str() == dock.sector && s.external_port("@ship").is_some()),
+                &ctx,
+                format!(
+                    "port {} : secteur sans point d'attache @ship : {}",
+                    dock.id, dock.sector
+                ),
+            );
+            c.check(
+                data.lang.has(&dock.name_key),
+                &ctx,
+                format!("clé de nom absente de la langue : {}", dock.name_key),
+            );
+            c.check(
+                dock.range > 0.0 && dock.altitude_radii > 0.0,
+                &ctx,
+                format!("port {} : portée ou altitude invalide", dock.id),
+            );
+        }
     }
     for id in duplicates(data.scenes.iter().map(|s| s.system.as_str())) {
         c.fail("scènes", format!("système mis en scène deux fois : {id}"));

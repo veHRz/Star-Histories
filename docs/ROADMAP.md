@@ -3,7 +3,7 @@
 > Suis les jalons **dans l'ordre**. Coche chaque tâche (`[x]`) dans le commit qui la termine. Un jalon est fini quand **tous ses critères « Fini quand »** sont vérifiés (tests, autopilote, captures regardées). Push à la fin de chaque jalon.
 > Tu peux découper une tâche, en ajouter, en réordonner à l'intérieur d'un jalon : note-le dans `docs/JOURNAL.md`. Changer l'ordre des jalons ou leur périmètre : demande à l'auteur.
 
-État : **M0 terminé ; M1 fonctionnel, toutes ses tâches faites** (03/11/2026). Lightmaps et collisions en cuboïdes livrés depuis le poste Linux : **les critères de performance restent à mesurer sur la machine de référence** (UHD 770, poste Windows). M2 non commencé.
+État (03/11/2026) : **M0 terminé ; M1 et M2 faits**, critères vérifiés par l'autopilote (`walk_ship`, `fly_ship`, `port_loop`) sur le poste Linux. **Les critères de performance de M1 et M2 restent à mesurer sur la machine de référence** (UHD 770, poste Windows). M3 non commencé.
 
 ---
 
@@ -56,8 +56,10 @@ But : décoller d'Hexis, voler dans le système, revenir s'amarrer.
 - [x] Système d'Hexis en vue Globale : étoile, planète Hexis, chantiers orbitaux, L'Enclume en construction, hub de Portails, trafic ambiant. Ciel étoilé cohérent avec la position M7 dans la galaxie.
 - [x] S'asseoir au poste de pilotage → contexte Pilotage ; modèle de vol 6 axes (assisté / découplé), croisière intra-système ; HUD de pilotage.
 - [x] Intérieur du vaisseau co-chargé en vue Globale, vaisseau = référentiel : se lever et marcher en vol.
-- [ ] Amarrage / désamarrage : transition Globale ↔ Sectorielle, chargement masqué par la séquence.
-- [ ] Spatioport d'Hexis (un quartier, Sectorielle) en version brute : arrivée du sas, un bureau, un marché, une taverne (contenu proposé, consigné).
+- [x] Amarrage / désamarrage : transition Globale ↔ Sectorielle, chargement masqué par la séquence.
+- [x] Spatioport d'Hexis (un quartier, Sectorielle) en version brute : arrivée du sas, un bureau, un marché, une taverne (contenu proposé, consigné).
+
+- [ ] Mesures sur UHD 770 en release, préréglage Moyen : `fly_ship` et `port_loop` (vol près d'Hexis, transitions), à faire sur le poste Windows.
 
 **Fini quand** : boucle complète quai → cockpit → vol → amarrage → quai, sans écran de chargement visible entre l'intérieur du vaisseau et l'espace ; performance tenue en vol près de la planète.
 

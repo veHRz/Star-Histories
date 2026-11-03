@@ -15,7 +15,7 @@ use crate::input::Interact;
 use crate::player::{Player, PlayerCamera, PlayerController, PlayerMode};
 use crate::sector::doors::Door;
 use crate::sector::gltf::{Interactable, Socket};
-use crate::sector::{ActiveSector, Layer};
+use crate::sector::{ActiveSector, Docked, Layer};
 use crate::state::ControlMode;
 use crate::ui::hud::{Notice, Prompt};
 
@@ -128,10 +128,12 @@ fn update_prompt(
     focus: Res<Focus>,
     texts: Res<Texts>,
     mode: Res<State<ControlMode>>,
+    docked: Option<Res<Docked>>,
     player: Query<&PlayerController, With<Player>>,
     doors: Query<&Door>,
     mut prompt: ResMut<Prompt>,
 ) {
+    let docked = docked.is_some();
     let seated = player
         .single()
         .is_ok_and(|p| matches!(p.mode, PlayerMode::Seated { .. }));
@@ -150,7 +152,11 @@ fn update_prompt(
         ),
         // Aux commandes, E fait rouler le vaisseau : on se lève avec F (contexte Pilotage).
         Interactable::Seat { .. } if seated && *mode.get() == ControlMode::Piloting => {
-            texts.get("interact.seat.leave_helm")
+            texts.get(if docked {
+                "interact.seat.leave_helm_docked"
+            } else {
+                "interact.seat.leave_helm"
+            })
         }
         Interactable::Seat { .. } if seated => texts.get("interact.seat.leave"),
         Interactable::Seat { .. } => texts.get("interact.seat.sit"),
@@ -199,6 +205,35 @@ pub fn sit(controller: &mut PlayerController, seat: Entity, eye: Transform) {
     };
     controller.yaw = facing;
     controller.pitch = -0.1;
+}
+
+/// S'asseoir sur le siège de ce rôle (autopilote) ; faux si le siège n'est pas chargé.
+pub fn sit_at(world: &mut World, role: &str) -> bool {
+    let mut state: bevy::ecs::system::SystemState<(
+        Query<(Entity, &Interactable)>,
+        Query<&Name>,
+        Query<&ChildOf>,
+        Query<&Children>,
+        Query<(&Socket, &GlobalTransform)>,
+        Query<&mut PlayerController, With<Player>>,
+    )> = bevy::ecs::system::SystemState::new(world);
+    let Ok((seats, names, parents, children, sockets, mut player)) = state.get_mut(world) else {
+        return false;
+    };
+    let Some((seat, _)) = seats
+        .iter()
+        .find(|(_, i)| matches!(i, Interactable::Seat { role: r } if r == role))
+    else {
+        return false;
+    };
+    let Some(eye) = seat_eye(seat, &names, &parents, &children, &sockets) else {
+        return false;
+    };
+    let Ok(mut controller) = player.single_mut() else {
+        return false;
+    };
+    sit(&mut controller, seat, eye);
+    true
 }
 
 /// Se lever : un pas devant le siège.

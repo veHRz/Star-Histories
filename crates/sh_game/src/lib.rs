@@ -20,6 +20,7 @@ pub mod sector;
 pub mod ship;
 pub mod space;
 pub mod state;
+pub mod transition;
 pub mod ui;
 pub mod views;
 
@@ -55,6 +56,7 @@ impl Plugin for StarHistoriesPlugin {
             player::PlayerPlugin,
             interaction::InteractionPlugin,
             ship::ShipPlugin,
+            transition::TransitionPlugin,
         ));
         #[cfg(feature = "dev")]
         app.add_plugins(dev_tools::DevToolsPlugin);

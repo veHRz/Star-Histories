@@ -2,6 +2,14 @@
 
 > Une entrée courte par session (2 à 5 lignes) : ce qui a été fait, ce qui reste en suspens, les décisions prises. Le plus récent en haut.
 
+## 03/11/2026 — Poste Linux (CachyOS) : fin de M2, pilotage et amarrage
+
+- **À bord en vue Globale** : le secteur du vaisseau est co-chargé, sa racine est le référentiel de l'origine flottante (position **et orientation** : l'extérieur, le ciel et la lumière tournent autour de l'intérieur immobile). Départ de partie en données (`propositions/starts/hexis_captain.ron`, P1).
+- **Pilotage** (`sh_game::ship`) : modèle de vol pur et testé (assisté, découplé, croisière selon la loi P2), siège du pilote → contexte Pilotage, F pour se lever, maniement dans `gameplay/flight.ron`, bandeau de pilotage, hublot avant du cockpit (fenêtres à allège dans le kit).
+- **Amarrage** : portails externes (`@dock`, `@ship`) et secteur composé (`sh_data::dock`, testé) ; spatioport d'Hexis brut (P7 : passerelle, hall, bureau des contrats, taverne, marché) ; balise d'approche en orbite basse ; séquence d'approche automatique avec préchargement, fondu bref, reprise aux commandes ; départ symétrique. Ciel et textures préparés en tâche de fond à quai : `port_loop` sans aucune frame > 33 ms (pire 14 ms ici).
+- Captures : `target/shots/m2-{cockpit-vol,croisiere,marche-en-vol,quai,hall,approche-spatioport}.png`.
+- **À mesurer sous Windows** (UHD 770, release, Moyen) : `fly_ship` et `port_loop`, en plus des mesures de M1. Limites connues : texture d'Hexis floue en orbite très basse (512 px), pas encore de coque extérieure du vaisseau, `player_ship.py` n'utilise pas encore `sector_tools.py`.
+
 ## 03/11/2026 — Poste Linux (CachyOS) : M2, vue Globale d'Hexis
 
 - **Origine flottante** (`sh_core::SpacePos`, `sh_game::space`) : positions absolues en f64, `Transform` recalculés depuis les f64 à chaque recentrage ; test : même précision près du centre et à 10⁹ km.

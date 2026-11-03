@@ -11,7 +11,7 @@
 | P4 | 03/11/2026 | Rythme du temps dans les vues Locale, Sectorielle et Globale : ×30 (1 min réelle = 30 min de jeu), réglable dans les données | Gameplay | Horloge de jeu | **Validée** (03/11/2026) |
 | P5 | 03/11/2026 | Grille modulaire de 2 m pour les intérieurs | Technique / art | Assets | En attente (fixée en M1) |
 | P6 | 03/11/2026 | Identités visuelles des factions (Empire rigoureux, UGL hétérogène, pirates assemblés, Hexa-Corp industriel) | Direction artistique | Assets | En attente |
-| P7 | 03/11/2026 | Un quartier du spatioport d'Hexis (bureau de contrats, marché, taverne, chantier de réparation) | Lieu (détail d'un lieu canon) | Tranche verticale | En attente |
+| P7 | 03/11/2026 | Un quartier du spatioport d'Hexis (bureau de contrats, marché, taverne, chantier de réparation). **Version brute faite en M2** : passerelle d'amarrage, hall des départs, bureau des contrats Hexa-Corp, taverne, marché (`tools/blender/places/hexis_spaceport.py`) ; balise d'approche en orbite basse d'Hexis, à 51 km d'altitude sous L'Enclume (`sys_hexis.ron`) ; le chantier de réparation reste à faire | Lieu (détail d'un lieu canon) | Tranche verticale | En attente |
 | P8 | 03/11/2026 | Fil conducteur de la tranche verticale : « Le contrat d'Hexis » (transport Hexis → Cygnara pour payer une échéance) | Mission | Tranche verticale | En attente |
 | P9 | 03/11/2026 | Traits de personnage gagnés par les actes (« Parole tenue », « Traître notoire »…) | Gameplay | Personnage | En attente |
 | P10 | 03/11/2026 | Calendrier : année de 365 jours, affichage « Day N, 425at » (Q3) | Règle du monde (calendrier) | Horloge, interface | **Validée** (03/11/2026) |

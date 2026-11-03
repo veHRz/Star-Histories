@@ -62,6 +62,8 @@ PORTALS = [
     ("couloir_avant", "quartiers", "Door", -1.4, 6.0, "x"),
     ("couloir_avant", "carre", "Door", 1.4, 6.0, "x"),
     ("couloir_avant", "cockpit", "Door", 0.0, 14.2, "y"),
+    # Écoutille extérieure : point d'attache « @dock », verrouillé en vol, porte du sas à quai.
+    ("sas", "@dock", "Door", -5.7, -3.0, "x"),
 ]
 
 # Fenêtres : (côté, position, largeur, hauteur, allège) ; le hublot avant du cockpit, au-dessus
@@ -161,9 +163,9 @@ def build_cell(cell: str, m: dict) -> dict:
     elif cell == "sas":
         add(kit.locker(f"{cell}_suit0", (-5.15, -4.4, 0.0), math.pi / 2, m, coll))
         add(kit.locker(f"{cell}_suit1", (-5.15, -1.6, 0.0), math.pi / 2, m, coll))
-        # Écoutille extérieure (fermée en M1 : l'amarrage arrive en M2).
-        out["visual"].append(c.box(f"{cell}_hatch", (0.12, 1.6, 2.2), (x0 - 0.01, -3.0, 1.1), m["hazard"], coll))
-        out["visual"].append(c.box(f"{cell}_hatch_frame", (0.14, 1.8, 0.12), (x0 - 0.01, -3.0, 2.26), m["trim"], coll))
+        # L'écoutille extérieure est une porte (portail « @dock ») : bandes de sécurité autour.
+        for z in (0.06, 2.34):
+            out["visual"].append(c.box(f"{cell}_hatch_stripe", (0.06, 1.9, 0.12), (x0 + 0.03, -3.0, z), m["hazard"], coll))
         add(light(f"{cell}_l0", -3.6, -3.0, h, m, coll, 15000.0, 6.0, shadow=True))
     elif cell == "quartiers":
         add(kit.bunk(f"{cell}_bunk0", (-7.85, 4.0, 0.0), math.pi / 2, m, coll))
@@ -210,9 +212,13 @@ def portal_record(a, b, kind, x, y, axis):
         height = h
     else:
         width, height = kit.DOOR_W, kit.DOOR_H
-    # Normale : de a vers b.
-    bx0, bx1, by0, by1, _ = CELLS[b]
-    bc = ((bx0 + bx1) / 2, (by0 + by1) / 2)
+    # Normale : de a vers b (vers l'extérieur de a pour un point d'attache « @… »).
+    if b.startswith("@"):
+        ac = ((x0 + x1) / 2, (y0 + y1) / 2)
+        bc = (2 * x - ac[0], 2 * y - ac[1])
+    else:
+        bx0, bx1, by0, by1, _ = CELLS[b]
+        bc = ((bx0 + bx1) / 2, (by0 + by1) / 2)
     if axis == "y":
         normal = (0.0, 1.0 if bc[1] > y else -1.0, 0.0)
     else:

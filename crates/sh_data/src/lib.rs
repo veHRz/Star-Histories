@@ -37,8 +37,10 @@ pub use galaxy::{
 };
 pub use lang::Lang;
 pub use layout::{Placed, PlacedKind, system_layout};
-pub use scene::{Arrival, Structure, StructureKind, SystemScene, Traffic};
-pub use sector::{Cell, Portal, PortalKind, Sector, SectorKind, Spawn};
+pub use scene::{Arrival, DockPort, Structure, StructureKind, SystemScene, Traffic};
+pub use sector::{
+    Cell, DockError, Placement, Portal, PortalKind, Sector, SectorKind, Spawn, dock, is_external,
+};
 pub use settings::{
     AntiAliasing, ClockSettings, FlightSettings, GraphicsPreset, GraphicsPresets, Handling,
     PresetLevel, SpaceSettings, SystemScale,

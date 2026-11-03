@@ -15,7 +15,7 @@ use bevy::world_serialization::{WorldAsset, WorldAssetRoot};
 
 use crate::graphics::GraphicsSettings;
 use crate::player::Player;
-use crate::sector::{ActiveSector, v3};
+use crate::sector::{ActiveSector, placement_transform, v3};
 use crate::state::ViewLevel;
 
 pub struct StreamingPlugin;
@@ -182,6 +182,7 @@ fn stream_cells(
                             quality: Quality::Local,
                         },
                         WorldAssetRoot(handle.clone()),
+                        placement_transform(cell.placement),
                         ChildOf(sector.root),
                     ))
                     .id();
@@ -215,6 +216,7 @@ fn stream_cells(
                         quality: Quality::Sector,
                     },
                     WorldAssetRoot(handle.clone()),
+                    placement_transform(cell.placement),
                     ChildOf(sector.root),
                 ))
                 .id();

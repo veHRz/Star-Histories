@@ -67,12 +67,30 @@ impl ActiveSector {
 #[derive(SystemSet, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct EnterSector;
 
-/// À bord en vue Globale : où apparaît le joueur, et sur quel siège il commence.
+/// À bord : où apparaît le joueur, et sur quel siège il commence (départ de partie, ou
+/// continuité d'une transition de vue, voir [`PendingAboard`]).
 #[derive(Resource, Clone, Debug)]
 pub struct Aboard {
     pub spawn: String,
     pub seat_role: Option<String>,
 }
+
+/// Posé par une transition (amarrage, départ) pour la vue suivante : le joueur y reprend sa
+/// place à bord.
+#[derive(Resource, Clone, Debug)]
+pub struct PendingAboard(pub Aboard);
+
+/// Le vaisseau du joueur est amarré dans le secteur actif (secteur composé, `sh_data::dock`).
+#[derive(Resource, Clone, Debug)]
+pub struct Docked {
+    /// Le vaisseau (secteur) et le quartier qui l'accueille.
+    pub ship: String,
+    pub district: String,
+}
+
+/// Point d'attache d'un vaisseau (son sas) et d'un quartier (sa passerelle).
+pub const SHIP_PORT: &str = "@dock";
+pub const DISTRICT_PORT: &str = "@ship";
 
 /// Racine d'un secteur chargé.
 #[derive(Component)]
@@ -93,21 +111,51 @@ fn enter_sector(
     data: Res<Data>,
     place: Res<CurrentPlace>,
     view: Res<State<ViewLevel>>,
+    pending: Option<Res<PendingAboard>>,
     ambient: Option<ResMut<GlobalAmbientLight>>,
 ) {
     let view = *view.get();
+    let pending = pending.map(|p| p.0.clone());
+    commands.remove_resource::<PendingAboard>();
+    let start = data.start();
     let sector = match view {
         ViewLevel::Global => {
-            let Some(start) = data.start() else {
+            let Some(start) = start else {
                 return;
             };
-            commands.insert_resource(Aboard {
+            commands.insert_resource(pending.unwrap_or_else(|| Aboard {
                 spawn: start.aboard_spawn.clone(),
                 seat_role: start.seat_role.clone(),
-            });
-            data.sector(&start.ship)
+            }));
+            data.sector(&start.ship).cloned()
         }
-        _ => place.0.as_deref().and_then(|id| data.sector(id)),
+        _ => {
+            let district = place.0.as_deref().and_then(|id| data.sector(id));
+            // Un quartier qui accueille un vaisseau (point d'attache « @ship ») : le vaisseau du
+            // joueur y est amarré, les deux secteurs n'en font plus qu'un.
+            let ship = start.and_then(|s| data.sector(&s.ship));
+            match (district, ship) {
+                (Some(district), Some(ship)) if district.external_port(DISTRICT_PORT).is_some() => {
+                    match sh_data::dock(ship, SHIP_PORT, district, DISTRICT_PORT) {
+                        Ok(docked) => {
+                            commands.insert_resource(Docked {
+                                ship: ship.id.to_string(),
+                                district: district.id.to_string(),
+                            });
+                            if let Some(aboard) = pending {
+                                commands.insert_resource(aboard);
+                            }
+                            Some(docked)
+                        }
+                        Err(err) => {
+                            error!("amarrage impossible : {err}");
+                            Some(district.clone())
+                        }
+                    }
+                }
+                (district, _) => district.cloned(),
+            }
+        }
     };
     let Some(sector) = sector else {
         return;
@@ -132,7 +180,7 @@ fn enter_sector(
         sector.portals.len()
     );
     commands.insert_resource(ActiveSector {
-        sector: Arc::new(sector.clone()),
+        sector: Arc::new(sector),
         root,
         view,
     });
@@ -141,6 +189,16 @@ fn enter_sector(
 fn leave_sector(mut commands: Commands) {
     commands.remove_resource::<ActiveSector>();
     commands.remove_resource::<Aboard>();
+    commands.remove_resource::<Docked>();
+}
+
+/// Transformation d'une cellule placée (vaisseau amarré).
+pub fn placement_transform(placement: Option<sh_data::Placement>) -> Transform {
+    placement.map_or(Transform::IDENTITY, |p| {
+        Transform::from_translation(v3(p.translation)).with_rotation(Quat::from_rotation_y(
+            std::f32::consts::FRAC_PI_2 * f32::from(p.quarter_turns % 4),
+        ))
+    })
 }
 
 /// Conversion d'un triplet des données en vecteur.

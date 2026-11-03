@@ -3,8 +3,9 @@
 //! - **À bord, le vaisseau est le référentiel** : la racine du secteur porte la position et
 //!   l'orientation absolues du vaisseau ([`PositionDriver::Frame`]) ; l'intérieur et le joueur ne
 //!   bougent pas dans le rendu, c'est l'extérieur qui défile ([`crate::space`]).
-//! - **S'asseoir au poste de pilotage** passe au contexte Pilotage ; se lever (`F`) rend le
-//!   contexte À pied, et l'on marche dans le vaisseau en plein vol.
+//! - **S'asseoir au poste de pilotage** passe au contexte Pilotage (en vol comme à quai, où
+//!   `G` demande le départ) ; se lever (`F`) rend le contexte À pied, et l'on marche dans le
+//!   vaisseau en plein vol.
 //! - **Modèle de vol** ([`step`], logique pure) : vol **assisté** (la vitesse suit la commande,
 //!   le vaisseau s'arrête seul), **découplé** (newtonien : la poussée accélère, rien ne freine),
 //!   **croisière** (`Boost` : la vitesse suit la limite de l'échelle P2, qui croît avec la
@@ -28,6 +29,7 @@ use crate::sector::gltf::{Interactable, Socket};
 use crate::sector::{Aboard, ActiveSector};
 use crate::space::{PositionDriver, SpacePosition, SpaceRotation};
 use crate::state::{ControlMode, ViewLevel};
+use crate::transition::Sequence;
 
 pub struct ShipPlugin;
 
@@ -38,10 +40,15 @@ impl Plugin for ShipPlugin {
             .add_observer(on_leave_seat)
             .add_systems(
                 Update,
-                (seat_at_start, sync_control_mode, read_pilot_input, fly)
+                (
+                    (seat_at_start, sync_control_mode),
+                    // En vol seulement, et pas pendant une approche automatique.
+                    (read_pilot_input, fly)
+                        .run_if(in_state(ViewLevel::Global))
+                        .run_if(not(resource_exists::<Sequence>)),
+                )
                     .chain()
                     .after(PlayerSystems)
-                    .run_if(in_state(ViewLevel::Global))
                     .run_if(resource_exists::<ActiveSector>),
             );
     }

@@ -37,6 +37,18 @@
         model: "models/space/freighter.glb",
         speed: 900.0,
     ),
+    // Le spatioport d'Hexis (P7) : sa balise d'approche en orbite basse, sous L'Enclume.
+    docks: [
+        (
+            id: "hexis_spaceport_approach",
+            sector: "hexis_spaceport",
+            name_key: "dock.hexis_spaceport",
+            around: "hexis",
+            altitude_radii: 0.08,
+            angle_deg: 49.0,
+            range: 15000.0,
+        ),
+    ],
     arrival: (
         near: "l_enclume",
         distance: 25000.0,

@@ -8,6 +8,7 @@ use crate::sector::ActiveSector;
 use crate::ship::{FlightMode, PilotIntent, ShipMotion, SurfaceBody, nearest_surface};
 use crate::space::SpacePosition;
 use crate::state::{ControlMode, ViewLevel};
+use crate::transition::DockBeacon;
 use crate::ui::theme::{self, UiFonts};
 
 pub struct FlightHudPlugin;
@@ -32,6 +33,7 @@ enum FlightLine {
     Speed,
     Mode,
     Nearest,
+    Dock,
 }
 
 fn spawn_flight_hud(mut commands: Commands, fonts: Res<UiFonts>) {
@@ -58,6 +60,7 @@ fn spawn_flight_hud(mut commands: Commands, fonts: Res<UiFonts>) {
             line(FlightLine::Speed, 26.0, theme::TEXT),
             line(FlightLine::Mode, 15.0, theme::ACCENT),
             line(FlightLine::Nearest, 14.0, theme::TEXT_DIM),
+            line(FlightLine::Dock, 15.0, theme::TEXT),
         ],
     ));
 }
@@ -83,6 +86,7 @@ fn update_flight_hud(
     intent: Res<PilotIntent>,
     ships: Query<(&SpacePosition, &ShipMotion)>,
     bodies: Query<(&SpacePosition, &SurfaceBody, &Name)>,
+    beacons: Query<(&SpacePosition, &DockBeacon, &Name)>,
     mut hud: Query<&mut Visibility, With<FlightHud>>,
     mut lines: Query<(&FlightLine, &mut Text)>,
 ) {
@@ -130,11 +134,24 @@ fn update_flight_hud(
             &[("name", name.as_str()), ("distance", &grouped(d / 1000.0))],
         )
     });
+    // À portée d'une balise : l'invite d'amarrage.
+    let dock_text = beacons
+        .iter()
+        .map(|(p, b, n)| (p.0.distance(pos.0), b, n))
+        .filter(|(d, b, _)| *d <= b.range)
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map_or_else(String::new, |(d, _, name)| {
+            texts.format(
+                "hud.flight.dock",
+                &[("name", name.as_str()), ("distance", &grouped(d / 1000.0))],
+            )
+        });
     for (line, mut text) in &mut lines {
         let wanted = match line {
             FlightLine::Speed => &speed_text,
             FlightLine::Mode => &texts.get(mode_key),
             FlightLine::Nearest => &nearest_text,
+            FlightLine::Dock => &dock_text,
         };
         if text.0 != *wanted {
             text.0.clone_from(wanted);

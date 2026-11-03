@@ -106,6 +106,11 @@ pub struct Roll;
 #[action_output(bool)]
 pub struct Boost;
 
+/// Demande d'amarrage (en vol, près d'une balise) ou de départ (à quai, aux commandes).
+#[derive(InputAction)]
+#[action_output(bool)]
+pub struct Dock;
+
 /// Bascule vol assisté / découplé.
 #[derive(InputAction)]
 #[action_output(bool)]
@@ -214,6 +219,9 @@ fn spawn_contexts(mut commands: Commands) {
             --
             Action::<ToggleFlightAssist>::new()
             Bindings [ Binding(KeyCode::KeyZ) ]
+            --
+            Action::<Dock>::new()
+            Bindings [ Binding(KeyCode::KeyG) ]
             --
             Action::<LeaveSeat>::new()
             Bindings [ Binding(KeyCode::KeyF) ]
