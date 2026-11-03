@@ -46,6 +46,13 @@ impl Plugin for CareerPlugin {
             )
             .add_systems(
                 Update,
+                practice_flight
+                    .in_set(CareerSystems)
+                    .before(report_outcomes)
+                    .run_if(resource_exists::<Career>),
+            )
+            .add_systems(
+                Update,
                 spawn_wrecks
                     .run_if(in_state(ViewLevel::Global))
                     .run_if(resource_exists::<Career>),
@@ -86,6 +93,11 @@ pub struct CargoPoint(pub StructureKind);
 pub struct Wreck {
     pub contract: String,
 }
+
+/// Expérience de pilotage par seconde de vol aux commandes (au-dessus de 10 m/s), et de
+/// navigation par voyage achevé. Réglages de progression : proposition P23.
+const PILOTING_XP_PER_SECOND: f64 = 0.5;
+const NAVIGATION_XP_PER_JUMP: f64 = 40.0;
 
 /// Lignes gardées dans le journal.
 const LOG_KEPT: usize = 40;
@@ -414,4 +426,39 @@ pub fn deliver_or_tow(world: &mut World, ship: SpacePos) -> bool {
         .iter(world)
         .any(|(_, p)| p.0.distance(ship) <= rules.delivery_range);
     near && deliver_here(world, &system)
+}
+
+/// Les compétences de vol montent à l'usage : piloter fait progresser le pilotage, arriver dans
+/// un nouveau système la navigation.
+fn practice_flight(
+    time: Res<Time>,
+    data: Res<Data>,
+    mode: Res<State<crate::state::ControlMode>>,
+    ships: Query<&crate::ship::ShipMotion>,
+    location: Option<Res<Location>>,
+    mut last_system: Local<Option<Id<Place>>>,
+    mut career: ResMut<Career>,
+    mut outcomes: MessageWriter<CareerOutcomes>,
+) {
+    let mut out = Vec::new();
+    let rules = &data.career;
+    if *mode.get() == crate::state::ControlMode::Piloting
+        && ships.iter().any(|m| m.velocity.length() > 10.0)
+    {
+        let xp = PILOTING_XP_PER_SECOND * f64::from(time.delta_secs());
+        career.captain.practice(rules, "piloting", xp, &mut out);
+    }
+    if let Some(location) = location
+        && last_system.as_ref() != Some(&location.system)
+    {
+        if last_system.is_some() {
+            career
+                .captain
+                .practice(rules, "navigation", NAVIGATION_XP_PER_JUMP, &mut out);
+        }
+        *last_system = Some(location.system.clone());
+    }
+    if !out.is_empty() {
+        outcomes.write(CareerOutcomes(out));
+    }
 }

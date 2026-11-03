@@ -314,6 +314,10 @@ enum Step {
     Shot(&'static str),
     /// Attendre tant de secondes (chargement des modèles avant une capture).
     Wait(f32),
+    /// Placer le vaisseau, à l'arrêt, à 1 km d'une cible (`wreck` : l'épave d'un remorquage ;
+    /// `shipyard` : les chantiers du système). Raccourci de l'autopilote : le vol est testé
+    /// par `fly_ship`.
+    JumpNear(&'static str),
 }
 
 /// Un écran du terminal à ouvrir.
@@ -335,6 +339,7 @@ fn is_career_step(step: &Step) -> bool {
             | Step::Assert(..)
             | Step::Shot(_)
             | Step::Wait(_)
+            | Step::JumpNear(_)
     )
 }
 
@@ -427,6 +432,28 @@ const CONTRACT_LOOP: &[Step] = &[
         c.loan
             .as_ref()
             .is_some_and(|l| l.balance.cents == 4_250_000)
+    }),
+    // Un remorquage (CRS) : l'épave près des chantiers d'Hexis, ramenée aux chantiers.
+    Step::Open(Terminal::Dialogue("hexis_contract_office")),
+    Step::Choose("say:dlg.office.ask_work"),
+    Step::Choose("say:dlg.office.show_contracts"),
+    Step::Choose("accept:sys_hexis"),
+    Step::Choose("close"),
+    Step::JumpNear("wreck"),
+    Step::Wait(2.0),
+    Step::Shot("m5-epave"),
+    Step::Hail,
+    Step::Assert("épave accrochée", |c, _| {
+        c.contracts
+            .iter()
+            .any(|k| k.kind == sh_sim::ContractKind::Towing && k.towed)
+    }),
+    Step::JumpNear("shipyard"),
+    Step::Hail,
+    Step::Assert("remorquage payé", |c, _| {
+        c.contracts.iter().any(|k| {
+            k.kind == sh_sim::ContractKind::Towing && k.state == sh_sim::ContractState::Done
+        })
     }),
     // La trahison : un second contrat, dont la cargaison est vendue au marché.
     Step::Open(Terminal::Dialogue("hexis_contract_office")),
@@ -760,7 +787,8 @@ fn run_scenario(
         | Step::Hail
         | Step::Assert(..)
         | Step::Shot(_)
-        | Step::Wait(_) => return,
+        | Step::Wait(_)
+        | Step::JumpNear(_) => return,
         Step::SitAtHelm | Step::StandUp | Step::DockOrDepart => {
             let done = match step {
                 Step::SitAtHelm => seated,
@@ -1101,6 +1129,37 @@ fn career_step(world: &mut World, step: Step) {
             if world.resource::<Scenario>().step_time > seconds {
                 next(world);
             }
+        }
+        Step::JumpNear(target) => {
+            let pos = match target {
+                "wreck" => world
+                    .query_filtered::<&crate::space::SpacePosition, With<crate::career::Wreck>>()
+                    .iter(world)
+                    .next()
+                    .map(|p| p.0),
+                _ => world
+                    .query::<(&crate::career::CargoPoint, &crate::space::SpacePosition)>()
+                    .iter(world)
+                    .find(|(c, _)| c.0 == sh_data::StructureKind::Shipyard)
+                    .map(|(_, p)| p.0),
+            };
+            // L'épave apparaît un frame après l'acceptation : on attend.
+            let Some(pos) = pos else {
+                return;
+            };
+            let Some(root) = world
+                .get_resource::<crate::sector::ActiveSector>()
+                .map(|s| s.root)
+            else {
+                return;
+            };
+            if let Some(mut ship) = world.get_mut::<crate::space::SpacePosition>(root) {
+                ship.0 = pos + sh_core::SpacePos::new(0.0, 300.0, 1000.0);
+            }
+            if let Some(mut motion) = world.get_mut::<crate::ship::ShipMotion>(root) {
+                motion.velocity = Default::default();
+            }
+            next(world);
         }
         Step::Hail => {
             crate::transition::request_dock(world);

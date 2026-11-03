@@ -58,7 +58,7 @@ pub struct Target {
 #[derive(Message, Clone, Copy, Debug, Default)]
 pub struct InteractRequest;
 
-/// Objets ramassés (l'inventaire complet arrive en M5).
+/// Objets portés par le joueur, ramassés à pied (montrés dans la fiche du capitaine).
 #[derive(Resource, Default, Debug)]
 pub struct Inventory {
     pub items: BTreeMap<String, u32>,

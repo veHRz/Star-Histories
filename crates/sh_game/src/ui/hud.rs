@@ -96,7 +96,8 @@ fn spawn_hud(
         Node {
             position_type: PositionType::Absolute,
             left: percent(50),
-            bottom: px(80),
+            // Au-dessus du bandeau de pilotage (bas de l'écran, vue Globale).
+            bottom: px(150),
             ..default()
         },
         UiTransform::from_translation(Val2::percent(-50.0, 0.0)),

@@ -165,6 +165,8 @@ pub struct Ctx<'a> {
     pub here: Option<&'a Id<Place>>,
     pub today: StellarDate,
     pub log: &'a MissionLog,
+    /// Les objets portés (ramassés à pied).
+    pub items: &'a std::collections::BTreeMap<String, u32>,
 }
 
 impl Ctx<'_> {
@@ -308,7 +310,7 @@ fn market_page(ctx: &Ctx) -> Page {
             choices: Vec::new(),
         };
     };
-    let mut lines = vec![t.format(
+    let lines = [t.format(
         "market.header",
         &[
             ("place", &display_name(ctx.data, here.as_str())),
@@ -324,17 +326,17 @@ fn market_page(ctx: &Ctx) -> Page {
         };
         let held = ctx.cap.cargo.get(commodity).copied().unwrap_or(0.0);
         let name = t.get(&format!("commodity.{commodity}"));
-        lines.push(t.format(
-            "market.row",
-            &[
-                ("commodity", &name),
-                ("buy", &format!("{buy:.0}")),
-                ("sell", &format!("{sell:.0}")),
-                ("held", &format!("{held:.0}")),
-            ],
-        ));
+        // Une ligne par marchandise, qui ouvre son écran d'échange.
         choices.push(choice(
-            t.format("market.trade", &[("commodity", &name)]),
+            t.format(
+                "market.row",
+                &[
+                    ("commodity", &name),
+                    ("buy", &format!("{buy:.0}")),
+                    ("sell", &format!("{sell:.0}")),
+                    ("held", &format!("{held:.0}")),
+                ],
+            ),
             Action::Goto(Screen::Commodity(commodity.clone())),
         ));
     }
@@ -452,6 +454,22 @@ fn sheet_page(ctx: &Ctx) -> Page {
                 },
             ),
         ],
+    ));
+    let items: Vec<String> = ctx
+        .items
+        .iter()
+        .map(|(id, n)| format!("{} ×{n}", t.get(&format!("item.{id}"))))
+        .collect();
+    lines.push(t.format(
+        "sheet.items",
+        &[(
+            "items",
+            &if items.is_empty() {
+                t.get("sheet.empty")
+            } else {
+                items.join(", ")
+            },
+        )],
     ));
     if !cap.traits.is_empty() {
         let traits: Vec<String> = cap
@@ -947,6 +965,7 @@ fn render(
     location: Option<Res<Location>>,
     living: Option<Res<LivingWorld>>,
     log: Res<MissionLog>,
+    inventory: Res<crate::interaction::Inventory>,
     career: Res<Career>,
     terminal: Option<ResMut<Terminal>>,
     roots: Query<Entity, With<TerminalUi>>,
@@ -968,6 +987,7 @@ fn render(
         here: location.as_ref().map(|l| &l.system),
         today: clock.date,
         log: &log,
+        items: &inventory.items,
     };
     let fresh = page(&ctx, &term);
     if term.page.as_ref() == Some(&fresh) && !roots.is_empty() {
@@ -990,7 +1010,7 @@ fn render(
                 justify_content: JustifyContent::FlexStart,
                 align_items: AlignItems::Center,
                 flex_direction: FlexDirection::Column,
-                padding: UiRect::top(percent(9)),
+                padding: UiRect::top(percent(7)),
                 ..default()
             },
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.35)),
@@ -1002,10 +1022,10 @@ fn render(
             Node {
                 width: px(820),
                 max_width: percent(94),
-                max_height: percent(66),
+                max_height: percent(58),
                 flex_direction: FlexDirection::Column,
-                padding: UiRect::all(px(22)),
-                row_gap: px(10),
+                padding: UiRect::all(px(20)),
+                row_gap: px(6),
                 overflow: Overflow::clip_y(),
                 border: UiRect::all(px(1)),
                 ..default()
@@ -1047,7 +1067,7 @@ fn render(
             ActivateOnPress,
             ChoiceButton(i),
             Node {
-                padding: UiRect::axes(px(12), px(7)),
+                padding: UiRect::axes(px(12), px(5)),
                 border: UiRect::all(px(1)),
                 ..default()
             },
