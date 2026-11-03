@@ -117,6 +117,7 @@ Le jeu lit des variables d'environnement (`crates/sh_game/src/dev.rs`) :
 | `SH_GPU_CLUSTERING=1` | Réactive le clustering GPU des lumières (cassé sur UHD 770, voir §4) |
 | `SH_BAKED_LIGHTING=0` | Ignore les lightmaps : éclairage des intérieurs entièrement dynamique (comparaisons de performance) |
 | `SH_SPAWN=<id>`, `SH_SPAWN_AT=x,y,z,cap,tangage` | Point d'apparition dans un secteur, ou position libre (degrés), pour les captures |
+| `SH_LOOK=x,y,z` | Direction initiale de la caméra en vue Globale (captures du ciel, des astres) |
 | `SH_SCENARIO=walk_ship` | Parcours scripté du vaisseau du joueur (sas → cockpit), avec mesure du temps de frame |
 
 À la sortie, le jeu journalise toujours le **temps de frame moyen et maximal** et le nombre de frames au-dessus de 33 ms (hors chargement). `tools/check.ps1` (Windows) et `tools/check.sh` (Linux) lancent un test de fumée de chaque point d'entrée ; ces deux scripts font la même chose, modifie-les **ensemble**.

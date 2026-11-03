@@ -8,6 +8,7 @@
 //! Positions absolues en `f64` ([`SpacePosition`]) ; la caméra est le point suivi par l'origine
 //! flottante ([`crate::space`]).
 
+use bevy::light::Skybox;
 use bevy::prelude::*;
 use bevy_enhanced_input::prelude::*;
 use sh_core::SpacePos;
@@ -19,6 +20,7 @@ use crate::input::{Roll, Steer, Thrust};
 use crate::space::{OriginFocus, PositionDriver, SpacePosition};
 use crate::state::{ControlMode, CurrentPlace, ViewLevel};
 use crate::ui::theme::{self, UiFonts};
+use crate::views::sky::{SkyNebula, SkySpec, cube_image, render_sky};
 use crate::views::{WorldLabel, view_banner};
 
 pub struct GlobalViewPlugin;
@@ -55,12 +57,14 @@ fn spawn_global(
     place: Res<CurrentPlace>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
     mut mode: ResMut<NextState<ControlMode>>,
 ) {
     mode.set(ControlMode::Piloting);
     let g = &data.galaxy;
     let place_id = place.0.clone().unwrap_or_else(|| "test".into());
     let system = system_of(g, &place_id).filter(|s| !s.secret);
+    let sky = images.add(sky_for(g, system.map(|s| (s.id.as_str(), s.center))));
 
     let sphere = meshes.add(Sphere::new(1.0).mesh().uv(48, 24));
     let station_mesh = meshes.add(Cuboid::new(1.0, 0.4, 1.0));
@@ -165,11 +169,19 @@ fn spawn_global(
             clear_color: ClearColorConfig::Custom(Color::BLACK),
             ..default()
         },
+        Skybox {
+            image: Some(sky),
+            brightness: SKY_BRIGHTNESS,
+            ..default()
+        },
         // La caméra est pilotée par son Transform, et l'origine flottante la suit.
         SpacePosition(focus + SpacePos::new(-40.0, 60.0, 160.0)),
         PositionDriver::Render,
         OriginFocus,
-        Transform::default().looking_to(Vec3::new(40.0, -60.0, -160.0), Vec3::Y),
+        Transform::default().looking_to(
+            look_from_env().unwrap_or(Vec3::new(40.0, -60.0, -160.0)),
+            Vec3::Y,
+        ),
     ));
 
     commands.spawn(view_banner(
@@ -179,6 +191,54 @@ fn spawn_global(
         "view.global.hint",
         SCOPE,
     ));
+}
+
+/// `SH_LOOK=x,y,z` (autopilote) : direction initiale de la caméra, pour les captures.
+fn look_from_env() -> Option<Vec3> {
+    let values: Vec<f32> = std::env::var("SH_LOOK")
+        .ok()?
+        .split(',')
+        .filter_map(|v| v.trim().parse().ok())
+        .collect();
+    let dir = Vec3::new(*values.first()?, *values.get(1)?, *values.get(2)?);
+    (dir.length_squared() > 0.0).then_some(dir)
+}
+
+/// Luminance du ciel (cd/m²) pour une valeur 1 de la cubemap.
+const SKY_BRIGHTNESS: f32 = 900.0;
+const SKY_SIZE: usize = 1024;
+
+/// Le ciel vu depuis un système (ou depuis le centre de la carte, faute de système).
+fn sky_for(galaxy: &Galaxy, system: Option<(&str, sh_core::MapPos)>) -> Image {
+    let frame = &galaxy.frame;
+    let observer = system.map_or([frame.center.0, frame.center.1 + 100.0], |(_, c)| {
+        [c.x, c.y]
+    });
+    let nebulae = galaxy
+        .phenomena
+        .iter()
+        .filter(|p| !p.secret && p.kind_note.to_lowercase().contains("nébuleuse"))
+        .filter_map(|p| {
+            Some(SkyNebula {
+                center: [p.pos?.x, p.pos?.y],
+                radius: p.radius?,
+            })
+        })
+        .collect();
+    let spec = SkySpec {
+        observer,
+        galaxy_center: [frame.center.0, frame.center.1],
+        galaxy_radii: [frame.radius_x, frame.radius_y],
+        nebulae,
+        seed: system.map_or(0, |(id, _)| sh_core::rng::fnv1a(id.as_bytes())),
+    };
+    let start = std::time::Instant::now();
+    let image = cube_image(&render_sky(&spec, SKY_SIZE));
+    info!(
+        "ciel généré en {:.0} ms",
+        start.elapsed().as_secs_f64() * 1000.0
+    );
+    image
 }
 
 fn label(fonts: &UiFonts, name: &str, target: Entity) -> impl Bundle {
