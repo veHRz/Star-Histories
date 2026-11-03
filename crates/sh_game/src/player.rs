@@ -58,6 +58,12 @@ const GRAVITY: f32 = 9.81;
 pub const STEP_HEIGHT: f32 = 0.36;
 pub const MAX_SLOPE_DEG: f32 = 46.0;
 const GROUND_PROBE: f32 = 0.08;
+/// Avancée minimale d'une montée de marche, en mètres. Posée sur le nez de la marche avec moins
+/// de `RADIUS · (1 − sin(pente max.))` ≈ 8 cm de débord, la capsule touche l'arête sous une
+/// normale trop inclinée et glisse en arrière à la frame suivante : à haut taux de
+/// rafraîchissement (6 mm d'avancée par frame à 500 i/s), on ne montait plus. On sonde donc
+/// toujours au moins cette distance (marge × 1,5), quelle que soit la durée de la frame.
+const STEP_PROBE: f32 = 0.13;
 const MOUSE_SENSITIVITY: f32 = 0.0022;
 /// Délai après que la cellule du joueur est prête avant d'activer la physique (les collisions
 /// sont construites au frame suivant, puis entrent dans l'arbre des requêtes).
@@ -382,32 +388,34 @@ fn move_player(
         if lift > 0.05 {
             let raised = center + Vec3::Y * lift;
             let flat = Vec3::new(controller.velocity.x, 0.0, controller.velocity.z);
-            let stepped = move_and_slide.move_and_slide(
+            let step_dt = time.delta().min(std::time::Duration::from_millis(50));
+            // Sonde surélevée, sur au moins STEP_PROBE : y a-t-il un sol praticable au-delà ?
+            let probe_scale = (STEP_PROBE / desired.length()).max(1.0);
+            let probe = move_and_slide.move_and_slide(
                 &shape,
                 raised,
                 Quat::IDENTITY,
-                flat,
-                time.delta().min(std::time::Duration::from_millis(50)),
+                flat * probe_scale,
+                step_dt,
                 &config,
                 &filter,
                 |_| MoveAndSlideHitResponse::Accept,
             );
-            let down = spatial.cast_shape(
+            let probed = Vec2::new(probe.position.x - raised.x, probe.position.z - raised.z);
+            let landing = spatial.cast_shape(
                 &shape,
-                stepped.position,
+                probe.position,
                 Quat::IDENTITY,
                 Dir3::NEG_Y,
                 &ShapeCastConfig::from_max_distance(lift + GROUND_PROBE),
                 &filter,
             );
-            if let Some(hit) =
-                down.filter(|h| walkable_contact(&spatial, &filter, stepped.position, h))
+            if probed.length() > achieved.length() + STEP_PROBE * 0.25
+                && let Some(hit) =
+                    landing.filter(|h| walkable_contact(&spatial, &filter, probe.position, h))
             {
-                let candidate = stepped.position - Vec3::Y * hit.distance;
-                let gained = Vec2::new(candidate.x - center.x, candidate.z - center.z).length();
-                if gained > achieved.length() + 0.005 {
-                    new_center = candidate;
-                }
+                // Toute l'avancée sondée : la capsule se pose franchement sur la marche.
+                new_center = probe.position - Vec3::Y * hit.distance;
             }
         }
     }
