@@ -120,6 +120,8 @@ Le jeu lit des variables d'environnement (`crates/sh_game/src/dev.rs`) :
 | `SH_LOOK=x,y,z` | Direction initiale de la caméra en vue Globale (captures du ciel, des astres) |
 | `SH_ARRIVAL=<objet>,<distance>` | Vue Globale : arrivée près d'un autre objet (station, structure, astre), à cette distance en mètres |
 | `SH_SCENARIO=walk_ship` | Parcours scripté du vaisseau du joueur (sas → cockpit), avec mesure du temps de frame |
+| `SH_ROUTE=<système>`, `SH_HOVER=<système>` | Vue Galaxie : itinéraire posé depuis la position du vaisseau, survol simulé (captures du panneau et de l'infobulle) |
+| `SH_SCENARIO=voyage` | Avec `SH_START=global:hexis` : Hexis → Cygnara par Portail, retour par hyperespace, durées vérifiées (critère de M3) |
 | `SH_SCENARIO=port_loop` | Avec `SH_START=sector:hexis_spaceport` : quai → cockpit → départ → vol → amarrage → quai (critère de M2) |
 | `SH_SCENARIO=fly_ship` | Avec `SH_START=global:hexis` : vol aux commandes (assisté, croisière, lacet, découplé), puis marche du cockpit au couloir en plein vol |
 
