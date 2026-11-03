@@ -2,6 +2,13 @@
 
 > Une entrée courte par session (2 à 5 lignes) : ce qui a été fait, ce qui reste en suspens, les décisions prises. Le plus récent en haut.
 
+## 03/11/2026 — Poste Linux (CachyOS) : M2, vue Globale d'Hexis
+
+- **Origine flottante** (`sh_core::SpacePos`, `sh_game::space`) : positions absolues en f64, `Transform` recalculés depuis les f64 à chaque recentrage ; test : même précision près du centre et à 10⁹ km.
+- **Échelle P2 chiffrée** (`gameplay/space.ron`) : tailles ÷ 10, distances ÷ 100, croisière à vitesse proportionnelle à la distance de la surface la plus proche (1 à 2 min entre planètes voisines, testé). Disposition générique des systèmes (P16) et mise en scène d'Hexis (P15).
+- **Système d'Hexis** : ciel généré depuis M7 (P17 : bulbe à l'ouest, Croissant au nord), Hexis texturée, L'Enclume, hub de Portails, chantiers, trafic (P18, `tools/blender/space/hexis_orbitals.py`). Captures : `target/shots/m2-hexis-{arrivee,hub,chantiers,cargo}.png`, `m2-ciel-*.png`. Piège : la skybox de Bevy lit la cubemap avec z inversé.
+- Q11 complétée (termes techniques traduits dans l'interface anglaise, hypothèse).
+
 ## 03/11/2026 — Poste Linux (CachyOS) : fin de M1, éclairage précalculé
 
 - **Lightmaps** : `tools/blender/lightmap.py` déplie un 2e jeu d'UV par cellule (commun aux versions Locale et Sectorielle), cuit l'éclairage diffus dans Cycles (une lampe par `LIGHT_`, rebonds, ombres douces, lumière des écrans) et écrit des PNG sRGB normalisés + leur exposition dans le descripteur du secteur. ≈ 3 min pour le vaisseau à 512 échantillons (CPU i9-9900K). En jeu : `Lightmap` sur les maillages des cellules, lumières sans ombres dynamiques ni diffus sur les surfaces cuites (spéculaire et portes seulement), `SH_BAKED_LIGHTING=0` pour comparer. Captures : `target/shots/m1-lm-{soute,sas,cockpit,couloir}.png`.
