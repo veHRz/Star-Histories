@@ -112,10 +112,10 @@ But : un personnage, des réputations, des organisations, des contrats.
 
 But : des combats courts, brutaux, sans boucliers.
 
-- [ ] Armes à pied (projectiles, recul, munitions), dégâts et armure, IA de combat des PNJ (couverture, alerte), mort et rechargement.
-- [ ] Combat spatial : sections de coque et blindage, canons magnétiques, missiles et torpilles, contre-mesures, effets à l'intérieur du vaisseau, IA de pilotes.
-- [ ] Rencontre : raid de pirates de la Ligue dans le système Cygnara, issu de la simulation.
-- [ ] Dégâts persistants et réparation (chantier d'Hexis).
+- [x] Armes à pied (projectiles, recul, munitions), dégâts et armure, IA de combat des PNJ (couverture, alerte), mort et rechargement.
+- [x] Combat spatial : sections de coque et blindage, canons magnétiques, missiles et torpilles, contre-mesures, effets à l'intérieur du vaisseau, IA de pilotes.
+- [x] Rencontre : raid de pirates de la Ligue dans le système Cygnara, issu de la simulation.
+- [x] Dégâts persistants et réparation (chantier d'Hexis).
 
 **Fini quand** : on peut gagner, fuir ou perdre un raid ; les dégâts persistent jusqu'à réparation ; performance tenue pendant un combat à 10 vaisseaux.
 
