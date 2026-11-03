@@ -307,7 +307,7 @@ L'auteur a imaginé quatre vues pour répartir la charge. Le principe est conser
 
 - Format **RON**, schémas dans `sh_data`, validation au chargement **et** dans un test (`cargo t` échoue si une donnée est incohérente).
 - **Identifiants** : ASCII en `snake_case`, stables (`concordia`, `vorrh_ii`, `nsu_liberte`). **Noms propres du canon** : exacts, en français, avec accents (ils ne se traduisent pas, voir `docs/QUESTIONS.md` Q11).
-- **Langue du jeu : le français** (décision de l'auteur, Q11, qui remplace Q8). Tout texte d'interface passe par une clé de `assets/data/lang/fr.ron` ; jamais de chaîne visible en dur dans le Rust. `en.ron` est tenu avec **les mêmes clés** (un test le vérifie) : toute nouvelle clé s'écrit dans les deux fichiers. Les nombres passent par `Lang::number` (espace fine des milliers, virgule décimale).
+- **Langue du jeu : le français** (décision de l'auteur, Q11, qui remplace Q8). Tout texte d'interface passe par une clé de `assets/data/lang/fr.ron` ; jamais de chaîne visible en dur dans le Rust. `en.ron` est tenu avec **les mêmes clés** (un test le vérifie) : toute nouvelle clé s'écrit dans les deux fichiers. Les nombres passent par `Lang::number` (espace fine des milliers, virgule décimale). Une touche citée dans un texte s'écrit en jeton `[KeyE]`, `[Space]` (nom `KeyCode`) : la langue affiche l'étiquette de la disposition réelle du clavier (Q13, `gameplay/keyboard.ron`).
 - Chaque entrée canon porte `source: "§3.3"` (section de l'export) ; chaque entrée inventée porte `status: Proposition` et figure dans `docs/propositions.md` ; chaque fait secret porte `secret: true`.
 - Les textes visibles du joueur vivent dans les données (prêts pour une traduction future), jamais dans le code.
 
