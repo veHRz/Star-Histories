@@ -7,6 +7,7 @@
 
 11. **Noms canon dans une interface en anglais.** L'interface sera en anglais (Q9). Les noms propres de personnes, de lieux et de vaisseaux restent tels quels (« Vorrh-III », « le Garant »). Mais les noms d'institutions et de groupes (« Union Galactique Libre », « Ligue des Pirates », « Flotte de la Libération », « No Man's Land » est déjà anglais) : faut-il les traduire (« Free Galactic Union »…) ou les garder en français ?
    *Hypothèse : gardés en français, exactement comme dans le canon. Les données prévoient un champ de nom traduit facultatif, pour le jour où tu fournis les noms anglais.*
+   *Même question pour les termes techniques du canon (« Portail », « carburant lourd »…). Hypothèse : traduits dans l'interface anglaise (« Portal hub »), puisque ce sont des noms communs ; les noms propres (« Hexis », « L'Enclume ») restent en français.*
 
 ## Tranchées
 

@@ -1,0 +1,35 @@
+// Mise en scène du système d'Hexis en vue Globale (proposition P15, docs/propositions.md).
+// Le canon dit : chantiers orbitaux, L'Enclume en construction, seul hub de Portails reliant
+// l'UGL et l'Empire (§3.3, §3.7). Il ne dit pas où : ces emplacements sont proposés.
+(
+    system: "sys_hexis",
+    status: Proposition("P15"),
+    // Nom d'affichage validé par l'auteur (P11, docs/QUESTIONS.md Q9).
+    star_name: "Étoile d'Hexis",
+    structures: [
+        // Les chantiers orbitaux, voisins de L'Enclume (≈ 20 km) : le cœur industriel en orbite.
+        (
+            id: "hexis_shipyards",
+            kind: Shipyard,
+            name_key: "structure.hexis_shipyards",
+            around: "hexis",
+            altitude_radii: 1.5,
+            angle_deg: 50.7,
+        ),
+        // Le hub de Portails, un peu à l'écart (≈ 120 km) : trafic dense entre lui et les cales.
+        (
+            id: "hexis_portal_hub",
+            kind: PortalHub,
+            name_key: "structure.hexis_portal_hub",
+            around: "hexis",
+            altitude_radii: 1.5,
+            angle_deg: 54.5,
+        ),
+    ],
+    traffic: 16,
+    arrival: (
+        near: "l_enclume",
+        distance: 9000.0,
+        elevation_deg: 12.0,
+    ),
+)

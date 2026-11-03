@@ -21,6 +21,8 @@
         "view.sector.title": "Sector view (test room)",
         "view.sector.hint": "WASD: move   ·   Mouse: look   ·   Shift: run   ·   Esc: main menu",
         "sector.player_ship": "Your ship",
+        "structure.hexis_shipyards": "Hexis orbital shipyards",
+        "structure.hexis_portal_hub": "Hexis Portal hub",
         "interact.door.open": "E: Open door",
         "interact.door.close": "E: Close door",
         "interact.console": "E: Use {console}",

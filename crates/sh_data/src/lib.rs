@@ -20,6 +20,8 @@ pub mod currencies;
 pub mod factions;
 pub mod galaxy;
 pub mod lang;
+pub mod layout;
+pub mod scene;
 pub mod sector;
 pub mod settings;
 pub mod ships;
@@ -33,6 +35,8 @@ pub use galaxy::{
     Station, Zone,
 };
 pub use lang::Lang;
+pub use layout::{Placed, PlacedKind, system_layout};
+pub use scene::{Arrival, Structure, StructureKind, SystemScene};
 pub use sector::{Cell, Portal, PortalKind, Sector, SectorKind, Spawn};
 pub use settings::{
     AntiAliasing, ClockSettings, GraphicsPreset, GraphicsPresets, PresetLevel, SpaceSettings,
@@ -54,6 +58,8 @@ pub mod paths {
     pub const LANG_EN: &str = "lang/en.ron";
     /// Dossiers scannés pour les descripteurs de secteurs (`*.ron`).
     pub const SECTOR_DIRS: [&str; 2] = ["canon/sectors", "propositions/sectors"];
+    /// Dossiers scannés pour les mises en scène de systèmes (`*.ron`).
+    pub const SCENE_DIRS: [&str; 2] = ["canon/systems", "propositions/systems"];
 }
 
 /// Toutes les données chargées au démarrage du jeu.
@@ -69,6 +75,7 @@ pub struct GameData {
     pub space: SpaceSettings,
     pub lang: Lang,
     pub sectors: Vec<Sector>,
+    pub scenes: Vec<SystemScene>,
 }
 
 #[derive(Debug, Error)]
@@ -122,12 +129,18 @@ impl GameData {
             space: read_ron(&file(paths::SPACE))?,
             lang: read_ron(&file(paths::LANG_EN))?,
             sectors: read_dir_ron(data_dir, &paths::SECTOR_DIRS)?,
+            scenes: read_dir_ron(data_dir, &paths::SCENE_DIRS)?,
         })
     }
 
     /// Vérifie la cohérence de l'ensemble (identifiants, références, cases, sources, secrets).
     pub fn validate(&self) -> Result<(), ValidationReport> {
         validate::validate(self)
+    }
+
+    /// La mise en scène d'un système, s'il en a une.
+    pub fn scene(&self, system: &sh_core::Id<Place>) -> Option<&SystemScene> {
+        self.scenes.iter().find(|s| &s.system == system)
     }
 
     pub fn faction(&self, id: &sh_core::Id<Faction>) -> Option<&Faction> {

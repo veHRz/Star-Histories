@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use sh_core::Id;
-use sh_data::{GameData, Place};
+use sh_data::{GameData, Place, PlacedKind, system_layout};
 
 fn racine() -> PathBuf {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -266,4 +266,73 @@ fn l_echelle_des_systemes_donne_des_trajets_de_quelques_minutes() {
     // Le système compressé reste précis en f64 : ulp < 0,1 mm à la dixième orbite.
     let far = sc.orbit_radius(10);
     assert!(far * f64::EPSILON < 1e-4, "{far} m");
+}
+
+#[test]
+fn disposition_du_systeme_d_hexis() {
+    let data = donnees();
+    let sc = &data.space.scale;
+    let system = data
+        .galaxy
+        .system(&lieu("sys_hexis"))
+        .unwrap_or_else(|| panic!("sys_hexis absent"));
+    let placed = system_layout(&data.galaxy, system, sc);
+    let find = |id: &str| {
+        placed
+            .iter()
+            .find(|p| p.id.as_ref().is_some_and(|i| i.as_str() == id))
+            .unwrap_or_else(|| panic!("{id} non disposé"))
+    };
+    // Étoile non nommée par le canon, au centre.
+    assert!(
+        placed
+            .iter()
+            .any(|p| p.kind == PlacedKind::Star && p.id.is_none())
+    );
+    let hexis = find("hexis");
+    assert!((hexis.pos.length() - sc.orbit_radius(1)).abs() < 1.0);
+    let enclume = find("l_enclume");
+    assert_eq!(enclume.kind, PlacedKind::Station);
+    assert_eq!(enclume.around.as_ref().map(|i| i.as_str()), Some("hexis"));
+    let altitude = enclume.pos.distance(hexis.pos) - hexis.radius;
+    assert!((altitude - sc.parking_orbit_radii * hexis.radius).abs() < 1.0);
+}
+
+/// Pour tous les systèmes publics : disposition déterministe, finie, sans chevauchement, et sans
+/// aucun astre ni station secrets.
+#[test]
+fn dispositions_jouables_de_tous_les_systemes() {
+    let data = donnees();
+    let sc = &data.space.scale;
+    for system in data.galaxy.systems.iter().filter(|s| !s.secret) {
+        let placed = system_layout(&data.galaxy, system, sc);
+        assert_eq!(
+            placed,
+            system_layout(&data.galaxy, system, sc),
+            "{}",
+            system.id
+        );
+        for (i, a) in placed.iter().enumerate() {
+            assert!(
+                a.pos.length().is_finite(),
+                "{} : position non finie",
+                system.id
+            );
+            if let Some(id) = &a.id {
+                let secret = data.galaxy.body(id).is_some_and(|b| b.secret)
+                    || data.galaxy.station(id).is_some_and(|s| s.secret);
+                assert!(!secret, "{} : {id} est secret", system.id);
+            }
+            for b in &placed[i + 1..] {
+                let gap = a.pos.distance(b.pos) - a.radius - b.radius;
+                assert!(
+                    gap > 1.0e4,
+                    "{} : {:?} et {:?} se chevauchent",
+                    system.id,
+                    a.id,
+                    b.id
+                );
+            }
+        }
+    }
 }

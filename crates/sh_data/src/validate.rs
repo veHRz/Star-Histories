@@ -556,6 +556,62 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
         c.fail("secteurs", format!("identifiant en double : {id}"));
     }
 
+    // --- Mises en scène de systèmes -------------------------------------------------------
+    for scene in &data.scenes {
+        let ctx = format!("scène {}", scene.system);
+        c.status(&ctx, &scene.status, None);
+        let Some(system) = data.galaxy.system(&scene.system) else {
+            c.fail(&ctx, "système inconnu");
+            continue;
+        };
+        c.check(
+            !system.secret,
+            &ctx,
+            "un système secret n'a pas de mise en scène publique",
+        );
+        let in_system = |id: &str| {
+            system
+                .bodies
+                .iter()
+                .chain(&system.stations)
+                .any(|b| b.as_str() == id)
+        };
+        for st in &scene.structures {
+            c.check(
+                in_system(st.around.as_str()),
+                &ctx,
+                format!("{} : astre {} hors du système", st.id, st.around),
+            );
+            c.check(
+                data.lang.has(&st.name_key),
+                &ctx,
+                format!("clé de nom absente de la langue : {}", st.name_key),
+            );
+            c.check(
+                st.altitude_radii > 0.0 && st.angle_deg.is_finite(),
+                &ctx,
+                format!("{} : altitude ou angle invalide", st.id),
+            );
+        }
+        for id in duplicates(scene.structures.iter().map(|s| s.id.as_str())) {
+            c.fail(&ctx, format!("structure en double : {id}"));
+        }
+        let near = &scene.arrival.near;
+        c.check(
+            in_system(near) || scene.structures.iter().any(|s| &s.id == near),
+            &ctx,
+            format!("arrivée près d'un objet inconnu : {near}"),
+        );
+        c.check(
+            scene.arrival.distance > 0.0,
+            &ctx,
+            "distance d'arrivée invalide",
+        );
+    }
+    for id in duplicates(data.scenes.iter().map(|s| s.system.as_str())) {
+        c.fail("scènes", format!("système mis en scène deux fois : {id}"));
+    }
+
     // --- Langue -----------------------------------------------------------------------------
     for (key, text) in &data.lang.strings {
         c.check(
