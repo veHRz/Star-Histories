@@ -3,6 +3,8 @@
 //! Headless, déterministe, testée, sans Bevy. Le jalon M0 n'en pose que le socle : l'horloge
 //! du monde et le générateur de hasard. Les factions, flottes, marchés et projets arrivent en M4.
 
+pub mod travel;
+
 use sh_core::{SimRng, StellarDate, Year};
 
 /// L'état global de la simulation.

@@ -688,6 +688,45 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
         );
     }
 
+    // --- Voyages ------------------------------------------------------------------------------
+    let t = &data.travel;
+    c.check(
+        [
+            t.hyperspace_days_per_unit,
+            t.improvised_factor,
+            t.nebula_margin,
+            t.portal_transit_hours,
+        ]
+        .iter()
+        .all(|v| v.is_finite() && *v > 0.0)
+            && t.portal_toll_credits >= 0,
+        "travel.ron",
+        "valeurs de voyage invalides",
+    );
+    for start in &data.starts {
+        c.check(
+            t.ships.contains_key(&start.ship),
+            "travel.ron",
+            format!("vaisseau sans logistique : {}", start.ship),
+        );
+    }
+    c.status("portal_links.ron", &data.portal_links.status, None);
+    let is_hub = |id: &Id<Place>| data.galaxy.portal_hubs.iter().any(|h| &h.body == id);
+    for (a, b) in &data.portal_links.links {
+        for end in [a, b] {
+            c.check(
+                is_hub(end),
+                "portal_links.ron",
+                format!("{end} ne porte pas de hub de Portails"),
+            );
+        }
+        c.check(
+            a != b,
+            "portal_links.ron",
+            format!("liaison de {a} vers lui-même"),
+        );
+    }
+
     // --- Départs de partie ------------------------------------------------------------------
     c.check(!data.starts.is_empty(), "départs", "aucun départ de partie");
     for start in &data.starts {

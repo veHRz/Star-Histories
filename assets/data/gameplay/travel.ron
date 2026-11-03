@@ -1,0 +1,20 @@
+// Voyages interstellaires (réglages de jeu ; P3 pour l'échelle des durées d'hyperespace).
+(
+    // « ≈ 10 unités de carte ≈ 3 jours » : déduction non canon de l'export (§3.1), pour
+    // l'équilibrage seulement.
+    hyperspace_days_per_unit: 0.3,
+    // Hors des routes cartographiées (un système sans maître) : 25 % plus long.
+    improvised_factor: 1.25,
+    // On contourne une nébuleuse bloquante à 1,15 fois son rayon.
+    nebula_margin: 1.15,
+    // Un passage de Portail : file d'attente et contrôles de la faction du système.
+    portal_transit_hours: 4.0,
+    portal_toll_credits: 150,
+    ships: {
+        // Le vaisseau du joueur (P12) : deux mois d'autonomie en carburant lourd.
+        "player_ship": (
+            fuel_capacity: 60.0,
+            fuel_per_day: 1.0,
+        ),
+    },
+)

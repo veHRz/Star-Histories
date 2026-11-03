@@ -1,0 +1,16 @@
+// Le réseau des hubs de Portails (proposition P19, docs/propositions.md). Le canon dit
+// seulement que le hub d'Hexis est le seul à relier l'UGL et l'Empire (§2.2, §3.7) : il est donc
+// relié à un hub de chaque bloc, et les blocs ne sont reliés entre eux que par lui.
+(
+    status: Proposition("P19"),
+    links: [
+        // Les deux portes d'Hexis.
+        ("hexis", "cygnara"),
+        ("hexis", "karza"),
+        // Côté UGL.
+        ("cygnara", "concordia"),
+        // Côté Empire : Karza, « porte d'entrée de l'Empire », relie ses grands systèmes.
+        ("karza", "vorrhal"),
+        ("karza", "primaterre"),
+    ],
+)
