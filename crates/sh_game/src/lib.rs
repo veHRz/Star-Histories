@@ -1,12 +1,22 @@
 //! Plugins Bevy de Star Histories.
 //!
-//! Squelette de départ : une scène de test qui prouve que la chaîne de compilation,
-//! le rendu et les outils d'autopilote (`dev`) fonctionnent. Le jalon M0 d'AGENTS.md
-//! remplace cette scène par la vraie architecture (états, vues, données canon).
+//! [`StarHistoriesPlugin`] agrège un plugin par domaine. L'ordre entre domaines est explicite :
+//! les états et le chargement d'abord, puis l'interface, les entrées, les vues et le rendu.
+//! La logique pure vit dans `sh_core`, `sh_data` et `sh_sim` ; ce crate ne fait que l'envelopper.
 
 use bevy::prelude::*;
+use bevy::window::{PresentMode, WindowResolution};
 
-mod dev;
+pub mod data;
+pub mod dev;
+#[cfg(feature = "dev")]
+mod dev_tools;
+pub mod graphics;
+pub mod input;
+pub mod loading;
+pub mod state;
+pub mod ui;
+pub mod views;
 
 pub struct StarHistoriesPlugin;
 
@@ -15,39 +25,24 @@ impl Plugin for StarHistoriesPlugin {
         app.add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Star Histories".into(),
+                resolution: WindowResolution::new(1600, 900),
+                // Pas de synchronisation verticale forcée : les mesures de l'autopilote doivent
+                // refléter le vrai coût d'une frame. La vsync deviendra une option (M7).
+                present_mode: PresentMode::AutoNoVsync,
                 ..default()
             }),
             ..default()
         }))
-        .add_plugins(dev::DevToolsPlugin)
-        .add_systems(Startup, spawn_smoke_scene);
+        .add_plugins((
+            state::StatePlugin,
+            loading::LoadingPlugin,
+            ui::UiPlugin,
+            input::InputPlugin,
+            views::ViewsPlugin,
+            graphics::GraphicsPlugin,
+            dev::AutopilotPlugin,
+        ));
+        #[cfg(feature = "dev")]
+        app.add_plugins(dev_tools::DevToolsPlugin);
     }
-}
-
-fn spawn_smoke_scene(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(8.0, 8.0))),
-        MeshMaterial3d(materials.add(Color::srgb(0.12, 0.13, 0.16))),
-    ));
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-        MeshMaterial3d(materials.add(Color::srgb_u8(196, 152, 72))),
-        Transform::from_xyz(0.0, 0.5, 0.0),
-    ));
-    commands.spawn((
-        DirectionalLight {
-            illuminance: light_consts::lux::AMBIENT_DAYLIGHT,
-            shadow_maps_enabled: true,
-            ..default()
-        },
-        Transform::from_xyz(4.0, 8.0, 4.0).looking_at(Vec3::ZERO, Vec3::Y),
-    ));
-    commands.spawn((
-        Camera3d::default(),
-        Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
-    ));
 }
