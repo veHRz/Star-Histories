@@ -6,15 +6,19 @@
 //! quand il s'en éloigne de plus de `recenter_distance`, l'origine saute sur lui et tous les
 //! `Transform` sont recalculés **depuis les `f64`**, sans accumulation d'erreur.
 //!
-//! Deux sortes d'entités, selon ce qui fait foi ([`PositionDriver`]) :
+//! Trois sortes d'entités, selon ce qui fait foi ([`PositionDriver`]) :
 //! - `Space` (astres, stations, trafic sur rails) : la position absolue fait foi, le `Transform`
 //!   en est déduit ;
 //! - `Render` (ce qui bouge par la physique ou les commandes : vaisseaux, caméra) : le
-//!   `Transform` fait foi, la position absolue en est relue à chaque frame.
+//!   `Transform` fait foi, la position absolue en est relue à chaque frame ;
+//! - `Frame` (le vaisseau du joueur, à bord) : **le vaisseau est le référentiel** (AGENTS.md
+//!   §6.2). L'origine prend sa position et son orientation à chaque frame : l'intérieur reste
+//!   immobile autour de `(0, 0, 0)`, c'est l'extérieur qui se déplace et tourne.
 //!
 //! Les systèmes tournent en `PostUpdate`, après la physique (avian, `FixedPostUpdate`) et avant
 //! la propagation des transformations.
 
+use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
 use sh_core::SpacePos;
 use sh_core::space::needs_recenter;
@@ -58,16 +62,28 @@ pub enum PositionDriver {
     Space,
     /// Le `Transform` fait foi (physique, commandes) : la [`SpacePosition`] en est relue.
     Render,
+    /// Le référentiel (le vaisseau du joueur quand il est à bord) : sa position et son
+    /// orientation absolues font foi et **deviennent l'origine** ; son `Transform` reste nul, ses
+    /// enfants (l'intérieur, le joueur) ne bougent pas dans le rendu.
+    Frame,
 }
+
+/// Orientation absolue d'une entité de l'espace (identité si absente).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+pub struct SpaceRotation(pub Quat);
 
 /// Le point que suit l'origine flottante (au plus une entité).
 #[derive(Component, Default)]
 pub struct OriginFocus;
 
-/// L'origine flottante : la position absolue du point `(0, 0, 0)` du rendu.
+/// L'origine flottante : la position absolue du point `(0, 0, 0)` du rendu, et l'orientation
+/// absolue des axes du rendu. L'orientation n'est autre que l'identité, sauf quand un
+/// référentiel ([`PositionDriver::Frame`], le vaisseau du joueur) l'impose : tout l'extérieur
+/// tourne alors autour de lui.
 #[derive(Resource, Clone, Debug)]
 pub struct FloatingOrigin {
     pub origin: SpacePos,
+    pub orientation: DQuat,
     pub recenter_distance: f64,
     /// Recentrages depuis le démarrage (mesures, tests).
     pub shifts: u32,
@@ -77,21 +93,37 @@ impl Default for FloatingOrigin {
     fn default() -> Self {
         Self {
             origin: SpacePos::ZERO,
+            orientation: DQuat::IDENTITY,
             recenter_distance: 2000.0,
             shifts: 0,
         }
     }
 }
 
+fn to_dvec(p: SpacePos) -> DVec3 {
+    DVec3::new(p.x, p.y, p.z)
+}
+
 impl FloatingOrigin {
-    /// Position de rendu d'un point absolu.
+    /// Position de rendu d'un point absolu (soustraction et rotation en `f64`).
     pub fn to_render(&self, pos: SpacePos) -> Vec3 {
-        Vec3::from_array(pos.relative_to(self.origin))
+        (self.orientation.inverse() * to_dvec(pos - self.origin)).as_vec3()
     }
 
     /// Position absolue d'un point de rendu.
     pub fn to_space(&self, translation: Vec3) -> SpacePos {
-        SpacePos::from_relative(self.origin, translation.to_array())
+        let d = self.orientation * translation.as_dvec3();
+        self.origin + SpacePos::new(d.x, d.y, d.z)
+    }
+
+    /// Orientation de rendu d'une orientation absolue.
+    pub fn render_rotation(&self, absolute: Quat) -> Quat {
+        self.orientation.inverse().as_quat() * absolute
+    }
+
+    /// Direction de rendu d'une direction absolue.
+    pub fn render_direction(&self, absolute: DVec3) -> Vec3 {
+        (self.orientation.inverse() * absolute).as_vec3()
     }
 }
 
@@ -120,38 +152,76 @@ fn read_render_driven(
     }
 }
 
-/// Recentre l'origine sur le point suivi s'il s'en est trop éloigné.
+/// Recentre l'origine : sur le référentiel s'il y en a un (à chaque frame, position et
+/// orientation), sinon sur le point suivi quand il s'en est trop éloigné.
 fn recenter(
     mut origin: ResMut<FloatingOrigin>,
+    frame: Query<(&SpacePosition, Option<&SpaceRotation>, &PositionDriver)>,
     focus: Query<&SpacePosition, With<OriginFocus>>,
     mut render_driven: Query<(&mut Transform, &SpacePosition, &PositionDriver)>,
 ) {
-    let Ok(focus) = focus.single() else {
-        return;
+    let anchor = frame
+        .iter()
+        .find(|(_, _, d)| **d == PositionDriver::Frame)
+        .map(|(p, r, _)| (p.0, r.map_or(DQuat::IDENTITY, |r| r.0.as_dquat())));
+    let (target, orientation) = match anchor {
+        Some(anchor) => anchor,
+        None => {
+            let Ok(focus) = focus.single() else {
+                return;
+            };
+            let local = focus.0.relative_to(origin.origin);
+            if !needs_recenter(local, origin.recenter_distance) {
+                return;
+            }
+            (focus.0, DQuat::IDENTITY)
+        }
     };
-    let local = focus.0.relative_to(origin.origin);
-    if !needs_recenter(local, origin.recenter_distance) {
+    if target == origin.origin && orientation == origin.orientation {
         return;
     }
-    origin.origin = focus.0;
+    let turn = (orientation.inverse() * origin.orientation).as_quat();
+    origin.origin = target;
+    origin.orientation = orientation;
     origin.shifts += 1;
     for (mut transform, pos, driver) in &mut render_driven {
         if *driver == PositionDriver::Render {
             // Recalcul depuis le f64 : aucun arrondi ne s'accumule d'un recentrage à l'autre.
             transform.translation = origin.to_render(pos.0);
+            transform.rotation = turn * transform.rotation;
         }
     }
 }
 
-/// Entités pilotées par leur position absolue : place leur `Transform`.
+/// Entités pilotées par leur position absolue : place leur `Transform` (position et
+/// orientation) ; le référentiel reste à l'origine, sans rotation.
 fn place_space_driven(
     origin: Res<FloatingOrigin>,
-    mut query: Query<(&mut Transform, Ref<SpacePosition>, &PositionDriver)>,
+    mut query: Query<(
+        &mut Transform,
+        Ref<SpacePosition>,
+        Option<Ref<SpaceRotation>>,
+        &PositionDriver,
+    )>,
 ) {
     let moved = origin.is_changed();
-    for (mut transform, pos, driver) in &mut query {
-        if *driver == PositionDriver::Space && (moved || pos.is_changed()) {
-            transform.translation = origin.to_render(pos.0);
+    for (mut transform, pos, rotation, driver) in &mut query {
+        match driver {
+            PositionDriver::Space => {
+                let turned = rotation.as_ref().is_some_and(|r| r.is_changed());
+                if moved || pos.is_changed() || turned {
+                    transform.translation = origin.to_render(pos.0);
+                    transform.rotation =
+                        origin.render_rotation(rotation.map_or(Quat::IDENTITY, |r| r.0));
+                }
+            }
+            PositionDriver::Frame => {
+                if transform.translation != Vec3::ZERO || transform.rotation != Quat::IDENTITY {
+                    transform.translation = Vec3::ZERO;
+                    transform.rotation = Quat::IDENTITY;
+                }
+            }
+            PositionDriver::Render => {}
         }
     }
 }
@@ -252,5 +322,51 @@ mod tests {
         // Sans origine flottante, à 10⁹ m un f32 n'avance même pas de 5 m par frame.
         let naive = 1.0e9_f32;
         assert_eq!(naive + 5.123, naive);
+    }
+
+    #[test]
+    fn le_vaisseau_est_le_referentiel() {
+        let mut app = app(2000.0);
+        let ship_pos = SpacePos::new(3.0e8, 0.0, -4.0e8);
+        // Le vaisseau a tourné de 90° vers la gauche : son avant (−Z) pointe vers −X.
+        let turned = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
+        let ship = app
+            .world_mut()
+            .spawn((
+                SpacePosition(ship_pos),
+                SpaceRotation(turned),
+                PositionDriver::Frame,
+            ))
+            .id();
+        // Une station à 1 km au nord absolu (−Z).
+        let station = app
+            .world_mut()
+            .spawn(SpacePosition(ship_pos + SpacePos::new(0.0, 0.0, -1000.0)))
+            .id();
+        app.update();
+        // Le vaisseau reste à l'origine, sans rotation ; la station apparaît à sa droite.
+        assert_eq!(translation_of(&app, ship), Vec3::ZERO);
+        let seen = translation_of(&app, station);
+        assert!(
+            (seen - Vec3::new(1000.0, 0.0, 0.0)).length() < 1e-3,
+            "{seen}"
+        );
+        let rotation = app
+            .world()
+            .get::<Transform>(station)
+            .map_or(Quat::NAN, |t| t.rotation);
+        assert!(rotation.angle_between(turned.inverse()) < 1e-3);
+
+        // Le vaisseau avance de 500 m vers son avant : la station se rapproche d'autant.
+        let forward = turned * Vec3::NEG_Z * 500.0;
+        if let Some(mut p) = app.world_mut().get_mut::<SpacePosition>(ship) {
+            p.0 += SpacePos::new(f64::from(forward.x), 0.0, f64::from(forward.z));
+        }
+        app.update();
+        let seen = translation_of(&app, station);
+        assert!(
+            (seen - Vec3::new(1000.0, 0.0, 500.0)).length() < 1e-3,
+            "{seen}"
+        );
     }
 }

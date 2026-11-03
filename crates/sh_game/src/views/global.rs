@@ -20,7 +20,7 @@ use sh_data::{Galaxy, Place, PlacedKind, StructureKind, SystemScale, system_layo
 use crate::data::{Data, Texts};
 use crate::graphics::WorldCamera;
 use crate::input::{Boost, Roll, Steer, Thrust};
-use crate::space::{FloatingOrigin, OriginFocus, PositionDriver, SpacePosition};
+use crate::space::{FloatingOrigin, OriginFocus, PositionDriver, SpacePosition, SpaceRotation};
 use crate::state::{ControlMode, CurrentPlace, ViewLevel};
 use crate::ui::theme::{self, UiFonts};
 use crate::views::planet::{Look, planet_texture};
@@ -91,6 +91,11 @@ fn system_of<'a>(galaxy: &'a Galaxy, place: &str) -> Option<&'a sh_data::StarSys
 fn around(center: SpacePos, radius: f64, angle_deg: f64) -> SpacePos {
     let a = angle_deg.to_radians();
     center + SpacePos::new(radius * a.cos(), 0.0, radius * a.sin())
+}
+
+/// Orientation absolue qui pointe l'avant (−Z) d'un objet vers `forward`.
+fn facing(forward: Vec3) -> Quat {
+    Transform::default().looking_to(forward, Vec3::Y).rotation
 }
 
 /// Direction d'un déplacement absolu, en `f32` (les écarts sont petits devant la précision).
@@ -185,7 +190,7 @@ fn spawn_global(
                 let radial = dir(p.pos - parent);
                 let tangent = Vec3::Y.cross(radial).normalize_or(Vec3::NEG_Z);
                 ports.push(p.pos);
-                let mut station = commands.spawn(Transform::default().looking_to(tangent, Vec3::Y));
+                let mut station = commands.spawn(SpaceRotation(facing(tangent)));
                 match model {
                     Some(model) => station.insert(WorldAssetRoot(
                         asset_server.load(GltfAssetLabel::Scene(0).from_asset(model.clone())),
@@ -238,7 +243,7 @@ fn spawn_global(
             st.angle_deg,
         );
         let radial = dir(pos - body.pos);
-        let facing = match st.kind {
+        let facing_dir = match st.kind {
             // Les anneaux du hub, dans le plan de l'orbite ; les cales, le long de l'orbite.
             StructureKind::PortalHub => radial,
             StructureKind::Shipyard => Vec3::Y.cross(radial),
@@ -250,7 +255,7 @@ fn spawn_global(
                 Name::new(name.clone()),
                 SCOPE,
                 SpacePosition(pos),
-                Transform::default().looking_to(facing.normalize_or(Vec3::NEG_Z), Vec3::Y),
+                SpaceRotation(facing(facing_dir)),
                 WorldAssetRoot(
                     asset_server.load(GltfAssetLabel::Scene(0).from_asset(st.model.clone())),
                 ),
@@ -306,7 +311,7 @@ fn spawn_global(
                     progress,
                 },
                 SpacePosition(from + (to - from) * progress),
-                Transform::default().looking_to(dir(to - from), Vec3::Y),
+                SpaceRotation(facing(dir(to - from))),
                 WorldAssetRoot(model.clone()),
             ));
         }
@@ -505,10 +510,10 @@ fn fly(
 /// Les figurants avancent sur leur trajet, et repartent en sens inverse au bout.
 fn move_traffic(
     time: Res<Time>,
-    mut shuttles: Query<(&mut Shuttle, &mut SpacePosition, &mut Transform)>,
+    mut shuttles: Query<(&mut Shuttle, &mut SpacePosition, &mut SpaceRotation)>,
 ) {
     let dt = f64::from(time.delta_secs());
-    for (mut shuttle, mut pos, mut transform) in &mut shuttles {
+    for (mut shuttle, mut pos, mut rotation) in &mut shuttles {
         let length = shuttle.from.distance(shuttle.to).max(1.0);
         shuttle.progress += shuttle.speed * dt / length;
         if shuttle.progress >= 1.0 {
@@ -516,24 +521,35 @@ fn move_traffic(
             shuttle.from = to;
             shuttle.to = from;
             shuttle.progress -= 1.0;
-            transform.look_to(dir(from - to), Vec3::Y);
+            rotation.0 = facing(dir(from - to));
         }
         pos.0 = shuttle.from + (shuttle.to - shuttle.from) * shuttle.progress;
     }
 }
 
-/// La lumière vient de l'étoile, vers la caméra.
+/// La lumière vient de l'étoile vers l'origine du rendu (la caméra ou le vaisseau), dans les
+/// axes du rendu ; le ciel tourne avec eux.
 fn aim_sunlight(
+    origin: Res<FloatingOrigin>,
     star: Query<&SpacePosition, With<Star>>,
-    camera: Query<&SpacePosition, With<OriginFocus>>,
     mut light: Query<&mut Transform, With<Sunlight>>,
+    mut skies: Query<&mut Skybox>,
 ) {
-    let (Ok(star), Ok(eye), Ok(mut light)) = (star.single(), camera.single(), light.single_mut())
-    else {
+    let (Ok(star), Ok(mut light)) = (star.single(), light.single_mut()) else {
         return;
     };
-    let direction = dir(eye.0 - star.0);
+    let d = origin.origin - star.0;
+    let direction = origin
+        .render_direction(bevy::math::DVec3::new(d.x, d.y, d.z))
+        .normalize_or(Vec3::NEG_Z);
     if light.forward().dot(direction) < 0.999_999 {
         light.look_to(direction, Vec3::Y);
+    }
+    // Le shader lit le ciel avec `rotation⁻¹ × rayon` : rayon du rendu → direction absolue.
+    let sky_rotation = origin.orientation.inverse().as_quat();
+    for mut sky in &mut skies {
+        if sky.rotation != sky_rotation {
+            sky.rotation = sky_rotation;
+        }
     }
 }
