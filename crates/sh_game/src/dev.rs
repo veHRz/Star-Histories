@@ -288,6 +288,17 @@ enum Step {
     Thrust(f32),
     /// Demander l'amarrage (en vol) ou le départ (à quai), puis attendre l'arrivée.
     DockOrDepart,
+    /// Ouvrir la carte galactique (aux commandes) et attendre la vue Galaxie.
+    OpenMap,
+    /// Choisir ce système comme destination, sur la carte.
+    Route(&'static str),
+    /// Partir par ce mode, puis attendre l'arrivée aux commandes en vue Globale.
+    Depart(sh_sim::travel::TravelMode),
+    /// Noter la date (référence de [`Step::Expect`]).
+    Mark,
+    /// Vérifier qu'on est dans ce système et que la durée depuis la marque est dans
+    /// [min, max] heures.
+    Expect(&'static str, f64, f64),
 }
 
 const fn w(x: f32, y: f32, door: Option<&'static str>) -> Step {
@@ -323,6 +334,20 @@ const PORT_LOOP: &[Step] = &[
     w(-8.3, -3.0, None),
 ];
 
+/// `voyage` : Hexis → Cygnara par Portail, puis retour par l'hyperespace (critère de M3).
+const VOYAGE: &[Step] = &[
+    Step::Mark,
+    Step::OpenMap,
+    Step::Route("sys_cygnara"),
+    Step::Depart(sh_sim::travel::TravelMode::Portal),
+    Step::Expect("sys_cygnara", 2.0, 12.0),
+    Step::Mark,
+    Step::OpenMap,
+    Step::Route("sys_hexis"),
+    Step::Depart(sh_sim::travel::TravelMode::Hyperspace),
+    Step::Expect("sys_hexis", 15.0 * 24.0, 35.0 * 24.0),
+];
+
 /// Délai maximal d'une transition de vue (amarrage, départ) dans un scénario.
 const TRANSITION_SECONDS: f32 = 30.0;
 
@@ -346,6 +371,8 @@ struct Scenario {
     issued: Option<Option<ViewLevel>>,
     step_time: f32,
     views_seen: Vec<ViewLevel>,
+    mark: Option<crate::clock::GameClock>,
+    last_issue: f32,
     /// `fly_ship` : les phases de vol précèdent la marche.
     flight: Option<FlightCheck>,
     index: usize,
@@ -369,10 +396,14 @@ impl Plugin for ScenarioPlugin {
             "walk_ship" => (WALK_SHIP, None),
             "fly_ship" => (FLY_SHIP_WALK, Some(FlightCheck::default())),
             "port_loop" => (PORT_LOOP, None),
+            "voyage" => (VOYAGE, None),
             _ => (WALK_SHIP, None),
         };
-        if !matches!(name.as_str(), "walk_ship" | "fly_ship" | "port_loop") {
-            error!("SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop)");
+        if !matches!(
+            name.as_str(),
+            "walk_ship" | "fly_ship" | "port_loop" | "voyage"
+        ) {
+            error!("SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage)");
             app.add_systems(Startup, |mut exit: MessageWriter<AppExit>| {
                 exit.write(AppExit::error());
             });
@@ -384,6 +415,8 @@ impl Plugin for ScenarioPlugin {
             issued: None,
             step_time: 0.0,
             views_seen: Vec::new(),
+            mark: None,
+            last_issue: 0.0,
             flight,
             index: 0,
             best_distance: f32::MAX,
@@ -398,9 +431,17 @@ impl Plugin for ScenarioPlugin {
             Update,
             run_scenario
                 .before(crate::player::PlayerSystems)
-                .run_if(resource_exists::<crate::sector::ActiveSector>),
+                .run_if(scenario_can_run),
         );
     }
+}
+
+/// Un scénario joue à bord (un secteur est chargé) ou sur la carte.
+fn scenario_can_run(
+    sector: Option<Res<crate::sector::ActiveSector>>,
+    view: Option<Res<State<ViewLevel>>>,
+) -> bool {
+    sector.is_some() || view.is_some_and(|v| *v.get() == ViewLevel::Galaxy)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -424,10 +465,14 @@ fn run_scenario(
     )>,
     mut doors: Query<&mut crate::sector::doors::Door>,
     (sector, docked, view, sequence): (
-        Res<crate::sector::ActiveSector>,
+        Option<Res<crate::sector::ActiveSector>>,
         Option<Res<crate::sector::Docked>>,
         Res<State<ViewLevel>>,
         Option<Res<crate::transition::Sequence>>,
+    ),
+    travel: (
+        Option<Res<crate::clock::GameClock>>,
+        Option<Res<crate::voyage::Location>>,
     ),
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -436,6 +481,35 @@ fn run_scenario(
     scripted.0 = true;
     *intent = crate::player::PlayerIntent::default();
     *pilot = crate::ship::PilotIntent::default();
+    let current_view = *view.get();
+    // Étapes de la carte et des voyages : elles se jouent aussi sans joueur (vue Galaxie).
+    if let Some(&step) = scenario.steps.get(scenario.index)
+        && matches!(
+            step,
+            Step::OpenMap | Step::Route(_) | Step::Depart(_) | Step::Mark | Step::Expect(..)
+        )
+    {
+        let seated = player
+            .single()
+            .is_ok_and(|(_, c)| matches!(c.mode, crate::player::PlayerMode::Seated { .. }));
+        match voyage_step(
+            &mut scenario,
+            step,
+            current_view,
+            seated,
+            sequence.is_some(),
+            &mut commands,
+            time.delta_secs(),
+            &travel,
+        ) {
+            Ok(()) => {}
+            Err(message) => {
+                error!("scénario {} : {message}", scenario.name);
+                exit.write(AppExit::error());
+            }
+        }
+        return;
+    }
     let Ok((transform, controller)) = player.single() else {
         return;
     };
@@ -471,7 +545,8 @@ fn run_scenario(
             flight.walk_start = Some(pos.0);
         }
     }
-    if !controller.grounded && !scenario.started {
+    let seated_now = matches!(controller.mode, crate::player::PlayerMode::Seated { .. });
+    if !(controller.grounded || seated_now) && !scenario.started {
         return; // attend que le joueur soit posé (cellule prête, physique active)
     }
     if !scenario.started {
@@ -496,7 +571,6 @@ fn run_scenario(
         scenario.over_33ms += 1;
     }
 
-    let current_view = *view.get();
     if scenario.views_seen.last() != Some(&current_view) {
         scenario.views_seen.push(current_view);
     }
@@ -551,6 +625,7 @@ fn run_scenario(
             }
             return;
         }
+        Step::OpenMap | Step::Route(_) | Step::Depart(_) | Step::Mark | Step::Expect(..) => return,
         Step::SitAtHelm | Step::StandUp | Step::DockOrDepart => {
             let done = match step {
                 Step::SitAtHelm => seated,
@@ -604,7 +679,11 @@ fn run_scenario(
     // Repère du vaisseau ; amarré, ses cellules sont placées dans celui du quartier.
     let placement = docked
         .is_some()
-        .then(|| sector.sector.cells.iter().find_map(|c| c.placement))
+        .then(|| {
+            sector
+                .as_ref()
+                .and_then(|s| s.sector.cells.iter().find_map(|c| c.placement))
+        })
         .flatten();
     let target = placement.map_or(Vec3::new(x, 0.0, -y), |p| {
         crate::sector::v3(p.apply((x, 0.0, -y)))
@@ -699,4 +778,101 @@ fn fly_phase(
     flight.step += 1;
     flight.t = 0.0;
     Ok(flight.step == 5)
+}
+
+/// Une étape de carte ou de voyage. `Ok` : on continue (étape faite ou en cours).
+#[allow(clippy::too_many_arguments)]
+fn voyage_step(
+    scenario: &mut Scenario,
+    step: Step,
+    view: ViewLevel,
+    seated: bool,
+    in_transition: bool,
+    commands: &mut Commands,
+    dt: f32,
+    travel: &(
+        Option<Res<crate::clock::GameClock>>,
+        Option<Res<crate::voyage::Location>>,
+    ),
+) -> Result<(), String> {
+    let (clock, location) = travel;
+    let next = |scenario: &mut Scenario| {
+        scenario.index += 1;
+        scenario.issued = None;
+        scenario.step_time = 0.0;
+        scenario.last_issue = 0.0;
+    };
+    scenario.step_time += dt;
+    if scenario.step_time > TRANSITION_SECONDS {
+        return Err(format!(
+            "bloqué à l'étape {} ({step:?}, vue {view:?})",
+            scenario.index
+        ));
+    }
+    match step {
+        Step::Mark => {
+            scenario.mark = clock.as_ref().map(|c| (**c).clone());
+            next(scenario);
+        }
+        Step::OpenMap => {
+            // On réessaie chaque seconde : le contexte Pilotage s'active un frame après
+            // l'arrivée au siège, et la carte ne s'ouvre qu'aux commandes.
+            let retry = scenario.step_time - scenario.last_issue > 1.0;
+            if view == ViewLevel::Galaxy && !in_transition {
+                next(scenario);
+            } else if (scenario.issued.is_none() || retry)
+                && view == ViewLevel::Global
+                && seated
+                && !in_transition
+            {
+                scenario.issued = Some(Some(view));
+                scenario.last_issue = scenario.step_time;
+                commands.queue(crate::voyage::toggle_map);
+            }
+        }
+        Step::Route(dest) => {
+            let dest = sh_core::Id::<sh_data::Place>::new(dest).map_err(|e| e.to_string())?;
+            commands.queue(move |world: &mut World| {
+                let data = world.resource::<crate::data::Data>().clone();
+                if let Some(from) = world
+                    .get_resource::<crate::voyage::Location>()
+                    .map(|l| l.system.clone())
+                {
+                    world.insert_resource(crate::voyage::plan_route(&data, &from, &dest));
+                }
+            });
+            next(scenario);
+        }
+        Step::Depart(mode) => {
+            let arrived =
+                scenario.issued.is_some() && view == ViewLevel::Global && seated && !in_transition;
+            if arrived {
+                info!("scénario {} : arrivée après {mode:?}", scenario.name);
+                next(scenario);
+            } else if scenario.issued.is_none() && view == ViewLevel::Galaxy {
+                scenario.issued = Some(Some(view));
+                commands.queue(move |world: &mut World| crate::voyage::depart(world, mode));
+            }
+        }
+        Step::Expect(system, min, max) => {
+            let here = location.as_ref().map(|l| l.system.to_string());
+            let hours = match (clock, &scenario.mark) {
+                (Some(now), Some(mark)) => now.hours_since(mark),
+                _ => f64::NAN,
+            };
+            if here.as_deref() != Some(system) || !(min..=max).contains(&hours) {
+                return Err(format!(
+                    "attendu {system} en {min}–{max} h ; on est à {here:?} après {hours:.1} h"
+                ));
+            }
+            info!(
+                "scénario {} : {system} atteint en {hours:.1} h ({:.1} j)",
+                scenario.name,
+                hours / 24.0
+            );
+            next(scenario);
+        }
+        _ => next(scenario),
+    }
+    Ok(())
 }

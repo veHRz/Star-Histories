@@ -15,6 +15,7 @@ use crate::data::Data;
 use crate::sector::Docked;
 use crate::views::planet::{Look, planet_texture};
 use crate::views::sky::{SkyNebula, SkySpec, cube_image, render_sky};
+use crate::voyage::RoutePlan;
 
 pub struct ProceduralPlugin;
 
@@ -24,6 +25,7 @@ impl Plugin for ProceduralPlugin {
             Update,
             (
                 prewarm_departure.run_if(resource_exists::<Docked>),
+                prewarm_route.run_if(resource_exists::<RoutePlan>),
                 collect_ready,
             )
                 .chain()
@@ -133,20 +135,10 @@ pub fn make_planet(kind: PlacedKind, id: &str) -> Image {
     )
 }
 
-/// À quai : préparer le ciel et les astres du système où l'on repartira.
-fn prewarm_departure(data: Res<Data>, docked: Res<Docked>, mut cache: ResMut<Procedural>) {
-    let Some(scene) = data
-        .scenes
-        .iter()
-        .find(|s| s.docks.iter().any(|d| d.sector == docked.district))
-    else {
-        return;
-    };
-    let Some(system) = data.galaxy.system(&scene.system) else {
-        return;
-    };
+/// Prépare en tâche de fond le ciel et les astres d'un système.
+fn prewarm_system(data: &Data, cache: &mut Procedural, system: &StarSystem) {
     let shared = data.clone();
-    let id = scene.system.clone();
+    let id = system.id.clone();
     cache.prewarm(sky_key(Some(system)), move || {
         make_sky(&shared.galaxy, shared.galaxy.system(&id))
     });
@@ -161,6 +153,25 @@ fn prewarm_departure(data: Res<Data>, docked: Res<Docked>, mut cache: ResMut<Pro
             let kind = p.kind;
             cache.prewarm(planet_key(&id), move || make_planet(kind, &id));
         }
+    }
+}
+
+/// À quai : préparer le système où l'on repartira.
+fn prewarm_departure(data: Res<Data>, docked: Res<Docked>, mut cache: ResMut<Procedural>) {
+    let system = data
+        .scenes
+        .iter()
+        .find(|s| s.docks.iter().any(|d| d.sector == docked.district))
+        .and_then(|scene| data.galaxy.system(&scene.system));
+    if let Some(system) = system {
+        prewarm_system(&data, &mut cache, system);
+    }
+}
+
+/// Une destination est choisie sur la carte : préparer son système.
+fn prewarm_route(data: Res<Data>, route: Res<RoutePlan>, mut cache: ResMut<Procedural>) {
+    if let Some(system) = data.galaxy.system(&route.dest).filter(|s| !s.secret) {
+        prewarm_system(&data, &mut cache, system);
     }
 }
 

@@ -7,6 +7,7 @@
 use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResolution};
 
+pub mod clock;
 pub mod data;
 pub mod dev;
 #[cfg(feature = "dev")]
@@ -23,6 +24,7 @@ pub mod state;
 pub mod transition;
 pub mod ui;
 pub mod views;
+pub mod voyage;
 
 pub struct StarHistoriesPlugin;
 
@@ -41,6 +43,7 @@ impl Plugin for StarHistoriesPlugin {
         }))
         .add_plugins((
             state::StatePlugin,
+            clock::ClockPlugin,
             loading::LoadingPlugin,
             ui::UiPlugin,
             input::InputPlugin,
@@ -57,6 +60,7 @@ impl Plugin for StarHistoriesPlugin {
             interaction::InteractionPlugin,
             ship::ShipPlugin,
             transition::TransitionPlugin,
+            voyage::VoyagePlugin,
         ));
         #[cfg(feature = "dev")]
         app.add_plugins(dev_tools::DevToolsPlugin);

@@ -1,0 +1,44 @@
+// Mise en scène du système Cygnara en vue Globale, version brute (proposition P21).
+// Canon (§3.3) : planète-chantier, grand hub de Portails, Le Berceau en construction sous la
+// garde de la Flotte de la Libération. Les emplacements sont proposés.
+(
+    system: "sys_cygnara",
+    status: Proposition("P21"),
+    // Nom d'affichage validé par l'auteur (P11).
+    star_name: "Étoile de Cygnara",
+    structures: [
+        (
+            id: "cygnara_portal_hub",
+            kind: PortalHub,
+            name_key: "structure.cygnara_portal_hub",
+            around: "cygnara",
+            altitude_radii: 1.5,
+            angle_deg: 20.0,
+        model: "models/space/portal_hub.glb",
+        ),
+        (
+            id: "cygnara_shipyards",
+            kind: Shipyard,
+            name_key: "structure.cygnara_shipyards",
+            around: "cygnara",
+            altitude_radii: 1.5,
+            angle_deg: 24.0,
+            model: "models/space/shipyard.glb",
+        ),
+    ],
+    // Le Berceau, chantier de croiseurs inachevé : le modèle de L'Enclume en attendant le sien.
+    station_models: {
+        "le_berceau": "models/space/l_enclume.glb",
+    },
+    traffic: (
+        ships: 20,
+        model: "models/space/freighter.glb",
+        speed: 900.0,
+    ),
+    arrival: (
+        near: "cygnara_portal_hub",
+        distance: 25000.0,
+        azimuth_deg: -50.0,
+        elevation_deg: 12.0,
+    ),
+)

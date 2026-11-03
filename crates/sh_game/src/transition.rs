@@ -16,16 +16,22 @@ use bevy::world_serialization::WorldAsset;
 use bevy_enhanced_input::prelude::*;
 use sh_core::SpacePos;
 
+use crate::clock::{GameClock, format_date};
 use crate::data::{Data, Texts};
 use crate::input::Dock;
 use crate::player::{Player, PlayerController, PlayerMode};
 use crate::sector::gltf::Interactable;
 use crate::sector::streaming::{CellReady, CellStates};
-use crate::sector::{Aboard, ActiveSector, Docked, PendingAboard};
+use crate::sector::{ActiveSector, Docked, PendingAboard};
 use crate::ship::ShipMotion;
 use crate::space::{SpacePosition, SpaceRotation};
 use crate::state::{CurrentPlace, ViewLevel};
 use crate::ui::hud::Notice;
+use crate::ui::theme::{self, UiFonts};
+use crate::voyage::{Location, ResumeFlight, RoutePlan, ShipFuel};
+use sh_core::Id;
+use sh_data::{Place, StructureKind};
+use sh_sim::travel::{TravelMode, TravelPlan};
 
 pub struct TransitionPlugin;
 
@@ -51,6 +57,10 @@ const APPROACH_SECONDS: f32 = 5.0;
 const APPROACH_SPEED: f64 = 400.0;
 /// Durée d'un fondu (s).
 const FADE_SECONDS: f32 = 0.5;
+/// Durée minimale d'affichage de la carte de chargement d'un voyage (s).
+const CARD_SECONDS: f32 = 1.6;
+/// À l'arrivée par Portail, le vaisseau sort à cette distance du hub (m).
+const PORTAL_EXIT_DISTANCE: f64 = 6000.0;
 /// Au départ, le vaisseau réapparaît à cette distance de la balise (m).
 const DEPARTURE_DISTANCE: f64 = 2500.0;
 
@@ -86,8 +96,19 @@ pub enum Sequence {
         system: String,
         keep: Vec<UntypedHandle>,
     },
+    /// Voyage interstellaire depuis la carte : fondu, carte de chargement, la date avance, et
+    /// l'on arrive en vue Globale à destination.
+    Travel {
+        dest: Id<Place>,
+        plan: TravelPlan,
+        t: f32,
+        card: Entity,
+    },
     /// Le fondu se lève quand la cellule du joueur est prête.
-    Arriving { keep: Vec<UntypedHandle> },
+    Arriving {
+        keep: Vec<UntypedHandle>,
+        card: Option<Entity>,
+    },
 }
 
 /// Le voile noir des transitions : opacité courante et visée.
@@ -240,15 +261,6 @@ fn preload(world: &World, sectors: &[&str]) -> Vec<UntypedHandle> {
     handles
 }
 
-/// La place à bord qu'on reprend après une transition : aux commandes.
-fn helm_aboard(data: &Data) -> Option<Aboard> {
-    let start = data.start()?;
-    Some(Aboard {
-        spawn: start.aboard_spawn.clone(),
-        seat_role: Some("pilot".into()),
-    })
-}
-
 #[allow(clippy::too_many_arguments)]
 fn run_sequence(
     mut commands: Commands,
@@ -263,6 +275,7 @@ fn run_sequence(
     mut ships: Query<(&mut SpacePosition, &mut SpaceRotation, &mut ShipMotion)>,
     mut place: ResMut<CurrentPlace>,
     mut view: ResMut<NextState<ViewLevel>>,
+    mut travel: (ResMut<GameClock>, Option<ResMut<ShipFuel>>),
 ) {
     let Some(mut sequence) = sequence else {
         return;
@@ -297,18 +310,18 @@ fn run_sequence(
                 fade.target = 1.0;
             }
             if *t >= APPROACH_SECONDS && fade.alpha >= 0.999 {
-                if let Some(aboard) = helm_aboard(&data) {
+                if let Some(aboard) = crate::voyage::helm_aboard(&data) {
                     commands.insert_resource(PendingAboard(aboard));
                 }
                 place.0 = Some(target.clone());
                 view.set(ViewLevel::Sector);
                 let keep = std::mem::take(keep);
-                *sequence = Sequence::Arriving { keep };
+                *sequence = Sequence::Arriving { keep, card: None };
             }
         }
         Sequence::Departing { near, system, keep } => {
             if fade.alpha >= 0.999 {
-                if let Some(aboard) = helm_aboard(&data) {
+                if let Some(aboard) = crate::voyage::helm_aboard(&data) {
                     commands.insert_resource(PendingAboard(aboard));
                 }
                 commands.insert_resource(ArrivalRequest {
@@ -318,10 +331,55 @@ fn run_sequence(
                 place.0 = Some(system.clone());
                 view.set(ViewLevel::Global);
                 let keep = std::mem::take(keep);
-                *sequence = Sequence::Arriving { keep };
+                *sequence = Sequence::Arriving { keep, card: None };
             }
         }
-        Sequence::Arriving { .. } => {
+        Sequence::Travel {
+            dest,
+            plan,
+            t,
+            card,
+        } => {
+            *t += time.delta_secs();
+            fade.target = 1.0;
+            if fade.alpha >= 0.999 && *t >= CARD_SECONDS {
+                travel.0.advance_hours(plan.hours);
+                if let Some(fuel) = travel.1.as_mut() {
+                    fuel.units = (fuel.units - plan.fuel).max(0.0);
+                }
+                commands.insert_resource(Location {
+                    system: dest.clone(),
+                });
+                commands.remove_resource::<ResumeFlight>();
+                commands.remove_resource::<RoutePlan>();
+                // Par Portail, on sort près du hub d'arrivée ; par l'hyperespace, à l'arrivée
+                // habituelle du système.
+                let hub = data.scene(dest).and_then(|s| {
+                    s.structures
+                        .iter()
+                        .find(|st| st.kind == StructureKind::PortalHub)
+                });
+                if plan.mode == TravelMode::Portal
+                    && let Some(hub) = hub
+                {
+                    commands.insert_resource(ArrivalRequest {
+                        near: hub.id.clone(),
+                        distance: PORTAL_EXIT_DISTANCE,
+                    });
+                }
+                if let Some(aboard) = crate::voyage::helm_aboard(&data) {
+                    commands.insert_resource(PendingAboard(aboard));
+                }
+                place.0 = Some(dest.to_string());
+                view.set(ViewLevel::Global);
+                let card = Some(*card);
+                *sequence = Sequence::Arriving {
+                    keep: Vec::new(),
+                    card,
+                };
+            }
+        }
+        Sequence::Arriving { card, .. } => {
             // Le voile se lève quand le joueur est à sa place, cellule prête.
             let seated = player
                 .single()
@@ -332,10 +390,101 @@ fn run_sequence(
                 .is_some_and(|c| cells.is_local_ready(c, &ready));
             if sector.is_some() && seated && cell_ready {
                 fade.target = 0.0;
+                if let Some(card) = card.take() {
+                    commands.entity(card).despawn();
+                }
                 if fade.alpha <= 0.001 {
                     commands.remove_resource::<Sequence>();
                 }
             }
         }
     }
+}
+
+/// Lance un voyage : la carte de chargement s'affiche sur le voile, puis la vue Globale de la
+/// destination (voir [`Sequence::Travel`]).
+pub fn start_travel(world: &mut World, dest: Id<Place>, plan: TravelPlan) {
+    let data = world.resource::<Data>().clone();
+    let texts = world.resource::<Texts>().clone();
+    let fonts = world.resource::<UiFonts>().clone();
+    let Some(system) = data.galaxy.system(&dest).filter(|s| !s.secret) else {
+        return;
+    };
+    let mut arrival = world.resource::<GameClock>().clone();
+    arrival.advance_hours(plan.hours);
+    let mode = match plan.mode {
+        TravelMode::Portal => texts.format(
+            "travel.card.portal",
+            &[
+                ("hours", &format!("{:.0}", plan.hours)),
+                ("jumps", &(plan.hubs.len().saturating_sub(1)).to_string()),
+                ("toll", &(plan.toll.cents / 100).to_string()),
+            ],
+        ),
+        TravelMode::Hyperspace => texts.format(
+            "travel.card.hyperspace",
+            &[("days", &format!("{:.0}", plan.days().ceil()))],
+        ),
+    };
+    let controller = system
+        .controller
+        .as_ref()
+        .and_then(|f| data.faction(f))
+        .map_or_else(|| texts.get("map.tip.no_controller"), |f| f.name.clone());
+    let info = texts.format(
+        "travel.card.info",
+        &[
+            ("cell", &system.cell.to_string()),
+            ("controller", &controller),
+        ],
+    );
+    let tip = texts.get(&format!(
+        "travel.tip.{}",
+        arrival.date.day_index().rem_euclid(3)
+    ));
+    let line = |text: String, size: f32, color: Color| {
+        (Text::new(text), fonts.body(size), TextColor(color))
+    };
+    let card = world
+        .spawn((
+            Name::new("Carte de chargement du voyage"),
+            Node {
+                position_type: PositionType::Absolute,
+                width: percent(100),
+                height: percent(100),
+                flex_direction: FlexDirection::Column,
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                row_gap: px(10),
+                ..default()
+            },
+            GlobalZIndex(i32::MAX),
+            Pickable::IGNORE,
+            children![
+                (
+                    Text::new(system.name.clone()),
+                    fonts.title(40.0),
+                    TextColor(theme::TEXT)
+                ),
+                line(mode, 20.0, theme::ACCENT),
+                line(
+                    texts.format(
+                        "travel.card.arrival",
+                        &[("date", &format_date(&texts, arrival.date))]
+                    ),
+                    18.0,
+                    theme::TEXT,
+                ),
+                line(info, 16.0, theme::TEXT_DIM),
+                line(tip, 15.0, theme::TEXT_DIM),
+            ],
+        ))
+        .id();
+    world.insert_resource(Sequence::Travel {
+        dest,
+        plan,
+        t: 0.0,
+        card,
+    });
+    world.resource_mut::<Fade>().target = 1.0;
 }

@@ -27,6 +27,7 @@ use crate::transition::{ArrivalRequest, DockBeacon};
 use crate::ui::theme::{self, UiFonts};
 use crate::views::procedural::{Procedural, make_planet, make_sky, planet_key, sky_key};
 use crate::views::{WorldLabel, view_banner};
+use crate::voyage::{Location, ResumeFlight};
 
 pub struct GlobalViewPlugin;
 
@@ -114,6 +115,7 @@ fn spawn_global(
     mut images: ResMut<Assets<Image>>,
     sector: Option<Res<ActiveSector>>,
     request: Option<Res<ArrivalRequest>>,
+    resume: Option<Res<ResumeFlight>>,
     mut cache: ResMut<Procedural>,
 ) {
     let g = &data.galaxy;
@@ -121,6 +123,16 @@ fn spawn_global(
     let place_id = place.0.clone().unwrap_or_else(|| "test".into());
     let system = system_of(g, &place_id).filter(|s| !s.secret);
     let scene = system.and_then(|s| data.scene(&s.id));
+    if let Some(system) = system {
+        commands.insert_resource(Location {
+            system: system.id.clone(),
+        });
+    }
+    // Retour de la carte : le vaisseau reprend sa pose dans le même système.
+    let resume = resume
+        .filter(|r| system.is_some_and(|s| s.id == r.system))
+        .map(|r| (r.pos, r.rot));
+    commands.remove_resource::<ResumeFlight>();
     let sky = cache.get(&sky_key(system), &mut images, || make_sky(g, system));
     commands.insert_resource(GlobalAmbientLight {
         color: Color::srgb(0.6, 0.7, 0.9),
@@ -397,9 +409,10 @@ fn spawn_global(
     // référentiel de l'origine flottante.
     match sector {
         Some(sector) => {
+            let (eye, rotation) = resume.unwrap_or((eye, facing(look)));
             commands.entity(sector.root).insert((
                 SpacePosition(eye),
-                SpaceRotation(facing(look)),
+                SpaceRotation(rotation),
                 PositionDriver::Frame,
                 ShipMotion::default(),
             ));

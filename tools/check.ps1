@@ -84,4 +84,15 @@ Step "scénario port_loop" {
     $global:LASTEXITCODE = $code
 }
 
+# Critère de M3 : Hexis → Cygnara par Portail, retour par l'hyperespace, durées vérifiées.
+Step "scénario voyage" {
+    $env:SH_START = "global:hexis"
+    $env:SH_SCENARIO = "voyage"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_START, Env:SH_SCENARIO
+    $log | Select-String -Pattern "ERROR|panicked|sc.{1,3}nario voyage : sys_|sc.{1,3}nario .*termin" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
 Write-Host "Tout est vert." -ForegroundColor Green

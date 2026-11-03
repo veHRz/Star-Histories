@@ -111,6 +111,16 @@ pub struct Boost;
 #[action_output(bool)]
 pub struct Dock;
 
+/// Carte : partir vers la destination choisie par les Portails.
+#[derive(InputAction)]
+#[action_output(bool)]
+pub struct TravelPortal;
+
+/// Carte : partir vers la destination choisie par l'hyperespace.
+#[derive(InputAction)]
+#[action_output(bool)]
+pub struct TravelHyperspace;
+
 /// Bascule vol assisté / découplé.
 #[derive(InputAction)]
 #[action_output(bool)]
@@ -260,6 +270,12 @@ fn spawn_contexts(mut commands: Commands) {
             --
             Action::<Select>::new()
             Bindings [ Binding(MouseButton::Left) -- Binding(GamepadButton::South) ]
+            --
+            Action::<TravelPortal>::new()
+            Bindings [ Binding(KeyCode::Digit1) ]
+            --
+            Action::<TravelHyperspace>::new()
+            Bindings [ Binding(KeyCode::Digit2) ]
             --
             Action::<ToggleMap>::new()
             Bindings [ Binding(KeyCode::KeyM) -- Binding(GamepadButton::Select) ]

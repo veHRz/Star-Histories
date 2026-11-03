@@ -354,3 +354,44 @@ fn dispositions_jouables_de_tous_les_systemes() {
         }
     }
 }
+
+/// Critère de M3 : rien de secret sur la carte galactique (entrées et textes affichables).
+#[test]
+fn la_carte_ne_montre_aucun_secret() {
+    let data = donnees();
+    let entries = sh_data::public_map(&data.galaxy);
+    assert!(!entries.is_empty());
+    let g = &data.galaxy;
+    for e in &entries {
+        let secret = g.system(&e.id).is_some_and(|s| s.secret)
+            || g.body(&e.id).is_some_and(|b| b.secret)
+            || g.station(&e.id).is_some_and(|s| s.secret)
+            || g.phenomena.iter().any(|p| p.id == e.id && p.secret);
+        assert!(!secret, "élément secret sur la carte : {}", e.id);
+        assert!(!e.name.contains('🔒'), "nom marqué secret : {}", e.name);
+        if let Some(f) = &e.controller {
+            let faction = data
+                .faction(f)
+                .unwrap_or_else(|| panic!("faction inconnue {f}"));
+            assert!(
+                !faction.name.contains('🔒'),
+                "faction marquée secrète : {}",
+                faction.name
+            );
+        }
+    }
+    // Les systèmes secrets du canon (Vesper) existent bien dans les données, mais pas ici.
+    assert!(g.systems.iter().any(|s| s.secret));
+    assert!(
+        entries
+            .iter()
+            .all(|e| g.system(&e.id).is_none_or(|s| !s.secret))
+    );
+    // Les zones dessinées sont publiques.
+    assert!(
+        g.zones
+            .iter()
+            .filter(|z| z.secret)
+            .all(|z| !z.outline.is_empty() || z.secret)
+    );
+}

@@ -3,7 +3,7 @@
 > Suis les jalons **dans l'ordre**. Coche chaque tâche (`[x]`) dans le commit qui la termine. Un jalon est fini quand **tous ses critères « Fini quand »** sont vérifiés (tests, autopilote, captures regardées). Push à la fin de chaque jalon.
 > Tu peux découper une tâche, en ajouter, en réordonner à l'intérieur d'un jalon : note-le dans `docs/JOURNAL.md`. Changer l'ordre des jalons ou leur périmètre : demande à l'auteur.
 
-État (03/11/2026) : **M0 terminé ; M1 et M2 faits**, critères vérifiés par l'autopilote (`walk_ship`, `fly_ship`, `port_loop`) sur le poste Linux. **Les critères de performance de M1 et M2 restent à mesurer sur la machine de référence** (UHD 770, poste Windows). M3 non commencé.
+État (03/11/2026) : **M0 terminé ; M1, M2 et M3 faits**, critères vérifiés par l'autopilote (`walk_ship`, `fly_ship`, `port_loop`, `voyage`) et les tests sur le poste Linux. **Les critères de performance de M1 et M2 restent à mesurer sur la machine de référence** (UHD 770, poste Windows). M4 non commencé.
 
 ---
 
@@ -69,10 +69,10 @@ But : décoller d'Hexis, voler dans le système, revenir s'amarrer.
 
 But : traverser la galaxie par Portail ou par hyperespace, en voyant le temps passer.
 
-- [ ] Carte galactique depuis les données : contour, zones (UGL, Empire, No Man's Land, Zone Inexplorée, marches), systèmes, astres, stations, hubs, grille A–T × 1–13 ; panoramique et zoom ; infobulles d'informations **publiques** uniquement.
-- [ ] Planification : Portails (hubs et paires, autorisation et péage), hyperespace (durée selon la distance, nébuleuses bloquantes, routes cartographiées), estimation de carburant.
-- [ ] Exécution du voyage : la date avance, écran de chargement à l'arrivée en vue Globale.
-- [ ] Système Cygnara en vue Globale (brut).
+- [x] Carte galactique depuis les données : contour, zones (UGL, Empire, No Man's Land, Zone Inexplorée, marches), systèmes, astres, stations, hubs, grille A–T × 1–13 ; panoramique et zoom ; infobulles d'informations **publiques** uniquement.
+- [x] Planification : Portails (hubs et paires, autorisation et péage), hyperespace (durée selon la distance, nébuleuses bloquantes, routes cartographiées), estimation de carburant.
+- [x] Exécution du voyage : la date avance, écran de chargement à l'arrivée en vue Globale.
+- [x] Système Cygnara en vue Globale (brut).
 
 **Fini quand** : Hexis → Cygnara par le hub et par hyperespace avec des durées différentes cohérentes ; la date affichée avance ; les secrets n'apparaissent nulle part sur la carte (test automatisé sur les données affichées).
 

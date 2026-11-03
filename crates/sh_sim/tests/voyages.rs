@@ -27,7 +27,11 @@ fn hexis_cygnara_par_portail_et_par_hyperespace() {
     assert_eq!(portal.hubs.len(), 2, "un seul passage");
     assert!(portal.hours <= 12.0, "Portail : {} h", portal.hours);
     // ≈ 80 unités de carte : environ trois semaines (≈ 3 jours entre voisins, §2.2).
-    assert!((15.0..=35.0).contains(&hyper.days()), "hyperespace : {} j", hyper.days());
+    assert!(
+        (15.0..=35.0).contains(&hyper.days()),
+        "hyperespace : {} j",
+        hyper.days()
+    );
     assert!(hyper.feasible && portal.feasible);
     assert!(hyper.hours > 20.0 * portal.hours);
 }
@@ -55,7 +59,17 @@ fn aucun_plan_vers_un_systeme_secret() {
     let hexis = lieu("sys_hexis");
     for secret in d.galaxy.systems.iter().filter(|s| s.secret) {
         assert!(hyperspace_plan(&d.galaxy, &d.travel, ship, &hexis, &secret.id).is_none());
-        assert!(portal_plan(&d.galaxy, &d.portal_links, &d.travel, ship, &hexis, &secret.id).is_none());
+        assert!(
+            portal_plan(
+                &d.galaxy,
+                &d.portal_links,
+                &d.travel,
+                ship,
+                &hexis,
+                &secret.id
+            )
+            .is_none()
+        );
     }
 }
 
@@ -76,5 +90,8 @@ fn le_croissant_se_contourne() {
             }
         }
     }
-    assert!(detours > 0, "aucun trajet ne traverse une nébuleuse bloquante");
+    assert!(
+        detours > 0,
+        "aucun trajet ne traverse une nébuleuse bloquante"
+    );
 }

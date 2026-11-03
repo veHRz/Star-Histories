@@ -21,6 +21,7 @@ pub mod factions;
 pub mod galaxy;
 pub mod lang;
 pub mod layout;
+pub mod map;
 pub mod scene;
 pub mod sector;
 pub mod settings;
@@ -38,6 +39,7 @@ pub use galaxy::{
 };
 pub use lang::Lang;
 pub use layout::{Placed, PlacedKind, system_layout};
+pub use map::{MapEntry, MapKind, entry_at, public_map};
 pub use scene::{Arrival, DockPort, Structure, StructureKind, SystemScene, Traffic};
 pub use sector::{
     Cell, DockError, Placement, Portal, PortalKind, Sector, SectorKind, Spawn, dock, is_external,

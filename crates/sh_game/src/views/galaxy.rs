@@ -1,15 +1,20 @@
-//! Vue Galaxie — version de test (M0).
+//! Vue Galaxie : la carte d'Astréa (M3).
 //!
-//! Affiche la carte canon d'Astréa depuis les données : ellipse de la galaxie, grille A–T × 1–13,
-//! contours des zones, systèmes, astres isolés, stations, phénomènes. Les entrées secrètes ne sont
-//! jamais dessinées. Repère : 1 unité de carte = 1 unité du monde, x vers l'est, y de la carte
-//! vers le sud (+z), nord en haut de l'écran.
+//! Tout ce qui s'affiche vient de `sh_data::public_map` : rien de secret, ni élément ni texte
+//! (règle d'or n°3 ; test `la_carte_ne_montre_aucun_secret`). Ellipse de la galaxie, grille
+//! A–T × 1–13 et ses repères, contours des zones, systèmes, astres isolés, stations,
+//! phénomènes ; la position du vaisseau ; une infobulle au survol (champs publics seulement) ;
+//! un clic choisit une destination et affiche ses itinéraires ([`crate::voyage`]).
+//!
+//! Repère : 1 unité de carte = 1 unité du monde, x vers l'est, y de la carte vers le sud (+z),
+//! nord en haut de l'écran.
 
 use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
 use bevy_enhanced_input::prelude::*;
 use sh_core::MapPos;
 use sh_core::grid::{CELL_SIZE, COLUMNS, MAP_HEIGHT, MAP_WIDTH, ROWS};
-use sh_data::{BodyKind, Faction};
+use sh_data::{Faction, MapEntry, MapKind, entry_at, public_map};
 
 use crate::data::{Data, Texts};
 use crate::graphics::WorldCamera;
@@ -17,6 +22,7 @@ use crate::input::{Pan, Zoom};
 use crate::state::{ControlMode, ViewLevel};
 use crate::ui::theme::{self, UiFonts};
 use crate::views::{WorldLabel, view_banner};
+use crate::voyage::{HoveredEntry, Location, RoutePlan, ShipFuel};
 
 pub struct GalaxyViewPlugin;
 
@@ -25,7 +31,15 @@ impl Plugin for GalaxyViewPlugin {
         app.add_systems(OnEnter(ViewLevel::Galaxy), spawn_galaxy)
             .add_systems(
                 Update,
-                (pan_and_zoom, draw_map_lines).run_if(in_state(ViewLevel::Galaxy)),
+                (
+                    pan_and_zoom,
+                    hover,
+                    show_tooltip,
+                    show_route,
+                    draw_map_lines,
+                )
+                    .chain()
+                    .run_if(in_state(ViewLevel::Galaxy)),
             );
     }
 }
@@ -35,12 +49,30 @@ const CENTER: Vec2 = Vec2::new(500.0, 330.0);
 const MIN_HEIGHT: f32 = 60.0;
 const MAX_HEIGHT: f32 = 1400.0;
 
+/// Les entrées de la carte (calculées une fois à l'entrée de la vue).
+#[derive(Resource)]
+struct MapEntries(Vec<MapEntry>);
+
+/// Survol imposé par l'autopilote (`SH_HOVER`) : il remplace le curseur.
+#[derive(Resource)]
+struct ForcedHover(Option<MapEntry>);
+
+#[derive(Component)]
+struct Tooltip;
+
+#[derive(Component)]
+struct RoutePanel;
+
 /// Position du monde d'un point de la carte.
 fn world(pos: MapPos) -> Vec3 {
     Vec3::new(pos.x as f32 - CENTER.x, 0.0, pos.y as f32 - CENTER.y)
 }
 
-/// Couleur d'affiliation (lisibilité de la vue de test, pas une charte).
+fn map_pos(world: Vec3) -> MapPos {
+    MapPos::new(f64::from(world.x + CENTER.x), f64::from(world.z + CENTER.y))
+}
+
+/// Couleur d'affiliation (lisibilité de la carte, pas une charte).
 fn faction_color(faction: Option<&sh_core::Id<Faction>>) -> Color {
     match faction.map(|f| f.as_str()) {
         Some("ugl" | "fou" | "fdu") => Color::srgb(0.35, 0.62, 1.0),
@@ -54,17 +86,32 @@ fn faction_color(faction: Option<&sh_core::Id<Faction>>) -> Color {
     }
 }
 
+/// Population lisible : « 3.4 billion », « 250 million ».
+fn population_text(texts: &Texts, n: u64) -> String {
+    let n = n as f64;
+    if n >= 1e9 {
+        texts.format("map.unit.billion", &[("value", &format!("{:.1}", n / 1e9))])
+    } else if n >= 1e6 {
+        texts.format("map.unit.million", &[("value", &format!("{:.0}", n / 1e6))])
+    } else {
+        format!("{n:.0}")
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn spawn_galaxy(
     mut commands: Commands,
     data: Res<Data>,
     texts: Res<Texts>,
     fonts: Res<UiFonts>,
+    location: Option<Res<Location>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut mode: ResMut<NextState<ControlMode>>,
 ) {
     mode.set(ControlMode::Map);
     let g = &data.galaxy;
+    let entries = public_map(g);
     let unlit = |color: Color| StandardMaterial {
         base_color: color,
         unlit: true,
@@ -76,6 +123,11 @@ fn spawn_galaxy(
         ..default()
     };
 
+    // Caméra centrée sur le vaisseau.
+    let location_id = location.as_ref().map(|l| l.system.clone());
+    let here = location
+        .and_then(|l| g.system(&l.system).map(|s| world(s.center)))
+        .unwrap_or(Vec3::ZERO);
     commands.spawn((
         Name::new("Caméra de la carte"),
         SCOPE,
@@ -85,7 +137,7 @@ fn spawn_galaxy(
             clear_color: ClearColorConfig::Custom(Color::srgb(0.01, 0.012, 0.02)),
             ..default()
         },
-        Transform::from_xyz(0.0, 780.0, 0.0).looking_at(Vec3::ZERO, Vec3::NEG_Z),
+        Transform::from_translation(here + Vec3::Y * 420.0).looking_at(here, Vec3::NEG_Z),
     ));
 
     // La galaxie : une ellipse (§3.1).
@@ -103,71 +155,112 @@ fn spawn_galaxy(
 
     let sphere = meshes.add(Sphere::new(1.0).mesh().uv(24, 12));
     let cube = meshes.add(Cuboid::new(1.0, 1.0, 1.0));
-
-    for system in g.systems.iter().filter(|s| !s.secret) {
-        let color = faction_color(system.controller.as_ref());
-        let pos = world(system.center);
-        commands.spawn((
-            Name::new(system.name.clone()),
-            SCOPE,
-            Mesh3d(sphere.clone()),
-            MeshMaterial3d(materials.add(unlit(color))),
-            Transform::from_translation(pos).with_scale(Vec3::splat(4.0)),
-        ));
-        commands.spawn(label(&fonts, &system.name, pos, theme::TEXT));
-    }
-
-    for body in g
-        .bodies
-        .iter()
-        .filter(|b| !b.secret && b.system.is_none() && b.kind != BodyKind::Star)
-    {
-        let Some(pos) = body.pos else { continue };
-        let color = if body.destroyed {
+    for entry in &entries {
+        let pos = world(entry.pos);
+        let color = if entry.destroyed {
             Color::srgb(0.30, 0.30, 0.32)
         } else {
-            faction_color(body.controller.as_ref())
+            faction_color(entry.controller.as_ref())
         };
-        let pos = world(pos);
-        commands.spawn((
-            Name::new(body.name.clone()),
-            SCOPE,
-            Mesh3d(sphere.clone()),
-            MeshMaterial3d(materials.add(unlit(color))),
-            Transform::from_translation(pos).with_scale(Vec3::splat(2.6)),
-        ));
-        commands.spawn(label(&fonts, &body.name, pos, theme::TEXT_DIM));
-    }
-
-    for station in g
-        .stations
-        .iter()
-        .filter(|s| !s.secret && s.system.is_none())
-    {
-        let pos = world(station.pos);
-        commands.spawn((
-            Name::new(station.name.clone()),
-            SCOPE,
-            Mesh3d(cube.clone()),
-            MeshMaterial3d(materials.add(unlit(faction_color(station.controller.as_ref())))),
-            Transform::from_translation(pos).with_scale(Vec3::splat(3.4)),
-        ));
-        commands.spawn(label(&fonts, &station.name, pos, theme::TEXT_DIM));
-    }
-
-    for phenomenon in g.phenomena.iter().filter(|p| !p.secret) {
-        let (Some(pos), Some(radius)) = (phenomenon.pos, phenomenon.radius) else {
-            continue;
+        let (mesh, scale, label_color, transform) = match entry.kind {
+            MapKind::System => (sphere.clone(), 4.0, theme::TEXT, None),
+            MapKind::Body => (sphere.clone(), 2.6, theme::TEXT_DIM, None),
+            MapKind::Station => (cube.clone(), 3.4, theme::TEXT_DIM, None),
+            MapKind::Phenomenon => {
+                let Some(radius) = entry.radius else { continue };
+                (
+                    meshes.add(Circle::new(radius as f32)),
+                    1.0,
+                    theme::TEXT_DIM,
+                    Some(
+                        Transform::from_translation(pos - Vec3::Y * 0.5)
+                            .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
+                    ),
+                )
+            }
+        };
+        let material = if entry.kind == MapKind::Phenomenon {
+            materials.add(unlit(Color::srgba(0.55, 0.25, 0.70, 0.35)))
+        } else {
+            materials.add(unlit(color))
         };
         commands.spawn((
-            Name::new(phenomenon.name.clone()),
+            Name::new(entry.name.clone()),
             SCOPE,
-            Mesh3d(meshes.add(Circle::new(radius as f32))),
-            MeshMaterial3d(materials.add(unlit(Color::srgba(0.55, 0.25, 0.70, 0.35)))),
-            Transform::from_translation(world(pos) - Vec3::Y * 0.5)
-                .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
+            Mesh3d(mesh),
+            MeshMaterial3d(material),
+            transform.unwrap_or(Transform::from_translation(pos).with_scale(Vec3::splat(scale))),
+        ));
+        commands.spawn(label(&fonts, &entry.name, pos, label_color, 13.0));
+    }
+
+    // Repères de la grille : lettres en haut, chiffres à gauche.
+    for col in 0..COLUMNS {
+        let x = (f64::from(col) + 0.5) * CELL_SIZE;
+        let letter = char::from(b'A' + col).to_string();
+        commands.spawn(label(
+            &fonts,
+            &letter,
+            world(MapPos::new(x, 4.0)),
+            theme::TEXT_DIM,
+            12.0,
         ));
     }
+    for row in 0..ROWS {
+        let y = (f64::from(row) + 0.5) * CELL_SIZE;
+        let number = (row + 1).to_string();
+        commands.spawn(label(
+            &fonts,
+            &number,
+            world(MapPos::new(4.0, y)),
+            theme::TEXT_DIM,
+            12.0,
+        ));
+    }
+
+    // Infobulle et panneau d'itinéraire.
+    commands.spawn((
+        SCOPE,
+        Tooltip,
+        Text::new(""),
+        fonts.body(14.0),
+        TextColor(theme::TEXT),
+        Node {
+            position_type: PositionType::Absolute,
+            padding: UiRect::axes(px(10), px(6)),
+            ..default()
+        },
+        BackgroundColor(theme::PANEL),
+        Visibility::Hidden,
+    ));
+    commands.spawn((
+        SCOPE,
+        RoutePanel,
+        Text::new(""),
+        fonts.body(16.0),
+        TextColor(theme::TEXT),
+        Node {
+            position_type: PositionType::Absolute,
+            left: px(20),
+            bottom: px(20),
+            padding: UiRect::axes(px(14), px(10)),
+            ..default()
+        },
+        BackgroundColor(theme::PANEL),
+    ));
+    // Autopilote (captures) : `SH_HOVER=<système>` simule le survol, `SH_ROUTE=<système>` pose
+    // un itinéraire.
+    let pick = |var: &str| {
+        let id = std::env::var(var).ok()?;
+        entries.iter().find(|e| e.id.as_str() == id).cloned()
+    };
+    let forced_hover = pick("SH_HOVER");
+    if let (Some(dest), Some(here)) = (pick("SH_ROUTE"), location_id) {
+        commands.insert_resource(crate::voyage::plan_route(&data, &here, &dest.id));
+    }
+    commands.insert_resource(ForcedHover(forced_hover.clone()));
+    commands.insert_resource(HoveredEntry(forced_hover));
+    commands.insert_resource(MapEntries(entries));
 
     commands.spawn(view_banner(
         &texts,
@@ -178,12 +271,12 @@ fn spawn_galaxy(
     ));
 }
 
-fn label(fonts: &UiFonts, name: &str, anchor: Vec3, color: Color) -> impl Bundle {
+fn label(fonts: &UiFonts, name: &str, anchor: Vec3, color: Color, size: f32) -> impl Bundle {
     (
         SCOPE,
         WorldLabel::At(anchor),
         Text::new(name),
-        fonts.body(13.0),
+        fonts.body(size),
         TextColor(color),
         Node {
             position_type: PositionType::Absolute,
@@ -211,8 +304,146 @@ fn pan_and_zoom(
     }
 }
 
-/// Grille A–T × 1–13, contours des zones et bord du repère (gizmos, redessinés chaque frame).
-fn draw_map_lines(mut gizmos: Gizmos, data: Res<Data>) {
+/// L'entrée sous le curseur : rayon de la caméra jusqu'au plan de la carte.
+fn hover(
+    window: Single<&Window, With<PrimaryWindow>>,
+    camera: Single<(&Camera, &GlobalTransform, &Transform), With<WorldCamera>>,
+    entries: Res<MapEntries>,
+    forced: Res<ForcedHover>,
+    mut hovered: ResMut<HoveredEntry>,
+) {
+    if forced.0.is_some() {
+        return;
+    }
+    let (camera, camera_transform, transform) = *camera;
+    let found = window.cursor_position().and_then(|cursor| {
+        // Avec l'échelle de rendu, la caméra dessine dans une image plus petite que la fenêtre.
+        let scale = camera
+            .logical_viewport_size()
+            .map_or(Vec2::ONE, |size| size / window.size().max(Vec2::ONE));
+        let ray = camera
+            .viewport_to_world(camera_transform, cursor * scale)
+            .ok()?;
+        let t = ray.intersect_plane(Vec3::ZERO, InfinitePlane3d::new(Vec3::Y))?;
+        // Portée de survol proportionnelle à l'altitude : ≈ 12 pixels à l'écran.
+        let reach = f64::from(transform.translation.y) * 0.025;
+        entry_at(&entries.0, map_pos(ray.get_point(t)), reach).cloned()
+    });
+    if hovered.0 != found {
+        hovered.0 = found;
+    }
+}
+
+fn show_tooltip(
+    data: Res<Data>,
+    texts: Res<Texts>,
+    hovered: Res<HoveredEntry>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    mut tooltip: Single<(&mut Text, &mut Node, &mut Visibility), With<Tooltip>>,
+) {
+    let (text, node, visibility) = &mut *tooltip;
+    let Some(entry) = &hovered.0 else {
+        **visibility = Visibility::Hidden;
+        return;
+    };
+    // Sous le curseur ; sans curseur (autopilote), au centre de l'écran.
+    let cursor = window.cursor_position().unwrap_or(window.size() / 2.0);
+    node.left = px(cursor.x + 16.0);
+    node.top = px(cursor.y + 12.0);
+    let kind = match entry.kind {
+        MapKind::System => "map.tip.kind.system",
+        MapKind::Body => "map.tip.kind.body",
+        MapKind::Station => "map.tip.kind.station",
+        MapKind::Phenomenon => "map.tip.kind.phenomenon",
+    };
+    let mut lines = vec![entry.name.clone(), texts.get(kind)];
+    if let Some(cell) = entry.cell {
+        lines.push(texts.format("map.tip.cell", &[("cell", &cell.to_string())]));
+    }
+    if let Some(faction) = entry.controller.as_ref().and_then(|f| data.faction(f)) {
+        lines.push(texts.format("map.tip.controller", &[("faction", &faction.name)]));
+    }
+    if entry.population > 0 {
+        let value = population_text(&texts, entry.population);
+        lines.push(texts.format("map.tip.population", &[("value", &value)]));
+    }
+    if entry.has_portal_hub {
+        lines.push(texts.get("map.tip.hub"));
+    }
+    if entry.destroyed {
+        lines.push(texts.get("map.tip.destroyed"));
+    }
+    let wanted = lines.join("\n");
+    if text.0 != wanted {
+        text.0 = wanted;
+    }
+    **visibility = Visibility::Inherited;
+}
+
+fn show_route(
+    data: Res<Data>,
+    texts: Res<Texts>,
+    route: Option<Res<RoutePlan>>,
+    fuel: Option<Res<ShipFuel>>,
+    location: Option<Res<Location>>,
+    mut panel: Single<&mut Text, With<RoutePanel>>,
+) {
+    let here = location
+        .and_then(|l| data.galaxy.system(&l.system))
+        .map_or_else(String::new, |s| s.name.clone());
+    let mut lines = vec![texts.format("map.here", &[("place", &here)])];
+    let have = fuel.as_ref().map_or(0.0, |f| f.units);
+    lines.push(texts.format("map.fuel", &[("fuel", &format!("{have:.0}"))]));
+    match route {
+        None => lines.push(texts.get("map.plan.hint")),
+        Some(route) => {
+            let name = data
+                .galaxy
+                .system(&route.dest)
+                .map_or_else(String::new, |s| s.name.clone());
+            lines.push(texts.format("map.plan.title", &[("name", &name)]));
+            lines.push(match &route.portal {
+                Some(p) => texts.format(
+                    "map.plan.portal",
+                    &[
+                        ("hours", &format!("{:.0}", p.hours)),
+                        ("jumps", &p.hubs.len().saturating_sub(1).to_string()),
+                        ("toll", &(p.toll.cents / 100).to_string()),
+                    ],
+                ),
+                None => texts.get("map.plan.no_portal"),
+            });
+            if let Some(h) = &route.hyperspace {
+                let mut line = texts.format(
+                    "map.plan.hyperspace",
+                    &[
+                        ("days", &format!("{:.0}", h.days().ceil())),
+                        ("fuel", &format!("{:.0}", h.fuel)),
+                    ],
+                );
+                if h.detour {
+                    line.push_str(&texts.get("map.plan.detour"));
+                }
+                if h.fuel > have {
+                    line.push_str(&texts.get("map.plan.no_fuel"));
+                }
+                lines.push(line);
+            }
+        }
+    }
+    let wanted = lines.join("\n");
+    if panel.0 != wanted {
+        panel.0 = wanted;
+    }
+}
+
+/// Grille, contours des zones, position du vaisseau, destination (gizmos, redessinés chaque frame).
+fn draw_map_lines(
+    mut gizmos: Gizmos,
+    data: Res<Data>,
+    location: Option<Res<Location>>,
+    route: Option<Res<RoutePlan>>,
+) {
     let grid = Color::srgba(0.55, 0.60, 0.75, 0.10);
     for col in 0..=COLUMNS {
         let x = f64::from(col) * CELL_SIZE;
@@ -243,5 +474,29 @@ fn draw_map_lines(mut gizmos: Gizmos, data: Res<Data>) {
             .chain(zone.outline.first())
             .map(|&p| world(p) + Vec3::Y * 0.2);
         gizmos.linestrip(points, color);
+    }
+    let flat = Isometry3d::new(
+        Vec3::ZERO,
+        Quat::from_rotation_x(std::f32::consts::FRAC_PI_2),
+    );
+    let here = location.and_then(|l| data.galaxy.system(&l.system).map(|s| world(s.center)));
+    if let Some(here) = here {
+        let ring = Isometry3d::new(here + Vec3::Y * 0.5, flat.rotation);
+        gizmos.circle(ring, 9.0, theme::ACCENT);
+        if let Some(dest) = route
+            .as_ref()
+            .and_then(|r| data.galaxy.system(&r.dest).map(|s| world(s.center)))
+        {
+            gizmos.circle(
+                Isometry3d::new(dest + Vec3::Y * 0.5, flat.rotation),
+                9.0,
+                theme::TEXT,
+            );
+            gizmos.line(
+                here + Vec3::Y * 0.5,
+                dest + Vec3::Y * 0.5,
+                theme::ACCENT.with_alpha(0.6),
+            );
+        }
     }
 }

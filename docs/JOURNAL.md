@@ -2,6 +2,14 @@
 
 > Une entrée courte par session (2 à 5 lignes) : ce qui a été fait, ce qui reste en suspens, les décisions prises. Le plus récent en haut.
 
+## 03/11/2026 — Poste Linux (CachyOS) : M3, carte galactique et voyages
+
+- **Planification** (`sh_sim::travel`, testée sur les vraies données) : Portails par le graphe des hubs (P19 : Hexis seul lien entre les blocs), hyperespace en ligne droite contournée autour des nébuleuses bloquantes, durées (P3), carburant et péage (P20) ; aucun plan vers un système secret.
+- **Horloge** (`sh_game::clock`) : jour 1 de 425at, ×30 en vues Globale et Sectorielle, « Day N, 425at » à l'écran.
+- **Carte** (`sh_data::public_map`, test `la_carte_ne_montre_aucun_secret`) : survol avec infobulle de champs publics, clic pour choisir, panneau d'itinéraire, `1`/`2` pour partir, `M` pour revenir aux commandes (pose reprise). Carte de chargement au départ (destination, durée, date d'arrivée, astuce).
+- **Cygnara** en vue Globale, brut (P21). Scénario `voyage` : Hexis → Cygnara en 4,0 h par Portail, retour en 23,9 jours par hyperespace. Captures : `target/shots/m3-{carte,voyage-450,voyage-600,cygnara}.png`.
+- Limites : paires fixes de Portails non modélisées, pas de brouillard d'information (M4), étiquettes de la carte qui se chevauchent par endroits.
+
 ## 03/11/2026 — Poste Linux (CachyOS) : fin de M2, pilotage et amarrage
 
 - **À bord en vue Globale** : le secteur du vaisseau est co-chargé, sa racine est le référentiel de l'origine flottante (position **et orientation** : l'extérieur, le ciel et la lumière tournent autour de l'intérieur immobile). Départ de partie en données (`propositions/starts/hexis_captain.ron`, P1).
