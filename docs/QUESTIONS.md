@@ -5,9 +5,6 @@
 
 ## Ouvertes
 
-13. **Disposition du clavier.** Les touches sont liées par **position physique** (celle d'un clavier QWERTY) : sur un clavier AZERTY, « W A S D » tombe bien sur « Z Q S D », mais la carte (« M ») tombe sur la touche « , » et les aides affichent les lettres QWERTY. Joues-tu en AZERTY ? Faut-il afficher les touches selon la disposition réelle du clavier (et revoir les touches qui tombent mal) ?
-   Hypothèse en attendant : liaisons et aides inchangées (lettres QWERTY) ; le remappage complet arrive avec les options (M7).
-
 ## Tranchées
 
 1. **Départ de la v1.** Capitaine indépendant à Hexis, endetté auprès de la Banque (P1) : ça te va ?
@@ -42,3 +39,6 @@
 
 12. **Issues politiques dans la simulation.** Faut-il que la simulation tranche l'Arène et la succession de Nyra Maren ?
    → **« Pour l'instant la simulation annonce juste les échéances ; dans le futur elle pourra déterminer automatiquement les événements des personnages nommés. »** (03/11/2026) — c'est le comportement actuel (M4) ; l'architecture le permettra (événements de personnages nommés, plus tard).
+
+13. **Disposition du clavier.** Joues-tu en AZERTY ? Faut-il afficher les touches selon la disposition réelle ?
+   → **« Oui je joue en AZERTY, il faudra afficher la disposition réelle du clavier ; le remappage complet arrive avec les options (M7). »** (03/11/2026) — intégré : les aides citent des jetons de touche (`[KeyE]`) remplacés par l'étiquette de la disposition (`gameplay/keyboard.ron`, AZERTY supposée au départ), corrigée à chaque appui par le vrai caractère de la touche. Les liaisons restent physiques jusqu'au remappage de M7 (la carte est donc sur la touche « , » en AZERTY).

@@ -12,19 +12,79 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Lang {
-    /// Code de la langue (« en »).
+    /// Code de la langue (« fr »).
     pub code: String,
     pub strings: BTreeMap<String, String>,
+    /// Étiquettes des touches physiques selon la disposition du clavier (`KeyQ` → « A » en
+    /// AZERTY). Remplies par le jeu ([`Lang::set_key`]), jamais lues dans le fichier.
+    #[serde(skip)]
+    pub keys: BTreeMap<String, String>,
+}
+
+/// Les dispositions de clavier connues (`gameplay/keyboard.ron`).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Keyboard {
+    pub default_layout: String,
+    pub layouts: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 impl Lang {
     /// Le texte d'une clé. Une clé absente renvoie la clé elle-même entre crochets, pour
     /// qu'un oubli se voie à l'écran au lieu de planter (le test de cohérence l'attrape avant).
+    /// Les jetons de touche (`[KeyE]`) y sont remplacés par l'étiquette de la touche
+    /// ([`Lang::key_label`]).
     pub fn get(&self, key: &str) -> String {
-        self.strings
-            .get(key)
-            .cloned()
-            .unwrap_or_else(|| format!("[{key}]"))
+        match self.strings.get(key) {
+            Some(text) if text.contains('[') => self.with_keys(text),
+            Some(text) => text.clone(),
+            None => format!("[{key}]"),
+        }
+    }
+
+    /// L'étiquette d'une touche physique (nom `KeyCode`) : celle de la disposition, sinon le
+    /// nom de la langue (`key.Space`), sinon la lettre ou le chiffre de sa position.
+    pub fn key_label(&self, code: &str) -> String {
+        if let Some(label) = self.keys.get(code) {
+            return label.clone();
+        }
+        if let Some(name) = self.strings.get(&format!("key.{code}")) {
+            return name.clone();
+        }
+        code.strip_prefix("Key")
+            .or_else(|| code.strip_prefix("Digit"))
+            .unwrap_or(code)
+            .to_owned()
+    }
+
+    /// Fixe l'étiquette d'une touche ; `true` si elle a changé.
+    pub fn set_key(&mut self, code: &str, label: &str) -> bool {
+        if self.keys.get(code).map(String::as_str) == Some(label) {
+            return false;
+        }
+        self.keys.insert(code.to_owned(), label.to_owned());
+        true
+    }
+
+    /// Remplace les jetons `[NomDeTouche]` d'un texte (nom `KeyCode` : `[KeyE]`, `[Space]`).
+    fn with_keys(&self, text: &str) -> String {
+        let mut out = String::with_capacity(text.len());
+        let mut rest = text;
+        while let Some(start) = rest.find('[') {
+            out.push_str(&rest[..start]);
+            let after = &rest[start + 1..];
+            match after.find(']') {
+                Some(end) if is_key_name(&after[..end]) => {
+                    out.push_str(&self.key_label(&after[..end]));
+                    rest = &after[end + 1..];
+                }
+                _ => {
+                    out.push('[');
+                    rest = after;
+                }
+            }
+        }
+        out.push_str(rest);
+        out
     }
 
     pub fn has(&self, key: &str) -> bool {
@@ -69,6 +129,12 @@ impl Lang {
     }
 }
 
+/// Un nom de touche `KeyCode` : une majuscule, puis des lettres et des chiffres ASCII.
+fn is_key_name(s: &str) -> bool {
+    s.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+        && s.chars().all(|c| c.is_ascii_alphanumeric())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -78,6 +144,7 @@ mod tests {
         let lang = Lang {
             code: "en".into(),
             strings: BTreeMap::from([("date".into(), "Day {day}, {year}".into())]),
+            ..Lang::default()
         };
         assert_eq!(
             lang.format("date", &[("day", "12"), ("year", "425at")]),
@@ -88,6 +155,27 @@ mod tests {
     }
 
     #[test]
+    fn touches_selon_la_disposition() {
+        let mut lang = Lang {
+            code: "fr".into(),
+            strings: BTreeMap::from([
+                (
+                    "aide".into(),
+                    "[KeyW][KeyA][KeyS][KeyD], [Space] : bouger [sic]".into(),
+                ),
+                ("key.Space".into(), "Espace".into()),
+            ]),
+            ..Lang::default()
+        };
+        assert_eq!(lang.get("aide"), "WASD, Espace : bouger [sic]");
+        assert!(lang.set_key("KeyW", "Z"));
+        assert!(lang.set_key("KeyA", "Q"));
+        assert!(!lang.set_key("KeyA", "Q"));
+        assert_eq!(lang.get("aide"), "ZQSD, Espace : bouger [sic]");
+        assert_eq!(lang.key_label("Digit1"), "1");
+    }
+
+    #[test]
     fn nombres_a_la_francaise() {
         let fr = Lang {
             code: "fr".into(),
@@ -95,6 +183,7 @@ mod tests {
                 ("number.group".into(), "\u{202f}".into()),
                 ("number.decimal".into(), ",".into()),
             ]),
+            ..Lang::default()
         };
         assert_eq!(fr.number(1_234_567.891, 2), "1\u{202f}234\u{202f}567,89");
         assert_eq!(fr.number(-2.5, 1), "-2,5");

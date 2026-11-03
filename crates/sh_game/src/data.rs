@@ -31,12 +31,29 @@ impl Texts {
     /// entre crochets, et la validation des données signale le problème au chargement.
     pub fn load() -> Self {
         let path = data_dir().join(sh_data::paths::LANG);
-        match sh_data::read_ron::<Lang>(&path) {
-            Ok(lang) => Texts(lang),
+        let mut lang = match sh_data::read_ron::<Lang>(&path) {
+            Ok(lang) => lang,
             Err(err) => {
                 error!("textes d'interface illisibles : {err}");
-                Texts::default()
+                Lang::default()
             }
+        };
+        // Étiquettes des touches : la disposition supposée, corrigée ensuite à chaque appui
+        // (`ui::learn_key_labels`).
+        let keyboard = data_dir().join(sh_data::paths::KEYBOARD);
+        match sh_data::read_ron::<sh_data::Keyboard>(&keyboard) {
+            Ok(keyboard) => {
+                for (code, label) in keyboard
+                    .layouts
+                    .get(&keyboard.default_layout)
+                    .into_iter()
+                    .flatten()
+                {
+                    lang.set_key(code, label);
+                }
+            }
+            Err(err) => error!("dispositions de clavier illisibles : {err}"),
         }
+        Texts(lang)
     }
 }

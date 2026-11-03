@@ -916,6 +916,18 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
         }
     }
 
+    // --- Clavier ----------------------------------------------------------------------------
+    c.check(
+        data.keyboard
+            .layouts
+            .contains_key(&data.keyboard.default_layout),
+        crate::paths::KEYBOARD,
+        format!(
+            "disposition par défaut inconnue : {}",
+            data.keyboard.default_layout
+        ),
+    );
+
     // --- Langue -----------------------------------------------------------------------------
     for (key, text) in &data.lang.strings {
         // Les séparateurs de nombres sont des espaces par nature (« 12 500 »).

@@ -23,7 +23,37 @@ impl Plugin for UiPlugin {
             flight_hud::FlightHudPlugin,
             terminal::TerminalPlugin,
         ))
-        .add_systems(Startup, (setup_fonts, spawn_ui_camera));
+        .add_systems(Startup, (setup_fonts, spawn_ui_camera))
+        .add_systems(PreUpdate, learn_key_labels);
+    }
+}
+
+/// Apprend la disposition réelle du clavier : chaque touche lettre pressée donne son vrai
+/// caractère, qui devient l'étiquette affichée dans les aides (Q13).
+fn learn_key_labels(
+    mut reader: MessageReader<bevy::input::keyboard::KeyboardInput>,
+    texts: Option<ResMut<crate::data::Texts>>,
+) {
+    use bevy::input::keyboard::Key;
+    let Some(mut texts) = texts else {
+        reader.clear();
+        return;
+    };
+    for input in reader.read() {
+        let Key::Character(c) = &input.logical_key else {
+            continue;
+        };
+        let code = format!("{:?}", input.key_code);
+        let letter_key = code.starts_with("Key");
+        let alphabetic = c.chars().all(char::is_alphabetic);
+        if c.chars().count() != 1 || !(letter_key || alphabetic) {
+            continue;
+        }
+        let label = c.to_uppercase();
+        // Lecture d'abord : ne marquer `Texts` modifié que si l'étiquette change.
+        if texts.key_label(&code) != label {
+            texts.0.set_key(&code, &label);
+        }
     }
 }
 

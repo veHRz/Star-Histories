@@ -42,7 +42,7 @@ pub use galaxy::{
     Body, BodyKind, Fleet, Galaxy, MapFrame, OrbitOrder, Phenomenon, PortalHub, StarSystem,
     Station, Zone,
 };
-pub use lang::Lang;
+pub use lang::{Keyboard, Lang};
 pub use layout::{Placed, PlacedKind, system_layout};
 pub use map::{MapEntry, MapKind, entry_at, public_map};
 pub use scene::{Arrival, DockPort, Structure, StructureKind, SystemScene, Traffic};
@@ -80,6 +80,7 @@ pub mod paths {
     pub const LANG: &str = "lang/fr.ron";
     /// Traduction anglaise, tenue avec les mêmes clés.
     pub const LANG_EN: &str = "lang/en.ron";
+    pub const KEYBOARD: &str = "gameplay/keyboard.ron";
     /// Dossiers scannés pour les descripteurs de secteurs (`*.ron`).
     pub const SECTOR_DIRS: [&str; 2] = ["canon/sectors", "propositions/sectors"];
     /// Dossiers scannés pour les mises en scène de systèmes (`*.ron`).
@@ -109,6 +110,7 @@ pub struct GameData {
     pub rails: Rails,
     pub portal_links: PortalLinks,
     pub lang: Lang,
+    pub keyboard: Keyboard,
     pub sectors: Vec<Sector>,
     pub scenes: Vec<SystemScene>,
     pub starts: Vec<Start>,
@@ -172,6 +174,7 @@ impl GameData {
             rails: read_ron(&file(paths::RAILS))?,
             portal_links: read_ron(&file(paths::PORTAL_LINKS))?,
             lang: read_ron(&file(paths::LANG))?,
+            keyboard: read_ron(&file(paths::KEYBOARD))?,
             sectors: read_dir_ron(data_dir, &paths::SECTOR_DIRS)?,
             scenes: read_dir_ron(data_dir, &paths::SCENE_DIRS)?,
             starts: read_dir_ron(data_dir, &paths::START_DIRS)?,
