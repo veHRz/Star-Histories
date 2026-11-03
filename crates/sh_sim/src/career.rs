@@ -401,8 +401,18 @@ impl Captain {
         let owner = ladder_owner(&data.ranks, data, &issuer).unwrap_or_else(|| issuer.clone());
         *self.completed.entry(owner).or_default() += 1;
         let rules = &data.career;
-        self.practice(rules, "commerce", 60.0, &mut out);
-        self.practice(rules, "negotiation", 30.0, &mut out);
+        self.practice(
+            rules,
+            "commerce",
+            rules.practice.delivery_commerce,
+            &mut out,
+        );
+        self.practice(
+            rules,
+            "negotiation",
+            rules.practice.delivery_negotiation,
+            &mut out,
+        );
         let total: u32 = self
             .contracts
             .iter()
@@ -565,7 +575,7 @@ impl Captain {
             self.loan = None;
             out.push(Outcome::LoanRepaid);
         }
-        self.change_reputation(data, &lender, 2, &mut out);
+        self.change_reputation(data, &lender, data.career.bank.rep_paid, &mut out);
         Ok(out)
     }
 
@@ -600,7 +610,7 @@ impl Captain {
                     });
                 }
             }
-            self.change_reputation(data, &lender, -4, &mut out);
+            self.change_reputation(data, &lender, rules.bank.rep_missed, &mut out);
         }
         let overdue: Vec<(String, Id<Faction>)> = self
             .contracts

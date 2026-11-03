@@ -36,6 +36,21 @@ pub struct CareerRules {
     pub bank: BankRules,
     /// Contrats honorés pour gagner le trait « Parole tenue » (P9).
     pub word_kept_after: u32,
+    pub practice: PracticeRules,
+}
+
+/// Expérience gagnée à l'usage.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PracticeRules {
+    /// Par seconde de vol aux commandes (au-dessus de 10 m/s).
+    pub piloting_per_second: f64,
+    /// Par voyage achevé (arrivée dans un autre système).
+    pub navigation_per_trip: f64,
+    /// Par contrat livré.
+    pub delivery_commerce: f64,
+    pub delivery_negotiation: f64,
+    /// Par unité achetée ou vendue au marché.
+    pub trade_per_unit: f64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -87,6 +102,9 @@ pub struct BankRules {
     /// Échéances manquées avant la saisie automatique (canon : hypothèque, « saisie
     /// automatique »).
     pub seize_after_missed: u32,
+    /// Réputation auprès du prêteur : échéance payée, échéance manquée.
+    pub rep_paid: i32,
+    pub rep_missed: i32,
 }
 
 /// Échelles de grades par organisation (P24).

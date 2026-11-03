@@ -48,6 +48,16 @@
         every_days: 30,
         late_penalty: 400,
         seize_after_missed: 3,
+        rep_paid: 2,
+        rep_missed: -4,
     ),
     word_kept_after: 3,
+    // Progression par l'usage (GDD §3.2).
+    practice: (
+        piloting_per_second: 0.5,
+        navigation_per_trip: 40.0,
+        delivery_commerce: 60.0,
+        delivery_negotiation: 30.0,
+        trade_per_unit: 0.2,
+    ),
 )

@@ -836,7 +836,12 @@ fn apply_choices(
                                 ("cost", &money(&texts, cost)),
                             ],
                         ));
-                        cap.practice(&data.career, "commerce", amount * 0.2, &mut out);
+                        cap.practice(
+                            &data.career,
+                            "commerce",
+                            amount * data.career.practice.trade_per_unit,
+                            &mut out,
+                        );
                         sim_commands.push(SimCommand::Take {
                             at,
                             commodity,
@@ -860,7 +865,12 @@ fn apply_choices(
                                 ("gain", &money(&texts, gain)),
                             ],
                         ));
-                        cap.practice(&data.career, "commerce", amount * 0.2, &mut out);
+                        cap.practice(
+                            &data.career,
+                            "commerce",
+                            amount * data.career.practice.trade_per_unit,
+                            &mut out,
+                        );
                         sim_commands.push(SimCommand::Deliver {
                             at,
                             commodity,
