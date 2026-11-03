@@ -36,6 +36,7 @@ pub use lang::Lang;
 pub use sector::{Cell, Portal, PortalKind, Sector, SectorKind, Spawn};
 pub use settings::{
     AntiAliasing, ClockSettings, GraphicsPreset, GraphicsPresets, PresetLevel, SpaceSettings,
+    SystemScale,
 };
 pub use ships::{Formation, FormationsFile, ShipClass, ShipClassesFile};
 pub use validate::{Issue, ValidationReport};

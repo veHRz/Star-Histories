@@ -104,6 +104,7 @@ Les **départs préconfigurés** par faction et par rôle (`_context/futur.md`) 
 - **Portails** : quasi instantanés ; péages, contrôles et autorisations de la faction qui tient le système ; blocus possibles. **À Kholvar, quiconque emprunte un Portail est abattu sans sommation** (§2.2). Hubs et paires fixes du canon.
 - **Hyperespace** : lent (≈ 3 jours entre voisins), calculs de navigation (routes cartographiées plus rapides et plus sûres que l'improvisation), **nébuleuses infranchissables** (le Croissant) à contourner ou traverser en vitesse normale. Chasseurs et bombardiers sans hyperpropulsion.
 - **Systèmes abandonnés** (jamais rebranchés aux Portails) : refuges, cachettes, épaves, secrets.
+- **Dans un système** (proposition P2) : les systèmes sont compressés (tailles ÷ 10, distances ÷ 100) et l'on y voyage en **croisière**, dont la vitesse limite croît avec la distance au corps le plus proche : on file entre les planètes (1 à 2 min) et l'on ralentit seul à l'approche. Hors croisière, vol de manœuvre et de combat à quelques centaines de m/s.
 
 ### 5.7 Information
 

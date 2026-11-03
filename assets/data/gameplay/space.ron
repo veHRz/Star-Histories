@@ -1,6 +1,26 @@
-// Espace de la vue Globale (AGENTS.md §6.4). Réglages techniques, pas des faits d'univers.
+// Espace de la vue Globale (AGENTS.md §6.4). Réglages de jeu, pas des faits d'univers.
 (
     // Recentrage de l'origine flottante quand le point suivi s'en éloigne de plus de 2 km
     // (un f32 y reste précis au dixième de millimètre).
     recenter_distance: 2000.0,
+
+    // Échelle de jeu des systèmes stellaires : PROPOSITION P2 (docs/propositions.md), en
+    // attente de l'auteur. Le canon ne donne ni tailles ni orbites : tailles ÷ 10 et
+    // distances ÷ 100 par rapport à des ordres de grandeur réels. Longueurs en mètres.
+    scale: (
+        au: 1.496e9,              // 1 UA de jeu = 1,5 million de km
+        first_orbit_au: 0.4,
+        orbit_ratio: 1.7,         // rangs à 0,4 ; 0,68 ; 1,16 ; 1,97 ; 3,3… UA de jeu
+        star_radius: 7.0e7,       // ≈ 5° dans le ciel à 1 UA de jeu
+        planet_radius: 6.4e5,     // monde tellurique : 640 km
+        gas_giant_radius: 7.0e6,
+        moon_radius: 1.7e5,
+        moon_orbit_radii: 12.0,
+        parking_orbit_radii: 1.5, // stations et orbites de stationnement : 1,5 rayon d'altitude
+        // Croisière : vitesse limite proportionnelle à la distance de la surface la plus proche.
+        cruise_rate: 0.15,        // 1/s : la vitesse se multiplie par e toutes les 6,7 s
+        cruise_min_speed: 2000.0,
+        cruise_max_speed: 3.0e7,  // 0,1 c
+        manoeuvre_max_speed: 300.0,
+    ),
 )

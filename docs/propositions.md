@@ -6,7 +6,7 @@
 | # | Date | Proposition | Nature | Où dans le jeu | Statut |
 |---|---|---|---|---|---|
 | P1 | 03/11/2026 | Départ unique de la v1 : capitaine indépendant d'un petit vaisseau marchand, endetté auprès de la Banque d'Hexis | Gameplay | Nouvelle partie | **Validée** (03/11/2026) |
-| P2 | 03/11/2026 | Systèmes stellaires compressés (distances et tailles de jeu), vitesse de croisière intra-système | Gameplay, pas un fait d'univers | Vue Globale | En attente (chiffres en M2) |
+| P2 | 03/11/2026 | Systèmes stellaires compressés : **tailles ÷ 10, distances ÷ 100** (1 UA de jeu = 1,5 M km ; étoile 70 000 km de rayon, monde tellurique 640 km, géante gazeuse 7 000 km, lune 170 km ; rangs orbitaux à 0,4 UA × 1,7ⁿ ; stations à 1,5 rayon d'altitude). **Croisière** : vitesse limite = 0,15/s × distance à la surface la plus proche (2 km/s à 0,1 c) ⇒ 1 à 2 min entre planètes voisines, ≈ 1 min vers une station, ≈ 30 s vers une lune. Manœuvre et combat : ≤ 300 m/s. Chiffres dans `assets/data/gameplay/space.ron` | Gameplay, pas un fait d'univers | Vue Globale | En attente (chiffrée le 03/11/2026) |
 | P3 | 03/11/2026 | Usage de l'échelle déduite « 1 case ≈ 2 semaines de saut, ≈ 10 unités ≈ 3 jours » (déduction non canon de l'export §3.1) pour les durées de voyage | Équilibrage | Vue Galaxie | En attente |
 | P4 | 03/11/2026 | Rythme du temps dans les vues Locale, Sectorielle et Globale : ×30 (1 min réelle = 30 min de jeu), réglable dans les données | Gameplay | Horloge de jeu | **Validée** (03/11/2026) |
 | P5 | 03/11/2026 | Grille modulaire de 2 m pour les intérieurs | Technique / art | Assets | En attente (fixée en M1) |

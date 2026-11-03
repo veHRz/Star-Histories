@@ -507,6 +507,37 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
         "space.ron",
         "recenter_distance doit être positive ou nulle",
     );
+    let sc = &data.space.scale;
+    let lengths = [
+        sc.au,
+        sc.first_orbit_au,
+        sc.star_radius,
+        sc.planet_radius,
+        sc.gas_giant_radius,
+        sc.moon_radius,
+        sc.moon_orbit_radii,
+        sc.parking_orbit_radii,
+        sc.cruise_rate,
+        sc.cruise_min_speed,
+        sc.manoeuvre_max_speed,
+    ];
+    c.check(
+        lengths.iter().all(|v| v.is_finite() && *v > 0.0),
+        "space.ron",
+        "échelle des systèmes : toutes les valeurs doivent être positives",
+    );
+    c.check(
+        sc.orbit_ratio > 1.0 && sc.cruise_max_speed > sc.cruise_min_speed,
+        "space.ron",
+        "échelle des systèmes : orbit_ratio > 1 et cruise_max_speed > cruise_min_speed",
+    );
+    c.check(
+        sc.moon_radius < sc.planet_radius
+            && sc.planet_radius < sc.gas_giant_radius
+            && sc.orbit_radius(1) > sc.star_radius * 2.0,
+        "space.ron",
+        "échelle des systèmes : lune < planète < géante, premier rang hors de l'étoile",
+    );
 
     // --- Secteurs ----------------------------------------------------------------------------
     for s in &data.sectors {

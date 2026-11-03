@@ -52,7 +52,7 @@ But : marcher dans son vaisseau, à la première personne, sans aucun chargement
 But : décoller d'Hexis, voler dans le système, revenir s'amarrer.
 
 - [x] Origine flottante + positions `f64` (§6.4 d'AGENTS.md) ; tests de précision à grande distance.
-- [ ] Échelle de jeu des systèmes (proposition chiffrée dans `docs/propositions.md`).
+- [x] Échelle de jeu des systèmes (proposition chiffrée dans `docs/propositions.md`).
 - [ ] Système d'Hexis en vue Globale : étoile, planète Hexis, chantiers orbitaux, L'Enclume en construction, hub de Portails, trafic ambiant. Ciel étoilé cohérent avec la position M7 dans la galaxie.
 - [ ] S'asseoir au poste de pilotage → contexte Pilotage ; modèle de vol 6 axes (assisté / découplé), croisière intra-système ; HUD de pilotage.
 - [ ] Intérieur du vaisseau co-chargé en vue Globale, vaisseau = référentiel : se lever et marcher en vol.

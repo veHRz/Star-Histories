@@ -236,3 +236,34 @@ fn le_vaisseau_du_joueur_est_connexe() {
     assert_eq!(vaisseau.within("sas", 8).len(), vaisseau.cells.len());
     assert!(vaisseau.spawns.iter().any(|s| s.id == "sas"));
 }
+
+/// L'échelle des systèmes (P2) tient sa cible de jeu : quelques minutes entre planètes voisines,
+/// moins d'une minute et demie pour un trajet local.
+#[test]
+fn l_echelle_des_systemes_donne_des_trajets_de_quelques_minutes() {
+    let sc = donnees().space.scale;
+    let parking = sc.parking_orbit_radii * sc.planet_radius;
+    for rank in 1..=4 {
+        let length = sc.orbit_radius(rank + 1) - sc.orbit_radius(rank);
+        let t = sc.cruise_time(length, parking, parking);
+        assert!(
+            (45.0..=180.0).contains(&t),
+            "rang {rank} → {} : {t:.0} s",
+            rank + 1
+        );
+    }
+    let to_station = sc.cruise_time(2.0e7, parking, 0.0);
+    assert!(
+        to_station <= 90.0,
+        "orbite → station à 20 000 km : {to_station:.0} s"
+    );
+    let to_moon = sc.cruise_time(
+        sc.moon_orbit_radii * sc.planet_radius,
+        parking,
+        sc.parking_orbit_radii * sc.moon_radius,
+    );
+    assert!(to_moon <= 60.0, "orbite → lune : {to_moon:.0} s");
+    // Le système compressé reste précis en f64 : ulp < 0,1 mm à la dixième orbite.
+    let far = sc.orbit_radius(10);
+    assert!(far * f64::EPSILON < 1e-4, "{far} m");
+}
