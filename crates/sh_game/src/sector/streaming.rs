@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 use bevy::prelude::*;
 use bevy::world_serialization::{WorldAsset, WorldAssetRoot};
 
+use crate::graphics::GraphicsSettings;
 use crate::player::Player;
 use crate::sector::{ActiveSector, v3};
 use crate::state::ViewLevel;
@@ -65,6 +66,8 @@ pub struct CellReady;
 pub struct CellSlot {
     pub full_handle: Option<Handle<WorldAsset>>,
     pub lod_handle: Option<Handle<WorldAsset>>,
+    /// Lightmap de la cellule, chargée avec ses modèles (aucune cellule n'apparaît sans).
+    pub lightmap_handle: Option<Handle<Image>>,
     pub full: Option<Entity>,
     pub lod: Option<Entity>,
     /// Secondes écoulées depuis que la cellule n'est plus voulue en Locale.
@@ -124,7 +127,9 @@ fn stream_cells(
     asset_server: Res<AssetServer>,
     mut states: ResMut<CellStates>,
     ready: Query<(), With<CellReady>>,
+    settings: Option<Res<GraphicsSettings>>,
 ) {
+    let baked = settings.is_some_and(|s| s.preset.baked_lighting);
     let Some(current) = states.current.clone() else {
         return;
     };
@@ -149,11 +154,22 @@ fn stream_cells(
             slot.lod_handle =
                 Some(asset_server.load(GltfAssetLabel::Scene(0).from_asset(lod.clone())));
         }
+        if baked
+            && slot.lightmap_handle.is_none()
+            && let Some(lightmap) = &cell.lightmap
+        {
+            slot.lightmap_handle = Some(asset_server.load(lightmap.image.clone()));
+        }
+        let lightmap_loaded = slot
+            .lightmap_handle
+            .as_ref()
+            .is_none_or(|h| asset_server.is_loaded(h));
 
         if wanted_local {
             slot.unwanted_for = 0.0;
             if slot.full.is_none()
                 && budget > 0
+                && lightmap_loaded
                 && let Some(handle) = &slot.full_handle
                 && asset_server.is_loaded_with_dependencies(handle)
             {
@@ -187,6 +203,7 @@ fn stream_cells(
                 commands.entity(entity).despawn();
             }
         } else if slot.lod.is_none()
+            && lightmap_loaded
             && let Some(handle) = &slot.lod_handle
             && asset_server.is_loaded_with_dependencies(handle)
         {

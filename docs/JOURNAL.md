@@ -2,6 +2,13 @@
 
 > Une entrée courte par session (2 à 5 lignes) : ce qui a été fait, ce qui reste en suspens, les décisions prises. Le plus récent en haut.
 
+## 03/11/2026 — Poste Linux (CachyOS) : fin de M1, éclairage précalculé
+
+- **Lightmaps** : `tools/blender/lightmap.py` déplie un 2e jeu d'UV par cellule (commun aux versions Locale et Sectorielle), cuit l'éclairage diffus dans Cycles (une lampe par `LIGHT_`, rebonds, ombres douces, lumière des écrans) et écrit des PNG sRGB normalisés + leur exposition dans le descripteur du secteur. ≈ 3 min pour le vaisseau à 512 échantillons (CPU i9-9900K). En jeu : `Lightmap` sur les maillages des cellules, lumières sans ombres dynamiques ni diffus sur les surfaces cuites (spéculaire et portes seulement), `SH_BAKED_LIGHTING=0` pour comparer. Captures : `target/shots/m1-lm-{soute,sas,cockpit,couloir}.png`.
+- **Collisions** : les `_col` (tous des pavés) deviennent des `Collider::cuboid` au lieu d'enveloppes convexes calculées à l'instanciation (piste des pics de temps de frame).
+- **Bug de marches (encore le taux de rafraîchissement)** : les lightmaps ont fait passer le vaisseau de ≈ 250 à ≈ 360 i/s sur ce poste et `walk_ship` rebloquait au pied de l'escalier : avec quelques millimètres d'avancée par frame, la capsule se posait sur l'arête du nez de marche et glissait en arrière. La montée sonde maintenant au moins 13 cm (débord nécessaire pour une normale praticable, × 1,5) ; vérifié en Bas, Moyen, Haut et sans lightmaps.
+- **À mesurer sous Windows** (UHD 770, release, Moyen, `walk_ship`) : temps de frame moyen et pire, frames > 33 ms, avec et sans lightmaps ; vérifier aussi que `check.ps1` passe (marches à ≈ 35 i/s). C'est la seule chose qui reste dans M1.
+
 ## 03/11/2026 — Poste Linux (CachyOS), en alternance avec Windows
 
 - Second poste : CachyOS, i9-9900K, Radeon RX 9070 XT. Il alterne avec le poste Windows (machine de référence) ; ses mesures de performance ne valent pas pour l'UHD 770 (AGENTS.md §3.1 bis et §10).

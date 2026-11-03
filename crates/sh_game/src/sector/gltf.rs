@@ -1,20 +1,28 @@
 //! Post-traitement des modèles glTF du pipeline Blender (conventions d'AGENTS.md §9.3).
 //!
 //! Quand une instance de modèle est prête (`WorldInstanceReady`), ses nœuds sont relus :
-//! - `*_col` : collision (enveloppe convexe du maillage), jamais rendue ;
+//! - `*_col` : collision, jamais rendue : un pavé (le cas du kit) devient un `Collider::cuboid`,
+//!   immédiat et bon marché ; tout autre maillage, son enveloppe convexe ;
 //! - `LIGHT_*` : lumière ponctuelle réglée par les extras (`lumens`, `range`, `color`,
 //!   `shadow_candidate`) ;
 //! - `INTERACT_*` : zone d'interaction (`interact` = genre, plus ses paramètres) ;
 //! - `SOCKET_*` : point d'attache (`usage`), par exemple l'œil d'un siège.
+//!
+//! Une cellule qui a une lightmap (et si le préréglage l'active) la reçoit sur tous ses
+//! maillages qui ont un 2e jeu d'UV ; ses lumières n'y ajoutent plus que le spéculaire et
+//! l'éclairage des objets mobiles (portes), sans carte d'ombre : les ombres sont précalculées.
 
 use avian3d::prelude::*;
 use bevy::gltf::GltfExtras;
+use bevy::mesh::VertexAttributeValues;
+use bevy::pbr::Lightmap;
 use bevy::prelude::*;
 use bevy::world_serialization::WorldInstanceReady;
 use serde_json::Value;
 
-use crate::sector::Layer;
+use crate::graphics::GraphicsSettings;
 use crate::sector::streaming::{CellInstance, CellReady, Quality};
+use crate::sector::{ActiveSector, Layer};
 
 pub struct GltfSetupPlugin;
 
@@ -68,13 +76,72 @@ fn number(v: &Value, key: &str, default: f32) -> f32 {
         .map_or(default, |n| n as f32)
 }
 
+/// Collision d'un maillage qui est un pavé aligné sur ses axes (tous les sommets sur les coins
+/// de sa boîte englobante) : un cuboïde, sans calcul d'enveloppe à l'instanciation.
+fn box_collider(mesh: &Mesh) -> Option<Collider> {
+    let Some(VertexAttributeValues::Float32x3(points)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+    else {
+        return None;
+    };
+    let (lo, hi) = points.iter().fold(
+        (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)),
+        |(lo, hi), p| (lo.min(Vec3::from(*p)), hi.max(Vec3::from(*p))),
+    );
+    const EPS: f32 = 1e-4;
+    let on_corner =
+        |p: &[f32; 3]| (0..3).all(|i| (p[i] - lo[i]).abs() < EPS || (p[i] - hi[i]).abs() < EPS);
+    if points.is_empty() || !points.iter().all(on_corner) {
+        return None;
+    }
+    let size = hi - lo;
+    let center = (lo + hi) / 2.0;
+    let cuboid = Collider::cuboid(size.x, size.y, size.z);
+    Some(if center.length() < EPS {
+        cuboid
+    } else {
+        Collider::compound(vec![(center, Quat::IDENTITY, cuboid)])
+    })
+}
+
+/// Ressources du post-traitement (limite de paramètres d'un système) : assets et éclairage
+/// précalculé.
+#[derive(bevy::ecs::system::SystemParam)]
+struct CellAssets<'w> {
+    settings: Option<Res<'w, GraphicsSettings>>,
+    sector: Option<Res<'w, ActiveSector>>,
+    asset_server: Res<'w, AssetServer>,
+    meshes: Res<'w, Assets<Mesh>>,
+    materials: ResMut<'w, Assets<StandardMaterial>>,
+}
+
+impl CellAssets<'_> {
+    /// La lightmap de la cellule et son exposition, si elle en a une et qu'elle est active.
+    fn for_cell(&self, cell: &CellInstance) -> Option<(Handle<Image>, f32)> {
+        if !self.settings.as_ref()?.preset.baked_lighting {
+            return None;
+        }
+        let lightmap = self
+            .sector
+            .as_ref()?
+            .sector
+            .cell(&cell.cell)?
+            .lightmap
+            .as_ref()?;
+        Some((
+            self.asset_server.load(lightmap.image.clone()),
+            lightmap.exposure,
+        ))
+    }
+}
+
 fn on_instance_ready(
     event: On<WorldInstanceReady>,
     mut commands: Commands,
     instances: Query<(Option<&CellInstance>, Option<&ColliderLayer>)>,
     children: Query<&Children>,
     nodes: Query<(&Name, Option<&GltfExtras>)>,
-    meshes: Query<(), With<Mesh3d>>,
+    meshes: Query<(&Mesh3d, Option<&MeshMaterial3d<StandardMaterial>>)>,
+    mut assets: CellAssets,
 ) {
     let root = event.entity;
     let Ok((cell, layer)) = instances.get(root) else {
@@ -82,7 +149,42 @@ fn on_instance_ready(
     };
     let sector_quality = cell.is_some_and(|c| c.quality == Quality::Sector);
     let layer = layer.map_or(Layer::Static, |l| l.0);
+    let lightmap = cell.and_then(|c| assets.for_cell(c));
     let mut stats = (0, 0, 0);
+
+    if let Some((image, exposure)) = &lightmap {
+        let mut lit = Vec::new();
+        for node in children.iter_descendants(root) {
+            let Ok((mesh, material)) = meshes.get(node) else {
+                continue;
+            };
+            // Seuls les maillages dépliés pour la lightmap (pas les collisions) la reçoivent.
+            let unwrapped = assets
+                .meshes
+                .get(&mesh.0)
+                .is_some_and(|m| m.contains_attribute(Mesh::ATTRIBUTE_UV_1));
+            if !unwrapped {
+                continue;
+            }
+            commands.entity(node).insert(Lightmap {
+                image: image.clone(),
+                ..default()
+            });
+            lit.extend(material.map(|m| m.id()));
+        }
+        lit.sort_unstable();
+        lit.dedup();
+        // Les matériaux d'un modèle sont propres à son fichier, donc à la cellule.
+        for id in lit {
+            let stale = assets
+                .materials
+                .get(id)
+                .is_some_and(|m| m.lightmap_exposure != *exposure);
+            if stale && let Some(mut m) = assets.materials.get_mut(id) {
+                m.lightmap_exposure = *exposure;
+            }
+        }
+    }
 
     for node in children.iter_descendants(root) {
         let Ok((name, gltf_extras)) = nodes.get(node) else {
@@ -96,10 +198,17 @@ fn on_instance_ready(
                 .chain(children.get(node).into_iter().flatten().copied())
                 .filter(|e| meshes.contains(*e));
             for target in targets {
-                commands.entity(target).insert((
-                    ColliderConstructor::ConvexHullFromMesh,
-                    CollisionLayers::new(layer, [Layer::Static, Layer::Door]),
-                ));
+                let layers = CollisionLayers::new(layer, [Layer::Static, Layer::Door]);
+                let cuboid = meshes
+                    .get(target)
+                    .ok()
+                    .and_then(|(mesh, _)| assets.meshes.get(&mesh.0))
+                    .and_then(box_collider);
+                let mut entity = commands.entity(target);
+                match cuboid {
+                    Some(collider) => entity.insert((collider, layers)),
+                    None => entity.insert((ColliderConstructor::ConvexHullFromMesh, layers)),
+                };
                 stats.0 += 1;
             }
         } else if name.starts_with("LIGHT_") && !sector_quality {
@@ -119,9 +228,11 @@ fn on_instance_ready(
                 color,
                 radius: 0.1,
                 shadow_maps_enabled: false,
+                // Son diffus est déjà dans la lightmap.
+                affects_lightmapped_mesh_diffuse: lightmap.is_none(),
                 ..default()
             });
-            if number(&v, "shadow_candidate", 0.0) > 0.5 {
+            if lightmap.is_none() && number(&v, "shadow_candidate", 0.0) > 0.5 {
                 light.insert(ShadowCandidate);
             }
             stats.1 += 1;
@@ -164,9 +275,32 @@ fn on_instance_ready(
             commands.entity(root).insert(RigidBody::Static);
         }
         debug!(
-            "cellule {} ({:?}) prête : {} collisions, {} lumières, {} interactions",
-            cell.cell, cell.quality, stats.0, stats.1, stats.2
+            "cellule {} ({:?}) prête : {} collisions, {} lumières, {} interactions, lightmap {}",
+            cell.cell,
+            cell.quality,
+            stats.0,
+            stats.1,
+            stats.2,
+            lightmap.is_some()
         );
     }
     commands.entity(root).insert(CellReady);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn un_pave_devient_un_cuboide() {
+        let mesh = Mesh::from(Cuboid::new(1.0, 2.0, 3.0));
+        let collider = box_collider(&mesh).expect("un pavé doit donner un cuboïde");
+        let aabb = collider.aabb(Vec3::ZERO, Quat::IDENTITY, 0.0);
+        assert!((aabb.size() - Vec3::new(1.0, 2.0, 3.0)).length() < 1e-4);
+    }
+
+    #[test]
+    fn une_sphere_garde_son_enveloppe() {
+        assert!(box_collider(&Mesh::from(Sphere::new(1.0))).is_none());
+    }
 }

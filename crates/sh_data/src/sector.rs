@@ -39,7 +39,7 @@ pub enum SectorKind {
 }
 
 /// Une cellule : son modèle complet (qualité Locale), son modèle simplifié (qualité
-/// Sectorielle) et sa boîte englobante (cloisons comprises).
+/// Sectorielle), sa boîte englobante (cloisons comprises) et son éclairage précalculé.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Cell {
     pub id: String,
@@ -48,6 +48,18 @@ pub struct Cell {
     pub lod: Option<String>,
     pub min: (f32, f32, f32),
     pub max: (f32, f32, f32),
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lightmap: Option<CellLightmap>,
+}
+
+/// Éclairage diffus précalculé d'une cellule (`tools/blender/lightmap.py`), commun à ses deux
+/// modèles : ils partagent le même 2e jeu d'UV.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CellLightmap {
+    /// Image PNG sRGB, normalisée.
+    pub image: String,
+    /// Facteur qui rend à l'image sa luminance en nits (`StandardMaterial::lightmap_exposure`).
+    pub exposure: f32,
 }
 
 impl Cell {
@@ -161,6 +173,14 @@ impl Sector {
             let (lo, hi) = (cell.min, cell.max);
             if !(lo.0 < hi.0 && lo.1 < hi.1 && lo.2 < hi.2) {
                 out.push(format!("cellule {} : boîte vide ou inversée", cell.id));
+            }
+            if let Some(lightmap) = &cell.lightmap
+                && !(lightmap.exposure.is_finite() && lightmap.exposure > 0.0)
+            {
+                out.push(format!(
+                    "cellule {} : exposition de lightmap invalide",
+                    cell.id
+                ));
             }
         }
         for p in &self.portals {

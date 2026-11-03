@@ -55,8 +55,11 @@ pub struct GraphicsPreset {
     pub shadow_cascades: u8,
     /// Distance maximale des ombres, en mètres.
     pub shadow_max_distance: f32,
-    /// Lumières ponctuelles ombrées en même temps, au plus.
+    /// Lumières ponctuelles ombrées en même temps, au plus (cellules sans lightmap seulement).
     pub max_shadowed_point_lights: u8,
+    /// Éclairage précalculé des intérieurs (lightmaps) : sans lui, tout l'éclairage est
+    /// dynamique (comparaisons de performance, `SH_BAKED_LIGHTING=0`).
+    pub baked_lighting: bool,
     pub bloom: bool,
     pub anti_aliasing: AntiAliasing,
     /// Distance d'affichage maximale des détails (mètres), pour les `VisibilityRange`.

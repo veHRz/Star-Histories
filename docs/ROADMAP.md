@@ -3,7 +3,7 @@
 > Suis les jalons **dans l'ordre**. Coche chaque tâche (`[x]`) dans le commit qui la termine. Un jalon est fini quand **tous ses critères « Fini quand »** sont vérifiés (tests, autopilote, captures regardées). Push à la fin de chaque jalon.
 > Tu peux découper une tâche, en ajouter, en réordonner à l'intérieur d'un jalon : note-le dans `docs/JOURNAL.md`. Changer l'ordre des jalons ou leur périmètre : demande à l'auteur.
 
-État : **M0 terminé ; M1 fonctionnel mais critères de performance non atteints** (03/11/2026) : à reprendre avant M2 (lightmaps, ombres, pics d'instanciation). M2 non commencé.
+État : **M0 terminé ; M1 fonctionnel, toutes ses tâches faites** (03/11/2026). Lightmaps et collisions en cuboïdes livrés depuis le poste Linux : **les critères de performance restent à mesurer sur la machine de référence** (UHD 770, poste Windows). M2 non commencé.
 
 ---
 
@@ -39,8 +39,9 @@ But : marcher dans son vaisseau, à la première personne, sans aucun chargement
 - [x] Contrôleur FPS (avian3d) : marcher, courir, s'accroupir, sauter, escaliers et pentes, visée souris, capture du curseur.
 - [x] Interactions (rayon de visée + touche) : portes, consoles, siège, objets à ramasser.
 - [x] Streaming de cellules Locale ↔ Sectorielle : chargement asynchrone anticipé, hystérésis, portes comme portes de chargement, budget par frame.
-- [ ] Éclairage d'intérieur performant (essai de lightmaps précalculées dans Blender).
+- [x] Éclairage d'intérieur performant : lightmaps précalculées dans Blender (Cycles), lumières sans ombres dynamiques dans les cellules cuites ; collisions en cuboïdes (plus d'enveloppes convexes à l'instanciation).
 - [x] Mesures sur UHD 770 en release, préréglage Moyen (faites : objectif non atteint, voir `docs/JOURNAL.md`).
+- [ ] Nouvelles mesures sur UHD 770 en release, préréglage Moyen, après les lightmaps (à faire sur le poste Windows).
 
 **Fini quand** : on parcourt tout le vaisseau du sas au cockpit, portes comprises ; aucune frame > 33 ms pendant les transitions de cellules (mesuré par l'autopilote) ; ≥ 60 i/s en Moyen ; captures regardées et propres.
 

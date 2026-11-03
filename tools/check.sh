@@ -47,6 +47,10 @@ for start in menu galaxy global:hexis sector:test sector:player_ship; do
         run_game "ERROR|panicked|donn.{1,3}es charg|temps de frame" SH_START="$start" SH_EXIT_AFTER_FRAMES=150
 done
 
+# La voie d'éclairage entièrement dynamique (sans lightmaps) reste disponible pour comparer.
+step "fumée sector:player_ship sans lightmaps" \
+    run_game "ERROR|panicked|temps de frame" SH_START=sector:player_ship SH_BAKED_LIGHTING=0 SH_EXIT_AFTER_FRAMES=150
+
 # Parcours scripté du vaisseau du joueur, du sas au cockpit, toutes portes franchies.
 step "scénario walk_ship" \
     run_game "ERROR|panicked|sc.{1,3}nario" SH_START=sector:player_ship SH_SCENARIO=walk_ship

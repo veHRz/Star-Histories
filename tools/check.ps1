@@ -39,6 +39,18 @@ foreach ($start in $starts) {
     }
 }
 
+# La voie d'éclairage entièrement dynamique (sans lightmaps) reste disponible pour comparer.
+Step "fumée sector:player_ship sans lightmaps" {
+    $env:SH_START = "sector:player_ship"
+    $env:SH_BAKED_LIGHTING = "0"
+    $env:SH_EXIT_AFTER_FRAMES = "150"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_START, Env:SH_BAKED_LIGHTING, Env:SH_EXIT_AFTER_FRAMES
+    $log | Select-String -Pattern "ERROR|panicked|temps de frame" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
 # Parcours scripté du vaisseau du joueur, du sas au cockpit, toutes portes franchies.
 Step "scénario walk_ship" {
     $env:SH_START = "sector:player_ship"

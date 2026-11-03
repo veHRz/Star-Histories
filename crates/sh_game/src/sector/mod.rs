@@ -66,10 +66,19 @@ pub fn is_sector(data: &Data, place: &CurrentPlace) -> bool {
         .is_some_and(|id| data.sector(id).is_some())
 }
 
-fn enter_sector(mut commands: Commands, data: Res<Data>, place: Res<CurrentPlace>) {
+fn enter_sector(
+    mut commands: Commands,
+    data: Res<Data>,
+    place: Res<CurrentPlace>,
+    ambient: Option<ResMut<GlobalAmbientLight>>,
+) {
     let Some(sector) = place.0.as_deref().and_then(|id| data.sector(id)) else {
         return;
     };
+    // Les rebonds de lumière sont dans les lightmaps : l'ambiante ne les compte pas deux fois.
+    if let Some(mut ambient) = ambient {
+        ambient.affects_lightmapped_meshes = false;
+    }
     let root = commands
         .spawn((
             Name::new(format!("Secteur {}", sector.id)),

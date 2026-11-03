@@ -81,7 +81,11 @@ fn level_from_env() -> Option<PresetLevel> {
 
 fn init_settings(mut commands: Commands, data: Res<Data>) {
     let level = level_from_env().unwrap_or_default();
-    let preset = data.graphics.get(level).clone();
+    let mut preset = data.graphics.get(level).clone();
+    // `SH_BAKED_LIGHTING=0` : tout l'éclairage en dynamique, pour comparer les deux voies.
+    if let Ok(v) = std::env::var("SH_BAKED_LIGHTING") {
+        preset.baked_lighting = v.trim() != "0";
+    }
     info!("préréglage graphique : {level:?} ({preset:?})");
     commands.insert_resource(DirectionalLightShadowMap {
         size: preset.shadow_map_size as usize,

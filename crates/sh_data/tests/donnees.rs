@@ -215,11 +215,12 @@ fn les_modeles_des_secteurs_existent() {
         for cell in &sector.cells {
             chemins.push(cell.model.clone());
             chemins.extend(cell.lod.clone());
+            chemins.extend(cell.lightmap.as_ref().map(|l| l.image.clone()));
         }
         for chemin in chemins {
             assert!(
                 assets.join(&chemin).is_file(),
-                "{} : modèle absent {chemin}",
+                "{} : fichier absent {chemin}",
                 sector.id
             );
         }

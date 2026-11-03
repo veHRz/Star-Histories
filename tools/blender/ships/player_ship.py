@@ -12,6 +12,7 @@ Sorties :
 - art/ships/player_ship.blend ;
 - assets/models/ships/player_ship/<cellule>.glb (qualité Locale : tout, avec collisions) ;
 - assets/models/ships/player_ship/<cellule>_lod.glb (qualité Sectorielle : coque seule) ;
+- assets/textures/lightmaps/player_ship/<cellule>.png (éclairage précalculé, `lightmap.py`) ;
 - assets/data/propositions/sectors/player_ship.ron (cellules, portails, apparitions), généré.
 
 Repères Blender : X = tribord, Y = avant, Z = haut. Le jeu reçoit X, Z, −Y (export glTF).
@@ -29,10 +30,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "kit"))
 
 import common as c  # noqa: E402
+import lightmap as lm  # noqa: E402
 import ship_interior as kit  # noqa: E402
 
 SECTOR = "player_ship"
 MODELS = f"assets/models/ships/{SECTOR}"
+LIGHTMAPS = f"textures/lightmaps/{SECTOR}"
 DOOR_MODEL = "models/kit/ship_interior/door_sliding.glb"
 CORRIDOR_H = 2.6
 
@@ -225,7 +228,7 @@ def fmt(v) -> str:
     return "(" + ", ".join(f"{x:.3f}" for x in v) + ")"
 
 
-def sector_ron() -> str:
+def sector_ron(lightmaps: dict) -> str:
     lines = [
         "// Généré par tools/blender/ships/player_ship.py : NE PAS ÉDITER À LA MAIN.",
         "// Le vaisseau du joueur (proposition P12) : cellules, portails, apparitions.",
@@ -249,8 +252,11 @@ def sector_ron() -> str:
             f'            lod: "{model[:-4]}_lod.glb",',
             f"            min: {fmt(lo)},",
             f"            max: {fmt(hi)},",
-            "        ),",
         ]
+        if cell in lightmaps:
+            lmap = lightmaps[cell]
+            lines.append(f'            lightmap: (image: "{lmap["image"]}", exposure: {lmap["exposure"]:.3f}),')
+        lines.append("        ),")
     lines.append("    ],")
     lines.append("    portals: [")
     for p in PORTALS:
@@ -282,10 +288,15 @@ def main() -> None:
     m = kit.palette()
     exports = c.collection("EXPORT")
     built = {cell: build_cell(cell, m) for cell in CELLS}
+    resolutions = {cell: lm.resolution_for(p["visual"] + p["pickups"]) for cell, p in built.items()}
 
+    bake = {}
     quiet = io.StringIO()
     with contextlib.redirect_stdout(quiet), contextlib.redirect_stderr(quiet):
         for cell, parts in built.items():
+            # UV de lightmap avant la fusion : la version Locale et la version Sectorielle
+            # (sous-ensemble des mêmes pièces) partagent la même lightmap.
+            lm.unwrap(parts["visual"] + parts["pickups"], resolutions[cell])
             # Qualité Locale : un maillage par matériau + collisions + repères + objets à part.
             merged = c.join_by_material(parts["visual"], cell, exports)
             full = merged + parts["colliders"] + parts["marks"] + parts["pickups"]
@@ -295,7 +306,9 @@ def main() -> None:
             c.export_glb(f"{MODELS}/{cell}_lod.glb", lod)
             for obj in merged + lod:
                 obj.hide_set(True)
-    c.write_text(f"assets/data/propositions/sectors/{SECTOR}.ron", sector_ron())
+            bake[cell] = {"bake": merged + parts["pickups"], "res": resolutions[cell], "marks": parts["marks"]}
+    lightmaps = lm.bake_cells(bake, LIGHTMAPS, c.collection("BAKE_LAMPS"))
+    c.write_text(f"assets/data/propositions/sectors/{SECTOR}.ron", sector_ron(lightmaps))
     c.save_blend(f"art/ships/{SECTOR}.blend")
     print(f"{SECTOR} : {len(CELLS)} cellules, {len(PORTALS)} portails exportés")
 

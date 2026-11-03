@@ -7,8 +7,9 @@ source de vérité.
 | Script | Produit |
 |---|---|
 | `common.py` | Bibliothèque : scène vide, matériaux partagés, pavés, cylindres, collisions `_col`, repères, fusion par matériau, export glTF, conversion de repère |
+| `lightmap.py` | Éclairage précalculé : 2e jeu d'UV (`lightmap`) par cellule, bake diffus Cycles (une lampe par `LIGHT_`), PNG sRGB normalisés + exposition écrite dans le descripteur |
 | `kit/ship_interior.py` | Kit d'intérieur de vaisseau (P13) : `assets/models/kit/ship_interior/*.glb`, `art/kit/ship_interior.blend` |
-| `ships/player_ship.py` | Vaisseau du joueur (P12) : une paire de modèles par cellule dans `assets/models/ships/player_ship/`, le descripteur `assets/data/propositions/sectors/player_ship.ron`, `art/ships/player_ship.blend` |
+| `ships/player_ship.py` | Vaisseau du joueur (P12) : une paire de modèles par cellule dans `assets/models/ships/player_ship/`, une lightmap par cellule dans `assets/textures/lightmaps/player_ship/`, le descripteur `assets/data/propositions/sectors/player_ship.ron`, `art/ships/player_ship.blend` |
 
 ## Lancer
 
@@ -29,6 +30,11 @@ import sys; sys.path.insert(0, r"<racine du dépôt>/tools/blender")  # ex. D:\P
 import common; common.run_in_open_blender("tools/blender/ships/player_ship.py")
 ```
 
+Le bake Cycles (CPU) prend ≈ 10 min à 512 échantillons sur le poste Linux (i9-9900K) : lance-le
+en arrière-plan plutôt que par le MCP, qui expire avant la fin. `SH_BAKE_SAMPLES=64` donne un
+aperçu en ≈ 1 min (un peu de bruit). **Toute modification de géométrie impose un nouveau bake** :
+les UV de lightmap changent avec elle.
+
 Après un export : `cargo t` (le test `les_modeles_des_secteurs_existent` et la validation des
 secteurs), puis une capture en jeu (`SH_START=sector:player_ship`, `SH_SPAWN=<id>`).
 
@@ -38,7 +44,8 @@ secteurs), puis une capture en jeu (`SH_START=sector:player_ship`, `SH_SPAWN=<id
 |---|---|
 | `*_col` | Collision (enveloppe convexe du maillage), jamais rendue |
 | `*_lod1_*` | Version simplifiée (qualité Sectorielle), exportée dans `<cellule>_lod.glb` |
-| `LIGHT_<id>` | Lumière ponctuelle ; extras `lumens`, `range`, `color`, `shadow_candidate` |
+| `LIGHT_<id>` | Lumière ponctuelle ; extras `lumens`, `range`, `color`, `shadow_candidate` (ombre dynamique, seulement sans lightmap). Le bake en fait une lampe Blender de `lumens / 683` W |
+| UV `lightmap` | 2e jeu d'UV (TEXCOORD_1, `UV_1` dans Bevy), commun aux deux modèles d'une cellule : le jeu y pose la lightmap (`Lightmap`) |
 | `INTERACT_<nom>` | Zone d'interaction ; extras `interact` (`console`, `seat`, `pickup`, `ladder`) et ses paramètres (`label`, `role`, `item`) ; les enfants d'un `pickup` disparaissent avec lui |
 | `SOCKET_<nom>_<usage>` | Point d'attache ; extra `usage` (`seat_eye` : œil d'un siège `INTERACT_<nom>`) |
 | `CELL_<id>` | Collection d'une cellule (une cellule = un fichier `.glb`) |
