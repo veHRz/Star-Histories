@@ -3,7 +3,7 @@
 > Suis les jalons **dans l'ordre**. Coche chaque tâche (`[x]`) dans le commit qui la termine. Un jalon est fini quand **tous ses critères « Fini quand »** sont vérifiés (tests, autopilote, captures regardées). Push à la fin de chaque jalon.
 > Tu peux découper une tâche, en ajouter, en réordonner à l'intérieur d'un jalon : note-le dans `docs/JOURNAL.md`. Changer l'ordre des jalons ou leur périmètre : demande à l'auteur.
 
-État : **M0 à démarrer.** Déjà fait lors de la mise en place : toolchain, Blender + MCP, squelette Bevy qui ouvre une fenêtre (`crates/sh_game`), autopilote (fumée + capture).
+État : **M0 terminé (03/11/2026), M1 en cours.**
 
 ---
 
@@ -11,18 +11,18 @@
 
 But : une architecture propre, les données canon chargées, des outils pour te vérifier toi-même.
 
-- [ ] Créer les crates `sh_core`, `sh_data`, `sh_sim` et l'outil `tools/sh_import` (§5.1 d'AGENTS.md). Dépendances communes dans `[workspace.dependencies]`.
-- [ ] `sh_core` : date stellaire (`bt`/`at`, jour de l'année, affichage « 425at »), case de grille (depuis x, y ; affichage « K7 »), monnaies (crédit, Wuro), identifiants typés, RNG déterministe. Tests unitaires.
-- [ ] `tools/sh_import` : `_context/star-histories-carte.json` → `assets/data/canon/galaxy.ron` (zones, systèmes, astres, stations, hubs, flottes, drapeaux `secret`). Un README d'usage. Rejouable à l'identique.
-- [ ] `sh_data` : schémas, chargement, validation (identifiants uniques, références résolues, case cohérente avec les coordonnées, `source` présente sur les entrées canon). Test `les_donnees_sont_valides`.
-- [ ] Transcrire en données les fondamentaux canon utiles tout de suite : factions (§4), classes de vaisseaux (§2.4), formations (§2.5), monnaies (§2.8), hubs (§3.7).
-- [ ] `sh_game` : `AppState` (Boot → Loading → MainMenu → InGame) et sous-état `ViewLevel` (Galaxy, Global, Sector) avec `DespawnOnExit` ; écran de chargement minimal ; menu principal (Nouvelle partie, Continuer [grisé], Options [vide], Quitter).
-- [ ] Entrées : `bevy_enhanced_input` avec les contextes À pied, Pilotage, Carte, Menu.
-- [ ] Autopilote : `SH_START=<vue>[:<lieu>]` pour démarrer directement dans une vue ; journalisation du temps de frame moyen et maximal à la sortie.
-- [ ] Outils de debug derrière la feature `dev` : inspecteur (`bevy-inspector-egui`), affichage FPS/temps de frame, caméra libre (`bevy_camera_controller`).
-- [ ] Préréglages graphiques Bas / Moyen / Haut + échelle de rendu (structure et réglages de base).
-- [ ] `tools/check.ps1` : fmt --check, lint, tests, test de fumée de chaque `SH_START`.
-- [ ] Mettre à jour la section 5.1 d'AGENTS.md si la structure réelle diffère.
+- [x] Créer les crates `sh_core`, `sh_data`, `sh_sim` et l'outil `tools/sh_import` (§5.1 d'AGENTS.md). Dépendances communes dans `[workspace.dependencies]`.
+- [x] `sh_core` : date stellaire (`bt`/`at`, jour de l'année, affichage « 425at »), case de grille (depuis x, y ; affichage « K7 »), monnaies (crédit, Wuro), identifiants typés, RNG déterministe. Tests unitaires.
+- [x] `tools/sh_import` : `_context/star-histories-carte.json` → `assets/data/canon/galaxy.ron` (zones, systèmes, astres, stations, hubs, flottes, drapeaux `secret`). Un README d'usage. Rejouable à l'identique.
+- [x] `sh_data` : schémas, chargement, validation (identifiants uniques, références résolues, case cohérente avec les coordonnées, `source` présente sur les entrées canon). Test `les_donnees_sont_valides`.
+- [x] Transcrire en données les fondamentaux canon utiles tout de suite : factions (§4), classes de vaisseaux (§2.4), formations (§2.5), monnaies (§2.8), hubs (§3.7).
+- [x] `sh_game` : `AppState` (Boot → Loading → MainMenu → InGame) et sous-état `ViewLevel` (Galaxy, Global, Sector) avec `DespawnOnExit` ; écran de chargement minimal ; menu principal (Nouvelle partie, Continuer [grisé], Options [vide], Quitter).
+- [x] Entrées : `bevy_enhanced_input` avec les contextes À pied, Pilotage, Carte, Menu.
+- [x] Autopilote : `SH_START=<vue>[:<lieu>]` pour démarrer directement dans une vue ; journalisation du temps de frame moyen et maximal à la sortie.
+- [x] Outils de debug derrière la feature `dev` : inspecteur (`bevy-inspector-egui`), affichage FPS/temps de frame, caméra libre (`bevy_camera_controller`).
+- [x] Préréglages graphiques Bas / Moyen / Haut + échelle de rendu (structure et réglages de base).
+- [x] `tools/check.ps1` : fmt --check, lint, tests, test de fumée de chaque `SH_START`.
+- [x] Mettre à jour la section 5.1 d'AGENTS.md si la structure réelle diffère.
 
 **Fini quand** : `tools/check.ps1` passe ; le jeu démarre sur le menu ; `SH_START=galaxy` et `SH_START=sector:test` ouvrent des vues de test ; le journal affiche le nombre de systèmes, astres et stations chargés depuis les données.
 

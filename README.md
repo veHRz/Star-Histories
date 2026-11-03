@@ -4,7 +4,7 @@ RPG solo **space opera** en 3D à la première personne, dans la galaxie d'Astr�
 
 Fait avec [Bevy](https://bevyengine.org/) 0.20 (Rust) ; modèles 3D générés dans Blender.
 
-**État** : mise en place terminée, développement du jalon M0 (voir [`docs/ROADMAP.md`](docs/ROADMAP.md)).
+**État** : jalon M0 (fondations) terminé, M1 en cours (voir [`docs/ROADMAP.md`](docs/ROADMAP.md)).
 
 ## Lancer le jeu (développement)
 
@@ -14,7 +14,13 @@ Prérequis Windows : Rust (rustup, cible MSVC) et Visual Studio Build Tools avec
 cargo dev
 ```
 
-La première compilation prend plusieurs minutes.
+La première compilation prend plusieurs minutes. Vérification complète avant un commit :
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/check.ps1
+```
+
+Raccourcis de développement : F1 inspecteur, F2 caméra libre, F3 FPS. Démarrage direct dans une vue : `$env:SH_START = "galaxy"; cargo dev` (voir `AGENTS.md` §3.3).
 
 ## Documentation
 

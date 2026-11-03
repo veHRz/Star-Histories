@@ -95,7 +95,12 @@ Le jeu lit des variables d'environnement (`crates/sh_game/src/dev.rs`) :
 | `SH_EXIT_AFTER_FRAMES=N` | Quitte proprement après N frames (test de fumée : pas de panique) |
 | `SH_SCREENSHOT=target/shots/x.png` | Enregistre une capture puis quitte |
 | `SH_SCREENSHOT_FRAME=N` | Frame de la capture (défaut 90) |
-| `SH_START=…` | **À créer en M0** : démarre directement dans une vue ou un scénario (ex. `sector:vaisseau_joueur`, `global:hexis`, `galaxy`) |
+| `SH_START=<vue>[:<lieu>]` | Démarre directement dans une vue : `galaxy`, `global:<lieu>` (ex. `global:hexis`), `sector:<lieu>` (ex. `sector:test`) ; `menu` = menu principal. Lieu inconnu = arrêt en erreur |
+| `SH_PRESET=<préréglage>` | Préréglage graphique : `low`, `medium` (défaut) ou `high` |
+| `SH_SHOW_FPS=1` | Garde l'affichage FPS pendant une capture (masqué par défaut pour des images propres ; feature `dev`) |
+| `SH_GPU_CLUSTERING=1` | Réactive le clustering GPU des lumières (cassé sur UHD 770, voir §4) |
+
+À la sortie, le jeu journalise toujours le **temps de frame moyen et maximal** et le nombre de frames au-dessus de 33 ms (hors chargement). `tools/check.ps1` lance un test de fumée de chaque point d'entrée.
 
 Exemple (PowerShell) :
 
@@ -124,6 +129,17 @@ Ta mémoire contient probablement des API de Bevy 0.14 à 0.17. Bevy 0.20 diffè
 - **Features** : profils `2d`, `3d`, `ui`, `audio` ; collection `dev`. Liste dans `.reference/bevy-0.20.1/docs/cargo_features.md`.
 - **Guides de migration et notes de version** : `.reference/bevy-0.20.1/_release-content/`.
 
+Pièges rencontrés dans ce dépôt (M0) :
+
+- **Clustering GPU des lumières cassé sur la machine de référence** (UHD 770, Vulkan) : les `PointLight` n'éclairent rien. `graphics.rs` force le clustering CPU (`GlobalClusterSettings::gpu_clustering = None`). À revérifier à chaque mise à jour de Bevy (`SH_GPU_CLUSTERING=1`).
+- **Caméra du monde HDR + caméra d'interface séparée** : elles n'ont pas la même texture intermédiaire ; l'interface écrase la 3D. La caméra d'interface rend sur fond transparent et se **mélange** (`CameraOutputMode::Write { blend_state: Some(PREMULTIPLIED_ALPHA_BLENDING), .. }`), géré par `graphics::sync_ui_clear`.
+- **Exposition** : la valeur par défaut vise un extérieur ensoleillé ; en intérieur, `Exposure::INDOOR` sur la caméra.
+- **Police par défaut sans accents** : `ui::setup_fonts` remplace la police d'identifiant par défaut par Inter (`assets/fonts`). Bevy ne charge que TTF et OTF.
+- **`bevy_enhanced_input` 0.27** : `actions!` et `bindings!` sont dépréciés (refusés par `cargo lint`) : contextes et liaisons en **BSN** (`commands.spawn_scene(bsn! { … })`), voir `input.rs`.
+- **Conflits de requêtes** : un filtre `Added<T>` lit `T` ; il entre en conflit avec un `&mut T` dans un autre paramètre. Utiliser `Mut::is_added()`.
+- **Boutons** : `bevy::ui_widgets::{Button, ActivateOnPress, Activate}` (observateur `On<Activate>`), survol par `On<PointerOver>` / `On<PointerOut>`, désactivation par `InteractionDisabled`.
+- `RenderTarget` est un composant séparé de `Camera` ; `ClearColorConfig` et `RenderTarget` n'implémentent pas `PartialEq` (comparer avec `matches!`).
+
 Quand une API te surprend, cherche un exemple : `rg -l "NomDeLApi" .reference/bevy-0.20.1/examples`.
 
 ---
@@ -145,17 +161,19 @@ crates/
 tools/
   sh_import/               CLI : _context/*.json → assets/data/canon/*.ron (reproductible)
   blender/                 scripts bpy versionnés qui génèrent chaque asset (voir §9)
-  check.ps1                vérification complète : fmt --check, lint, tests, autopilote (à créer en M0)
+  fonts/                   conversion de la police Inter (fournie avec Blender) en TTF
+  check.ps1                vérification complète : fmt --check, lint, tests, import à jour, fumée de chaque SH_START
 assets/
   data/canon/              données transcrites du canon (chaque entrée cite sa section source)
   data/propositions/       données inventées, status: Proposition
-  data/gameplay/           réglages et contenu générique (équilibrage, listes de noms, missions types)
+  data/gameplay/           réglages et contenu générique (équilibrage, préréglages graphiques, horloge…)
+  data/lang/               textes visibles du joueur, une langue par fichier (en.ron)
   models/ textures/ audio/ fonts/ shaders/ ui/
 art/                       sources .blend (LFS), même arborescence que assets/models
 docs/                      conception, feuille de route, registres
 ```
 
-Aujourd'hui, seul `sh_game` existe (scène de test). **Le jalon M0 crée le reste.**
+État après M0 : tout ce qui précède existe, sauf `tools/blender/`, `art/` et `assets/models/` (M1). Modules de `sh_game` : `state` (états), `loading` (démarrage, chargement asynchrone et validation), `data` (ressources de données et textes), `ui` (thème, menu), `input` (contextes), `views` (vues de test Galaxie, Globale, Sectorielle), `graphics` (préréglages, échelle de rendu), `dev` (autopilote), `dev_tools` (feature `dev`).
 
 ### 5.2 Règles de dépendance
 
@@ -173,7 +191,7 @@ Aujourd'hui, seul `sh_game` existe (scène de test). **Le jalon M0 crée le rest
 | `bevy_enhanced_input` | 0.27 | Entrées par **contextes** (à pied, pilotage, carte, menus) et remappage |
 | `bevy_asset_loader` | 0.28 | États de chargement, collections d'assets |
 | `bevy-inspector-egui` / `bevy_egui` | 0.38 / 0.43 | Inspecteur de debug, **uniquement derrière la feature `dev`** |
-| `serde`, `ron`, `thiserror` | récentes | Données, erreurs |
+| `serde`, `serde_json`, `ron`, `thiserror` | récentes | Données, erreurs (`serde_json` : seulement `tools/sh_import`) |
 | `rand` + `rand_chacha` | récentes | Hasard **déterministe** de la simulation |
 | `bevy_hanabi` | 0.20 | Particules GPU (avec parcimonie : GPU intégré) |
 | `bevy_kira_audio` | 0.27 | Seulement si l'audio de Bevy ne suffit plus (mixage, flux) |
