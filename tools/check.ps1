@@ -26,7 +26,7 @@ Step "cargo t" { cargo t }
 Step "import du canon à jour" { cargo run -q -p sh_import -- --check }
 
 # Chaque point d'entrée de l'autopilote doit démarrer, charger les données et quitter sans panique.
-$starts = @("menu", "galaxy", "global:hexis", "sector:test")
+$starts = @("menu", "galaxy", "global:hexis", "sector:test", "sector:player_ship")
 foreach ($start in $starts) {
     Step "fumée SH_START=$start" {
         $env:SH_START = $start
@@ -37,6 +37,17 @@ foreach ($start in $starts) {
         $log | Select-String -Pattern "ERROR|panicked|donn.{1,3}es charg|temps de frame" | ForEach-Object { "   $_" }
         $global:LASTEXITCODE = $code
     }
+}
+
+# Parcours scripté du vaisseau du joueur, du sas au cockpit, toutes portes franchies.
+Step "scénario walk_ship" {
+    $env:SH_START = "sector:player_ship"
+    $env:SH_SCENARIO = "walk_ship"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_START, Env:SH_SCENARIO
+    $log | Select-String -Pattern "ERROR|panicked|sc.{1,3}nario" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
 }
 
 Write-Host "Tout est vert." -ForegroundColor Green

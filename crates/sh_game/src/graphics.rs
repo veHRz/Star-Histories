@@ -34,6 +34,7 @@ impl Plugin for GraphicsPlugin {
                     configure_directional_lights,
                     update_render_scale,
                     sync_ui_clear,
+                    budget_point_shadows,
                 )
                     .chain()
                     .run_if(resource_exists::<GraphicsSettings>),
@@ -249,5 +250,33 @@ fn cpu_light_clustering(mut settings: ResMut<GlobalClusterSettings>) {
         info!("clustering des lumières : GPU (SH_GPU_CLUSTERING=1)");
     } else {
         settings.gpu_clustering = None;
+    }
+}
+
+/// Budget d'ombres des lumières ponctuelles (AGENTS.md §10) : seules les lumières candidates
+/// les plus proches de la caméra projettent des ombres, dans la limite du préréglage.
+pub(crate) fn budget_point_shadows(
+    settings: Res<GraphicsSettings>,
+    camera: Query<&GlobalTransform, With<WorldCamera>>,
+    mut lights: Query<
+        (&GlobalTransform, &mut PointLight),
+        With<crate::sector::gltf::ShadowCandidate>,
+    >,
+) {
+    let Ok(eye) = camera.single() else {
+        return;
+    };
+    let eye = eye.translation();
+    let mut ranked: Vec<(f32, Mut<PointLight>)> = lights
+        .iter_mut()
+        .map(|(t, light)| (t.translation().distance_squared(eye), light))
+        .collect();
+    ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let allowed = usize::from(settings.preset.max_shadowed_point_lights);
+    for (i, (_, mut light)) in ranked.into_iter().enumerate() {
+        let wanted = i < allowed;
+        if light.shadow_maps_enabled != wanted {
+            light.shadow_maps_enabled = wanted;
+        }
     }
 }

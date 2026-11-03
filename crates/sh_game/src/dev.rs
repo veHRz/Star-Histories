@@ -230,3 +230,188 @@ mod tests {
         assert!(parse_start("cockpit").is_err());
     }
 }
+
+// --- Scénarios ----------------------------------------------------------------------------------
+
+/// Parcours scripté du vaisseau du joueur, du sas au cockpit, en passant par toutes les
+/// cellules et toutes les portes. Coordonnées Blender (x = tribord, y = avant) : le jeu reçoit
+/// (x, −y). `Some(portail)` : porte à ouvrir avant de rejoindre le point.
+const WALK_SHIP: &[(f32, f32, Option<&str>)] = &[
+    (-2.4, -3.0, Some("couloir_arriere__sas")),
+    (0.0, -3.0, None),
+    (0.0, -12.6, None),
+    (0.0, -15.6, Some("couloir_arriere__machines")),
+    (0.0, -17.0, None),
+    (0.0, -12.8, Some("couloir_arriere__machines")),
+    (0.0, -7.0, None),
+    (2.6, -7.0, Some("couloir_arriere__soute")),
+    (5.2, -7.5, None),
+    (2.6, -7.0, None),
+    (0.0, -7.0, Some("couloir_arriere__soute")),
+    (0.0, 6.0, None),
+    (-2.6, 6.0, Some("couloir_avant__quartiers")),
+    (-4.5, 5.5, None),
+    (-2.6, 6.0, None),
+    (0.0, 6.0, Some("couloir_avant__quartiers")),
+    (2.6, 6.0, Some("couloir_avant__carre")),
+    (3.2, 8.5, None),
+    (2.6, 6.0, None),
+    (0.0, 6.0, Some("couloir_avant__carre")),
+    (0.0, 12.8, None),
+    (0.0, 15.0, Some("couloir_avant__cockpit")),
+    (0.0, 16.4, None),
+    (0.0, 17.4, None),
+    (0.0, 18.4, None),
+];
+
+/// Délai sans progrès au-delà duquel un scénario est déclaré bloqué.
+const STUCK_SECONDS: f32 = 8.0;
+
+#[derive(Resource)]
+struct Scenario {
+    name: String,
+    index: usize,
+    best_distance: f32,
+    since_progress: f32,
+    started: bool,
+    frames: u32,
+    worst_ms: f64,
+    over_33ms: u32,
+    total_ms: f64,
+}
+
+pub struct ScenarioPlugin;
+
+impl Plugin for ScenarioPlugin {
+    fn build(&self, app: &mut App) {
+        let Ok(name) = std::env::var("SH_SCENARIO") else {
+            return;
+        };
+        if name != "walk_ship" {
+            error!("SH_SCENARIO inconnu : « {name} » (walk_ship)");
+            app.add_systems(Startup, |mut exit: MessageWriter<AppExit>| {
+                exit.write(AppExit::error());
+            });
+            return;
+        }
+        app.insert_resource(Scenario {
+            name,
+            index: 0,
+            best_distance: f32::MAX,
+            since_progress: 0.0,
+            started: false,
+            frames: 0,
+            worst_ms: 0.0,
+            over_33ms: 0,
+            total_ms: 0.0,
+        })
+        .add_systems(
+            Update,
+            run_scenario
+                .before(crate::player::PlayerSystems)
+                .run_if(resource_exists::<crate::sector::ActiveSector>),
+        );
+    }
+}
+
+fn run_scenario(
+    time: Res<Time>,
+    real: Res<Time<Real>>,
+    mut scenario: ResMut<Scenario>,
+    mut scripted: ResMut<crate::player::ScriptedControl>,
+    mut intent: ResMut<crate::player::PlayerIntent>,
+    cells: Res<crate::sector::streaming::CellStates>,
+    player: Query<
+        (&GlobalTransform, &crate::player::PlayerController),
+        With<crate::player::Player>,
+    >,
+    mut doors: Query<&mut crate::sector::doors::Door>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    use crate::sector::doors::DoorState;
+
+    scripted.0 = true;
+    *intent = crate::player::PlayerIntent::default();
+    let Ok((transform, controller)) = player.single() else {
+        return;
+    };
+    if !controller.grounded && !scenario.started {
+        return; // attend que le joueur soit posé (cellule prête, physique active)
+    }
+    if !scenario.started {
+        scenario.started = true;
+        info!(
+            "scénario {} : départ ({} étapes)",
+            scenario.name,
+            WALK_SHIP.len()
+        );
+        info!(
+            "scénario : joueur posé en {:?}, hauteur {:.2}",
+            transform.translation(),
+            controller.height
+        );
+    }
+    // Mesures pendant le parcours seulement (transitions de cellules comprises).
+    let ms = real.delta_secs_f64() * 1000.0;
+    scenario.frames += 1;
+    scenario.total_ms += ms;
+    scenario.worst_ms = scenario.worst_ms.max(ms);
+    if ms > 33.0 {
+        scenario.over_33ms += 1;
+    }
+
+    let Some(&(x, y, door)) = WALK_SHIP.get(scenario.index) else {
+        let mean = scenario.total_ms / f64::from(scenario.frames.max(1));
+        info!(
+            "scénario {} terminé : {} transitions de cellule, temps de frame moyen {mean:.2} ms, pire {:.2} ms, {} frame(s) > 33 ms",
+            scenario.name, cells.transitions, scenario.worst_ms, scenario.over_33ms
+        );
+        exit.write(AppExit::Success);
+        return;
+    };
+
+    // Porte à ouvrir d'abord : on attend qu'elle soit grande ouverte.
+    if let Some(portal) = door
+        && let Some(mut d) = doors.iter_mut().find(|d| d.portal == portal)
+        && d.state != DoorState::Open
+    {
+        d.request_open();
+        scenario.since_progress = 0.0;
+        return;
+    }
+
+    let target = Vec3::new(x, 0.0, -y);
+    let pos = transform.translation();
+    let to = Vec2::new(target.x - pos.x, target.z - pos.z);
+    let distance = to.length();
+    if distance < 0.35 {
+        scenario.index += 1;
+        scenario.best_distance = f32::MAX;
+        scenario.since_progress = 0.0;
+        return;
+    }
+    if distance < scenario.best_distance - 0.05 {
+        scenario.best_distance = distance;
+        scenario.since_progress = 0.0;
+    } else {
+        scenario.since_progress += time.delta_secs();
+        if scenario.since_progress > STUCK_SECONDS {
+            error!(
+                "scénario {} bloqué à l'étape {} (cible {:?}, position {:?}, cellule {:?})",
+                scenario.name, scenario.index, target, pos, cells.current
+            );
+            exit.write(AppExit::error());
+            return;
+        }
+    }
+    // Se tourner vers la cible (le contrôleur soustrait `look.x` au lacet), puis avancer.
+    let desired_yaw = (-to.x).atan2(-to.y);
+    let mut delta = controller.yaw - desired_yaw;
+    delta = (delta + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+    intent.look = Vec2::new(
+        delta * (time.delta_secs() * 10.0).min(1.0),
+        controller.pitch * 0.1,
+    );
+    let aligned = delta.abs() < 0.5;
+    intent.movement = Vec2::new(0.0, if aligned { 1.0 } else { 0.25 });
+}

@@ -139,6 +139,8 @@ Pièges rencontrés dans ce dépôt (M0) :
 - **Conflits de requêtes** : un filtre `Added<T>` lit `T` ; il entre en conflit avec un `&mut T` dans un autre paramètre. Utiliser `Mut::is_added()`.
 - **Boutons** : `bevy::ui_widgets::{Button, ActivateOnPress, Activate}` (observateur `On<Activate>`), survol par `On<PointerOver>` / `On<PointerOut>`, désactivation par `InteractionDisabled`.
 - `RenderTarget` est un composant séparé de `Camera` ; `ClearColorConfig` et `RenderTarget` n'implémentent pas `PartialEq` (comparer avec `matches!`).
+- **glTF (M1)** : une scène s'instancie avec `WorldAssetRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset(…)))` (l'ancien `SceneRoot`) ; l'instance prête déclenche `On<WorldInstanceReady>` sur la racine ; les extras d'un nœud arrivent en JSON dans `GltfExtras { value }` ; le maillage d'un nœud est souvent sur ses enfants (primitives).
+- **avian3d 0.8** : `MoveAndSlide` (paramètre système) fait le « collide and slide » d'un contrôleur cinématique ; dans `ShapeHitData`, `normal1` est la normale de la surface touchée. Un collider sans corps rigide s'attache au `RigidBody` ancêtre le plus proche.
 
 Quand une API te surprend, cherche un exemple : `rg -l "NomDeLApi" .reference/bevy-0.20.1/examples`.
 

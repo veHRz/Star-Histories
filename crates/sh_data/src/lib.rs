@@ -20,6 +20,7 @@ pub mod currencies;
 pub mod factions;
 pub mod galaxy;
 pub mod lang;
+pub mod sector;
 pub mod settings;
 pub mod ships;
 pub mod validate;
@@ -32,6 +33,7 @@ pub use galaxy::{
     Station, Zone,
 };
 pub use lang::Lang;
+pub use sector::{Cell, Portal, PortalKind, Sector, SectorKind, Spawn};
 pub use settings::{AntiAliasing, ClockSettings, GraphicsPreset, GraphicsPresets, PresetLevel};
 pub use ships::{Formation, FormationsFile, ShipClass, ShipClassesFile};
 pub use validate::{Issue, ValidationReport};
@@ -46,6 +48,8 @@ pub mod paths {
     pub const GRAPHICS: &str = "gameplay/graphics.ron";
     pub const CLOCK: &str = "gameplay/clock.ron";
     pub const LANG_EN: &str = "lang/en.ron";
+    /// Dossiers scannés pour les descripteurs de secteurs (`*.ron`).
+    pub const SECTOR_DIRS: [&str; 2] = ["canon/sectors", "propositions/sectors"];
 }
 
 /// Toutes les données chargées au démarrage du jeu.
@@ -59,6 +63,7 @@ pub struct GameData {
     pub graphics: GraphicsPresets,
     pub clock: ClockSettings,
     pub lang: Lang,
+    pub sectors: Vec<Sector>,
 }
 
 #[derive(Debug, Error)]
@@ -110,6 +115,7 @@ impl GameData {
             graphics: read_ron(&file(paths::GRAPHICS))?,
             clock: read_ron(&file(paths::CLOCK))?,
             lang: read_ron(&file(paths::LANG_EN))?,
+            sectors: read_dir_ron(data_dir, &paths::SECTOR_DIRS)?,
         })
     }
 
@@ -120,5 +126,30 @@ impl GameData {
 
     pub fn faction(&self, id: &sh_core::Id<Faction>) -> Option<&Faction> {
         self.factions.factions.iter().find(|f| &f.id == id)
+    }
+}
+
+/// Lit tous les `*.ron` des dossiers donnés (absents : ignorés), triés par chemin.
+fn read_dir_ron<T: DeserializeOwned>(data_dir: &Path, dirs: &[&str]) -> Result<Vec<T>, DataError> {
+    let mut files = Vec::new();
+    for dir in dirs {
+        let dir = data_dir.join(dir);
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "ron") {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    files.iter().map(|path| read_ron(path)).collect()
+}
+
+impl GameData {
+    pub fn sector(&self, id: &str) -> Option<&Sector> {
+        self.sectors.iter().find(|s| s.id.as_str() == id)
     }
 }

@@ -1,0 +1,257 @@
+//! Interactions à la première personne : un rayon de visée et une touche.
+//!
+//! Le rayon part de l'œil du joueur ; il est arrêté par les murs et les portes, si bien qu'on
+//! n'interagit jamais à travers une cloison. La cible visée affiche une invite ; la touche
+//! d'interaction (ou l'autopilote, via [`InteractRequest`]) déclenche l'action.
+
+use std::collections::BTreeMap;
+
+use avian3d::prelude::*;
+use bevy::prelude::*;
+use bevy_enhanced_input::prelude::*;
+
+use crate::data::Texts;
+use crate::input::Interact;
+use crate::player::{Player, PlayerCamera, PlayerController, PlayerMode};
+use crate::sector::doors::Door;
+use crate::sector::gltf::{Interactable, Socket};
+use crate::sector::{ActiveSector, Layer};
+use crate::ui::hud::{Notice, Prompt};
+
+pub struct InteractionPlugin;
+
+impl Plugin for InteractionPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<Focus>()
+            .init_resource::<Inventory>()
+            .add_message::<InteractRequest>()
+            .add_observer(on_interact_key)
+            .add_systems(
+                Update,
+                (find_focus, update_prompt, perform)
+                    .chain()
+                    .after(crate::player::PlayerSystems)
+                    .run_if(resource_exists::<ActiveSector>),
+            );
+    }
+}
+
+/// Portée de la main, en mètres.
+pub const REACH: f32 = 2.2;
+/// On ne ferme pas une porte sur soi.
+const DOOR_CLEARANCE: f32 = 0.9;
+
+/// La cible visée, s'il y en a une.
+#[derive(Resource, Default, Debug)]
+pub struct Focus(pub Option<Target>);
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Target {
+    /// Entité qui porte l'[`Interactable`] ou la [`Door`].
+    pub entity: Entity,
+    pub kind: Interactable,
+}
+
+/// Demande d'interaction avec la cible visée (touche ou autopilote).
+#[derive(Message, Clone, Copy, Debug, Default)]
+pub struct InteractRequest;
+
+/// Objets ramassés (l'inventaire complet arrive en M5).
+#[derive(Resource, Default, Debug)]
+pub struct Inventory {
+    pub items: BTreeMap<String, u32>,
+}
+
+fn on_interact_key(_: On<Start<Interact>>, mut requests: MessageWriter<InteractRequest>) {
+    requests.write(InteractRequest);
+}
+
+/// Remonte la hiérarchie depuis une entité touchée jusqu'à ce qui est interactif.
+fn interactive_ancestor(
+    mut entity: Entity,
+    parents: &Query<&ChildOf>,
+    interactables: &Query<&Interactable>,
+    doors: &Query<&Door>,
+) -> Option<Target> {
+    for _ in 0..8 {
+        if let Ok(kind) = interactables.get(entity) {
+            return Some(Target {
+                entity,
+                kind: kind.clone(),
+            });
+        }
+        if doors.contains(entity) {
+            return Some(Target {
+                entity,
+                kind: Interactable::Door,
+            });
+        }
+        entity = parents.get(entity).ok()?.parent();
+    }
+    None
+}
+
+fn find_focus(
+    spatial: SpatialQuery,
+    camera: Query<&GlobalTransform, With<PlayerCamera>>,
+    player: Query<&PlayerController, With<Player>>,
+    parents: Query<&ChildOf>,
+    interactables: Query<&Interactable>,
+    doors: Query<&Door>,
+    mut focus: ResMut<Focus>,
+) {
+    let (Ok(eye), Ok(controller)) = (camera.single(), player.single()) else {
+        focus.0 = None;
+        return;
+    };
+    // Assis, la seule action possible est de se lever.
+    if let PlayerMode::Seated { seat, .. } = controller.mode {
+        let kind = interactables
+            .get(seat)
+            .cloned()
+            .unwrap_or(Interactable::Seat {
+                role: String::new(),
+            });
+        focus.0 = Some(Target { entity: seat, kind });
+        return;
+    }
+    let filter = SpatialQueryFilter::from_mask([Layer::Static, Layer::Door, Layer::Interact]);
+    let hit = spatial.cast_ray(eye.translation(), eye.forward(), REACH, true, &filter);
+    let target = hit.and_then(|h| interactive_ancestor(h.entity, &parents, &interactables, &doors));
+    if focus.0 != target {
+        focus.0 = target;
+    }
+}
+
+fn update_prompt(
+    focus: Res<Focus>,
+    texts: Res<Texts>,
+    player: Query<&PlayerController, With<Player>>,
+    doors: Query<&Door>,
+    mut prompt: ResMut<Prompt>,
+) {
+    let seated = player
+        .single()
+        .is_ok_and(|p| matches!(p.mode, PlayerMode::Seated { .. }));
+    let text = focus.0.as_ref().map(|target| match &target.kind {
+        Interactable::Door => {
+            let open = doors.get(target.entity).is_ok_and(Door::is_open);
+            texts.get(if open {
+                "interact.door.close"
+            } else {
+                "interact.door.open"
+            })
+        }
+        Interactable::Console { label } => texts.format(
+            "interact.console",
+            &[("console", &texts.get(&format!("console.{label}.name")))],
+        ),
+        Interactable::Seat { .. } if seated => texts.get("interact.seat.leave"),
+        Interactable::Seat { .. } => texts.get("interact.seat.sit"),
+        Interactable::Pickup { item } => texts.format(
+            "interact.pickup",
+            &[("item", &texts.get(&format!("item.{item}")))],
+        ),
+        Interactable::Ladder => texts.get("interact.ladder"),
+    });
+    if prompt.0 != text {
+        prompt.0 = text;
+    }
+}
+
+fn perform(
+    mut commands: Commands,
+    mut requests: MessageReader<InteractRequest>,
+    focus: Res<Focus>,
+    texts: Res<Texts>,
+    mut inventory: ResMut<Inventory>,
+    mut notices: MessageWriter<Notice>,
+    mut doors: Query<(&GlobalTransform, &mut Door)>,
+    sockets: Query<(&Socket, &GlobalTransform)>,
+    children: Query<&Children>,
+    parents: Query<&ChildOf>,
+    names: Query<&Name>,
+    mut player: Single<(&GlobalTransform, &mut PlayerController), With<Player>>,
+) {
+    if requests.read().count() == 0 {
+        return;
+    }
+    let Some(target) = focus.0.clone() else {
+        return;
+    };
+    let (player_transform, controller) = &mut *player;
+    match &target.kind {
+        Interactable::Door => {
+            if let Ok((door_transform, mut door)) = doors.get_mut(target.entity) {
+                let inside = player_transform
+                    .translation()
+                    .distance(door_transform.translation())
+                    < DOOR_CLEARANCE;
+                if !(door.is_open() && inside) {
+                    door.toggle();
+                }
+            }
+        }
+        Interactable::Console { label } => {
+            notices.write(Notice(texts.get(&format!("console.{label}.message"))));
+        }
+        Interactable::Seat { .. } => match controller.mode {
+            PlayerMode::Seated { facing, .. } => {
+                // Se lever : un pas devant le siège.
+                let forward = Quat::from_rotation_y(facing) * Vec3::NEG_Z;
+                let feet = player_transform.translation() + forward * 0.75;
+                controller.mode = PlayerMode::Walking;
+                controller.velocity = Vec3::ZERO;
+                commands.queue(move |world: &mut World| {
+                    if let Ok(mut q) = world
+                        .query_filtered::<&mut Transform, With<Player>>()
+                        .single_mut(world)
+                    {
+                        q.translation = Vec3::new(feet.x, feet.y + 0.05, feet.z);
+                    }
+                });
+            }
+            PlayerMode::Walking => {
+                // L'œil du siège est le point d'attache `SOCKET_<nom>_eye`, voisin du repère
+                // `INTERACT_<nom>` (convention de tools/blender/kit/ship_interior.py).
+                let wanted = names
+                    .get(target.entity)
+                    .ok()
+                    .and_then(|n| n.as_str().strip_prefix("INTERACT_"))
+                    .map(|n| format!("{n}_eye"));
+                let parent = parents.get(target.entity).map(ChildOf::parent).ok();
+                let eye = parent
+                    .into_iter()
+                    .flat_map(|p| children.get(p).into_iter().flatten().copied())
+                    .filter_map(|e| sockets.get(e).ok())
+                    .find(|(socket, _)| {
+                        socket.usage == "seat_eye" && Some(&socket.name) == wanted.as_ref()
+                    })
+                    .map(|(_, t)| t.compute_transform());
+                if let Some(eye) = eye {
+                    let facing = eye.rotation.to_euler(EulerRot::YXZ).0;
+                    controller.mode = PlayerMode::Seated {
+                        seat: target.entity,
+                        eye: eye.translation,
+                        facing,
+                    };
+                    controller.yaw = facing;
+                    controller.pitch = -0.1;
+                } else {
+                    warn!("siège sans point d'attache SOCKET_*_eye");
+                }
+            }
+        },
+        Interactable::Pickup { item } => {
+            *inventory.items.entry(item.clone()).or_default() += 1;
+            notices.write(Notice(texts.format(
+                "notice.picked_up",
+                &[("item", &texts.get(&format!("item.{item}")))],
+            )));
+            commands.entity(target.entity).despawn();
+        }
+        Interactable::Ladder => {
+            notices.write(Notice(texts.get("notice.ladder")));
+        }
+    }
+}

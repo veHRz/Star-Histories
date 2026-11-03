@@ -41,12 +41,12 @@ pub enum MenuAction {
     Quit,
 }
 
-/// Où commence une nouvelle partie. Le vrai départ (le vaisseau du joueur à Hexis, P1) arrive
-/// avec M1 ; d'ici là, le secteur de test.
+/// Où commence une nouvelle partie : à bord du vaisseau du joueur (P1, P12). L'amarrage à Hexis
+/// arrive avec M2.
 fn new_game() -> EnterGame {
     EnterGame {
         view: ViewLevel::Sector,
-        place: Some("test".into()),
+        place: Some("player_ship".into()),
     }
 }
 

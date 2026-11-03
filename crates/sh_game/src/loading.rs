@@ -155,5 +155,6 @@ fn finish_loading(
 }
 
 fn place_exists(data: &GameData, id: &str) -> bool {
-    sh_core::Id::new(id).is_ok_and(|id| data.galaxy.place_name(&id).is_some())
+    data.sector(id).is_some()
+        || sh_core::Id::new(id).is_ok_and(|id| data.galaxy.place_name(&id).is_some())
 }

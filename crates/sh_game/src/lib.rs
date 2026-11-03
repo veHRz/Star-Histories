@@ -13,7 +13,10 @@ pub mod dev;
 mod dev_tools;
 pub mod graphics;
 pub mod input;
+pub mod interaction;
 pub mod loading;
+pub mod player;
+pub mod sector;
 pub mod state;
 pub mod ui;
 pub mod views;
@@ -41,6 +44,13 @@ impl Plugin for StarHistoriesPlugin {
             views::ViewsPlugin,
             graphics::GraphicsPlugin,
             dev::AutopilotPlugin,
+            dev::ScenarioPlugin,
+        ))
+        .add_plugins((
+            avian3d::PhysicsPlugins::default(),
+            sector::SectorPlugin,
+            player::PlayerPlugin,
+            interaction::InteractionPlugin,
         ));
         #[cfg(feature = "dev")]
         app.add_plugins(dev_tools::DevToolsPlugin);

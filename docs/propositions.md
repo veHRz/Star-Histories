@@ -16,3 +16,6 @@
 | P9 | 03/11/2026 | Traits de personnage gagnés par les actes (« Parole tenue », « Traître notoire »…) | Gameplay | Personnage | En attente |
 | P10 | 03/11/2026 | Calendrier : année de 365 jours, affichage « Day N, 425at » (Q3) | Règle du monde (calendrier) | Horloge, interface | **Validée** (03/11/2026) |
 | P11 | 03/11/2026 | Noms d'affichage des étoiles sans nom canon : « Étoile de Cygnara », « Étoile d'Hexis » (Q9) | Nom (affichage) | Carte, vue Globale | **Validée** (03/11/2026) |
+| P12 | 03/11/2026 | Le vaisseau du joueur : petit marchand de taille corvette (≈ 50 m d'intérieur, ≈ 60 m hors tout), un pont, 8 cellules (cockpit surélevé, quartiers, carré, sas, soute, salle des machines, deux couloirs) ; `assets/data/propositions/sectors/player_ship.ron` | Vaisseau (générique, sans nom) | Départ de la v1 | En attente |
+| P13 | 03/11/2026 | Kit d'intérieur de vaisseau et sa palette (cloisons gris clair à membrures sombres, accents ambre, sols sombres, écrans cyan) : application de la DA « réaliste stylisé » | Direction artistique | Intérieurs (`tools/blender/kit/ship_interior.py`) | En attente |
+| P14 | 03/11/2026 | Gravité artificielle de 1 g à bord des vaisseaux (le canon ne dit rien de la gravité à bord, §11.1) | Technologie | Contrôleur à pied | En attente |

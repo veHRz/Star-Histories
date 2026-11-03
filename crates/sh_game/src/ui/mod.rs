@@ -7,6 +7,7 @@ use bevy::ui::IsDefaultUiCamera;
 
 use crate::data::assets_dir;
 
+pub mod hud;
 pub mod menu;
 pub mod theme;
 
@@ -14,7 +15,7 @@ pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(menu::MenuPlugin)
+        app.add_plugins((menu::MenuPlugin, hud::HudPlugin))
             .add_systems(Startup, (setup_fonts, spawn_ui_camera));
     }
 }

@@ -6,13 +6,12 @@
 
 use bevy::camera::Exposure;
 use bevy::prelude::*;
-use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow};
 use bevy_enhanced_input::prelude::*;
 
 use crate::data::Texts;
 use crate::graphics::{GraphicsSettings, WorldCamera};
 use crate::input::{Look, Move, Sprint};
-use crate::state::{ControlMode, ViewLevel};
+use crate::state::{ControlMode, CurrentPlace, ViewLevel};
 use crate::ui::theme::UiFonts;
 use crate::views::view_banner;
 
@@ -20,8 +19,7 @@ pub struct SectorViewPlugin;
 
 impl Plugin for SectorViewPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(ViewLevel::Sector), (spawn_test_room, grab_cursor))
-            .add_systems(OnExit(ViewLevel::Sector), release_cursor)
+        app.add_systems(OnEnter(ViewLevel::Sector), spawn_test_room)
             .add_systems(Update, walk.run_if(in_state(ViewLevel::Sector)));
     }
 }
@@ -47,7 +45,12 @@ fn spawn_test_room(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut mode: ResMut<NextState<ControlMode>>,
+    place: Res<CurrentPlace>,
 ) {
+    // La salle de test n'existe que pour `sector:test` ; les vrais secteurs viennent des données.
+    if place.0.as_deref() != Some("test") {
+        return;
+    }
     mode.set(ControlMode::OnFoot);
     let wall = materials.add(StandardMaterial {
         base_color: Color::srgb(0.42, 0.44, 0.47),
@@ -224,14 +227,4 @@ fn walk(
     let right = Quat::from_rotation_y(head_angles.yaw) * Vec3::X;
     transform.translation += (forward * input.y + right * input.x) * speed * time.delta_secs();
     transform.translation.y = EYE_HEIGHT;
-}
-
-fn grab_cursor(mut cursor: Single<&mut CursorOptions, With<PrimaryWindow>>) {
-    cursor.grab_mode = CursorGrabMode::Locked;
-    cursor.visible = false;
-}
-
-fn release_cursor(mut cursor: Single<&mut CursorOptions, With<PrimaryWindow>>) {
-    cursor.grab_mode = CursorGrabMode::None;
-    cursor.visible = true;
 }

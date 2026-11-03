@@ -503,6 +503,23 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
         "time_scale doit être positif",
     );
 
+    // --- Secteurs ----------------------------------------------------------------------------
+    for s in &data.sectors {
+        let ctx = format!("secteur {}", s.id);
+        c.status(&ctx, &s.status, s.source.as_deref());
+        c.check(
+            data.lang.has(&s.name_key),
+            &ctx,
+            format!("clé de nom absente de la langue : {}", s.name_key),
+        );
+        for problem in s.problems() {
+            c.fail(&ctx, problem);
+        }
+    }
+    for id in duplicates(data.sectors.iter().map(|s| s.id.as_str())) {
+        c.fail("secteurs", format!("identifiant en double : {id}"));
+    }
+
     // --- Langue -----------------------------------------------------------------------------
     for (key, text) in &data.lang.strings {
         c.check(

@@ -204,3 +204,34 @@ fn detecte_un_astre_public_dans_un_systeme_secret() {
     verdine.secret = false;
     assert!(messages(&data).contains("système secret"));
 }
+
+#[test]
+fn les_modeles_des_secteurs_existent() {
+    let data = donnees();
+    let assets = racine().join("assets");
+    assert!(!data.sectors.is_empty(), "aucun secteur chargé");
+    for sector in &data.sectors {
+        let mut chemins = vec![sector.door_model.clone()];
+        for cell in &sector.cells {
+            chemins.push(cell.model.clone());
+            chemins.extend(cell.lod.clone());
+        }
+        for chemin in chemins {
+            assert!(
+                assets.join(&chemin).is_file(),
+                "{} : modèle absent {chemin}",
+                sector.id
+            );
+        }
+    }
+}
+
+#[test]
+fn le_vaisseau_du_joueur_est_connexe() {
+    let data = donnees();
+    let vaisseau = data
+        .sector("player_ship")
+        .unwrap_or_else(|| panic!("player_ship absent"));
+    assert_eq!(vaisseau.within("sas", 8).len(), vaisseau.cells.len());
+    assert!(vaisseau.spawns.iter().any(|s| s.id == "sas"));
+}
