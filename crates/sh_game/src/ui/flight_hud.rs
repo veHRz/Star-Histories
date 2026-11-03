@@ -65,19 +65,6 @@ fn spawn_flight_hud(mut commands: Commands, fonts: Res<UiFonts>) {
     ));
 }
 
-/// Nombre lisible : groupes de milliers séparés par une espace fine.
-fn grouped(value: f64) -> String {
-    let digits = format!("{:.0}", value.max(0.0));
-    let mut out = String::new();
-    for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i) % 3 == 0 {
-            out.push('\u{202f}');
-        }
-        out.push(c);
-    }
-    out
-}
-
 #[allow(clippy::too_many_arguments)]
 fn update_flight_hud(
     texts: Res<Texts>,
@@ -109,11 +96,14 @@ fn update_flight_hud(
     }
     let speed = motion.velocity.length();
     let speed_text = if speed < 10_000.0 {
-        texts.format("hud.flight.speed_ms", &[("value", &grouped(speed))])
+        texts.format(
+            "hud.flight.speed_ms",
+            &[("value", &texts.number(speed.max(0.0), 0))],
+        )
     } else {
         texts.format(
             "hud.flight.speed_kms",
-            &[("value", &grouped(speed / 1000.0))],
+            &[("value", &texts.number((speed / 1000.0).max(0.0), 0))],
         )
     };
     let mode_key = if intent.cruise || speed > 1_000.0 {
@@ -131,7 +121,10 @@ fn update_flight_hud(
     let nearest_text = nearest.map_or_else(String::new, |(d, name)| {
         texts.format(
             "hud.flight.nearest",
-            &[("name", name.as_str()), ("distance", &grouped(d / 1000.0))],
+            &[
+                ("name", name.as_str()),
+                ("distance", &texts.number((d / 1000.0).max(0.0), 0)),
+            ],
         )
     });
     // À portée d'une balise : l'invite d'amarrage.
@@ -143,7 +136,10 @@ fn update_flight_hud(
         .map_or_else(String::new, |(d, _, name)| {
             texts.format(
                 "hud.flight.dock",
-                &[("name", name.as_str()), ("distance", &grouped(d / 1000.0))],
+                &[
+                    ("name", name.as_str()),
+                    ("distance", &texts.number((d / 1000.0).max(0.0), 0)),
+                ],
             )
         });
     for (line, mut text) in &mut lines {
@@ -156,18 +152,5 @@ fn update_flight_hud(
         if text.0 != *wanted {
             text.0.clone_from(wanted);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::grouped;
-
-    #[test]
-    fn milliers_groupes() {
-        assert_eq!(grouped(0.4), "0");
-        assert_eq!(grouped(245.0), "245");
-        assert_eq!(grouped(1523.4), "1\u{202f}523");
-        assert_eq!(grouped(1_000_000.0), "1\u{202f}000\u{202f}000");
     }
 }

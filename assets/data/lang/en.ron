@@ -1,9 +1,12 @@
-// Textes visibles du joueur, en anglais (décision de l'auteur, docs/QUESTIONS.md Q8).
+// Textes visibles du joueur, en anglais : traduction tenue à jour en parallèle de fr.ron, la
+// langue du jeu (décision de l'auteur, docs/QUESTIONS.md Q11). Mêmes clés que fr.ron (test).
 // Clés stables en snake_case pointé ; paramètres nommés entre accolades ({place}).
 // Les noms propres du canon ne se traduisent pas et ne figurent pas ici (ils viennent des données).
 (
     code: "en",
     strings: {
+        "number.group": ",",
+        "number.decimal": ".",
         "app.title": "Star Histories",
         "date.format": "Day {day}, {year}",
         "loading.title": "Loading",
@@ -47,9 +50,9 @@
         "travel.tip.1": "Hyperspace is slow, and nebulae block it: plan around them.",
         "travel.tip.2": "Heavy fuel keeps your ship alive between ports. Watch your reserves.",
         "view.global.title": "{place}",
-        "view.global.hint": "At the helm: WASD, Space/Ctrl: thrust   ·   Mouse: steer   ·   Q/E: roll   ·   Shift: cruise   ·   Z: flight assist   ·   G: dock   ·   F: stand up   ·   Esc: main menu",
+        "view.global.hint": "At the helm: WASD, Space/Ctrl: thrust   ·   Mouse: steer   ·   Q/E: roll   ·   Shift: cruise   ·   Z: flight assist   ·   G: dock   ·   F: stand up   ·   C: record   ·   J: log   ·   Esc: main menu",
         "view.sector.title": "Sector view (test room)",
-        "view.sector.hint": "WASD: move   ·   Mouse: look   ·   Shift: run   ·   Esc: main menu",
+        "view.sector.hint": "WASD: move   ·   Mouse: look   ·   Shift: run   ·   C: record   ·   J: log   ·   Esc: main menu",
         "sector.player_ship": "Your ship",
         "view.global.unnamed_star": "Star",
         "date.display": "Day {day}, {year}",

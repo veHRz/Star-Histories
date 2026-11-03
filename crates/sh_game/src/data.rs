@@ -30,7 +30,7 @@ impl Texts {
     /// Charge la langue d'interface. Un échec n'empêche pas de démarrer : les clés s'affichent
     /// entre crochets, et la validation des données signale le problème au chargement.
     pub fn load() -> Self {
-        let path = data_dir().join(sh_data::paths::LANG_EN);
+        let path = data_dir().join(sh_data::paths::LANG);
         match sh_data::read_ron::<Lang>(&path) {
             Ok(lang) => Texts(lang),
             Err(err) => {

@@ -918,9 +918,10 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
 
     // --- Langue -----------------------------------------------------------------------------
     for (key, text) in &data.lang.strings {
+        // Les séparateurs de nombres sont des espaces par nature (« 12 500 »).
         c.check(
-            !text.trim().is_empty(),
-            "lang/en.ron",
+            !text.trim().is_empty() || key.starts_with("number."),
+            crate::paths::LANG,
             format!("texte vide pour {key}"),
         );
     }
@@ -931,7 +932,7 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
     leaks(&mut c, "ship_classes.ron", &data.ship_classes);
     leaks(&mut c, "formations.ron", &data.formations);
     leaks(&mut c, "currencies.ron", &data.currencies);
-    leaks(&mut c, "lang/en.ron", &data.lang);
+    leaks(&mut c, crate::paths::LANG, &data.lang);
 
     if c.report.issues.is_empty() {
         Ok(())

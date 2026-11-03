@@ -112,11 +112,11 @@ fn place_pos(g: &sh_data::Galaxy, id: &sh_core::Id<sh_data::Place>) -> Option<Ma
         .or_else(|| g.station(id).map(|s| s.pos))
 }
 
-/// Population lisible : « 3.4 billion », « 250 million ».
+/// Population lisible : « 3,4 milliard(s) », « 250 million(s) ».
 fn population_text(texts: &Texts, n: u64) -> String {
     let n = n as f64;
     if n >= 1e9 {
-        texts.format("map.unit.billion", &[("value", &format!("{:.1}", n / 1e9))])
+        texts.format("map.unit.billion", &[("value", &texts.number(n / 1e9, 1))])
     } else if n >= 1e6 {
         texts.format("map.unit.million", &[("value", &format!("{:.0}", n / 1e6))])
     } else {

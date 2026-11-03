@@ -33,8 +33,9 @@ fn ressemble_a_une_cle(s: &str) -> bool {
 fn toutes_les_cles_existent() {
     let manifeste = Path::new(env!("CARGO_MANIFEST_DIR"));
     let racine = manifeste.ancestors().nth(2).unwrap_or(manifeste);
-    let langue: sh_data::Lang = sh_data::read_ron(&racine.join("assets/data/lang/en.ron"))
-        .unwrap_or_else(|err| panic!("{err}"));
+    let langue: sh_data::Lang =
+        sh_data::read_ron(&racine.join("assets/data").join(sh_data::paths::LANG))
+            .unwrap_or_else(|err| panic!("{err}"));
 
     let mut manquantes = Vec::new();
     let mut vues = 0;
@@ -56,6 +57,6 @@ fn toutes_les_cles_existent() {
     );
     assert!(
         manquantes.is_empty(),
-        "clés absentes de en.ron : {manquantes:?}"
+        "clés absentes de fr.ron : {manquantes:?}"
     );
 }

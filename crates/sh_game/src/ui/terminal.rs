@@ -359,7 +359,7 @@ fn market_page(ctx: &Ctx) -> Page {
             "market.exchange",
             &[
                 ("amount", &money(t, Credits::units(1000))),
-                ("rate", &format!("{rate}")),
+                ("rate", &t.number(rate, 1)),
             ],
         ),
         Action::Exchange(Credits::units(1000)),
@@ -418,7 +418,7 @@ fn sheet_page(ctx: &Ctx) -> Page {
         "sheet.money",
         &[
             ("credits", &money(t, cap.credits)),
-            ("wuro", &format!("{:.2}", cap.wuro.as_f64())),
+            ("wuro", &t.number(cap.wuro.as_f64(), 2)),
         ],
     )];
     lines.push(match &cap.loan {
@@ -883,7 +883,7 @@ fn apply_choices(
                         "market.exchanged",
                         &[
                             ("credits", &money(&texts, amount)),
-                            ("wuro", &format!("{:.2}", w.as_f64())),
+                            ("wuro", &texts.number(w.as_f64(), 2)),
                         ],
                     ));
                 }

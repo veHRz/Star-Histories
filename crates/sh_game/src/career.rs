@@ -146,19 +146,10 @@ fn report_outcomes(
     }
 }
 
-/// Un montant en crédits pour l'interface (« 12,500 cr »).
+/// Un montant en crédits pour l'interface (« 12 500 cr »).
 pub fn money(texts: &Texts, amount: Credits) -> String {
-    let units = amount.cents.div_euclid(100);
-    let digits = units.unsigned_abs().to_string();
-    let mut grouped = String::new();
-    for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i).is_multiple_of(3) {
-            grouped.push(',');
-        }
-        grouped.push(c);
-    }
-    let sign = if units < 0 { "-" } else { "" };
-    texts.format("money.credits", &[("amount", &format!("{sign}{grouped}"))])
+    let units = amount.cents.div_euclid(100) as f64;
+    texts.format("money.credits", &[("amount", &texts.number(units, 0))])
 }
 
 /// Le nom d'une organisation ; une division porte celui de sa maison mère (« Hexa-Corp

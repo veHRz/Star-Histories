@@ -5,11 +5,8 @@
 
 ## Ouvertes
 
-11. **Noms canon dans une interface en anglais.** L'interface sera en anglais (Q9). Les noms propres de personnes, de lieux et de vaisseaux restent tels quels (« Vorrh-III », « le Garant »). Mais les noms d'institutions et de groupes (« Union Galactique Libre », « Ligue des Pirates », « Flotte de la Libération », « No Man's Land » est déjà anglais) : faut-il les traduire (« Free Galactic Union »…) ou les garder en français ?
-   Rapasse l'interface en français, j'avias oublier que tout les noms propre étaient français.
-
-12. **Issues politiques dans la simulation.** Le monde vivant suit le calendrier du canon : l'Arène vers 426at, la fin du second mandat de Nyra Maren en 427at. Faut-il que la simulation **tranche** ces issues (réélection ou successeur, vainqueur de l'Arène), ou les garder ouvertes jusqu'à ta décision ?
-   Pour l'instant la simulation annonce juste les échéances, dans le futur elle pourra déterminer autoamtiquement les évènemments des personnages nommés.
+13. **Disposition du clavier.** Les touches sont liées par **position physique** (celle d'un clavier QWERTY) : sur un clavier AZERTY, « W A S D » tombe bien sur « Z Q S D », mais la carte (« M ») tombe sur la touche « , » et les aides affichent les lettres QWERTY. Joues-tu en AZERTY ? Faut-il afficher les touches selon la disposition réelle du clavier (et revoir les touches qui tombent mal) ?
+   Hypothèse en attendant : liaisons et aides inchangées (lettres QWERTY) ; le remappage complet arrive avec les options (M7).
 
 ## Tranchées
 
@@ -20,7 +17,7 @@
    → **Réglable dans les données, valeur de départ ×30.** (03/11/2026)
 
 3. **Calendrier.** L'année stellaire est-elle découpée (jours, mois, semaines) ? Combien de jours ?
-   → **Affichage « jour N, 425at », 365 jours.** (03/11/2026) — l'interface étant en anglais (Q9), l'affichage sera « Day N, 425at ».
+   → **Affichage « jour N, 425at », 365 jours.** (03/11/2026) — l'interface étant en français (Q11), l'affichage est « Jour N, 425at ».
 
 4. **Grades inférieurs.** Quels grades sous Amiral, pour l'Empire, l'UGL, Hexa-Corp, la Ligue, Tosear ?
    → **Échelles provisoires marquées Proposition.** (03/11/2026)
@@ -35,7 +32,13 @@
    → **Sauvegarde libre + option Homme de fer.** (03/11/2026)
 
 8. **Langues.** Français seulement, ou prévoir l'anglais ?
-   → **Uniquement l'anglais pour le début, textes en données pour pouvoir traduire.** (03/11/2026) — conséquence : les textes visibles du joueur sont en anglais dans `assets/data/lang/en.ron` ; le code, les commentaires, les docs et les commits restent en français ; les noms propres du canon restent tels quels (voir Q11).
+   → **Uniquement l'anglais pour le début, textes en données pour pouvoir traduire.** (03/11/2026) — **remplacée par Q11** : l'interface est en français.
 
 9. **Étoiles sans nom.** Comment afficher les étoiles de Cygnara et d'Hexis ?
    → **« Étoile de Cygnara », « Étoile d'Hexis ».** (03/11/2026)
+
+11. **Noms canon dans une interface en anglais.** Traduire les noms d'institutions et de groupes, ou les garder en français ?
+   → **« Repasse l'interface en français, j'avais oublié que tous les noms propres étaient français. »** (03/11/2026) — intégré le 03/11/2026 : la langue du jeu est le français (`assets/data/lang/fr.ron`, nombres « 12 500,5 ») ; `en.ron` est gardé à jour avec les mêmes clés (test), pour une traduction future. La date s'affiche « Jour N, 425at » (Q3).
+
+12. **Issues politiques dans la simulation.** Faut-il que la simulation tranche l'Arène et la succession de Nyra Maren ?
+   → **« Pour l'instant la simulation annonce juste les échéances ; dans le futur elle pourra déterminer automatiquement les événements des personnages nommés. »** (03/11/2026) — c'est le comportement actuel (M4) ; l'architecture le permettra (événements de personnages nommés, plus tard).

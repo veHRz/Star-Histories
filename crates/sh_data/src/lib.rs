@@ -76,6 +76,9 @@ pub mod paths {
     pub const RANKS: &str = "propositions/ranks.ron";
     pub const RAILS: &str = "canon/rails.ron";
     pub const PORTAL_LINKS: &str = "propositions/portal_links.ron";
+    /// La langue du jeu (Q11 : le français).
+    pub const LANG: &str = "lang/fr.ron";
+    /// Traduction anglaise, tenue avec les mêmes clés.
     pub const LANG_EN: &str = "lang/en.ron";
     /// Dossiers scannés pour les descripteurs de secteurs (`*.ron`).
     pub const SECTOR_DIRS: [&str; 2] = ["canon/sectors", "propositions/sectors"];
@@ -168,7 +171,7 @@ impl GameData {
             ranks: read_ron(&file(paths::RANKS))?,
             rails: read_ron(&file(paths::RAILS))?,
             portal_links: read_ron(&file(paths::PORTAL_LINKS))?,
-            lang: read_ron(&file(paths::LANG_EN))?,
+            lang: read_ron(&file(paths::LANG))?,
             sectors: read_dir_ron(data_dir, &paths::SECTOR_DIRS)?,
             scenes: read_dir_ron(data_dir, &paths::SCENE_DIRS)?,
             starts: read_dir_ron(data_dir, &paths::START_DIRS)?,

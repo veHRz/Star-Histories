@@ -395,3 +395,20 @@ fn la_carte_ne_montre_aucun_secret() {
             .all(|z| !z.outline.is_empty() || z.secret)
     );
 }
+
+#[test]
+fn le_francais_et_l_anglais_ont_les_memes_cles() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/data");
+    let lire = |rel: &str| -> sh_data::Lang {
+        sh_data::read_ron(&dir.join(rel)).unwrap_or_else(|e| panic!("{e}"))
+    };
+    let fr = lire(sh_data::paths::LANG);
+    let en = lire(sh_data::paths::LANG_EN);
+    let manquantes: Vec<&String> = fr.strings.keys().filter(|k| !en.has(k)).collect();
+    let en_trop: Vec<&String> = en.strings.keys().filter(|k| !fr.has(k)).collect();
+    assert!(
+        manquantes.is_empty() && en_trop.is_empty(),
+        "en.ron : clés manquantes {manquantes:?}, clés en trop {en_trop:?}"
+    );
+    assert_eq!(fr.code, "fr");
+}
