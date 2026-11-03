@@ -115,6 +115,9 @@ Le jeu lit des variables d'environnement (`crates/sh_game/src/dev.rs`) :
 | `SH_PRESET=<préréglage>` | Préréglage graphique : `low`, `medium` (défaut) ou `high` |
 | `SH_SHOW_FPS=1` | Garde l'affichage FPS pendant une capture (masqué par défaut pour des images propres ; feature `dev`) |
 | `SH_GPU_CLUSTERING=1` | Réactive le clustering GPU des lumières (cassé sur UHD 770, voir §4) |
+| `SH_BAKED_LIGHTING=0` | Ignore les lightmaps : éclairage des intérieurs entièrement dynamique (comparaisons de performance) |
+| `SH_SPAWN=<id>`, `SH_SPAWN_AT=x,y,z,cap,tangage` | Point d'apparition dans un secteur, ou position libre (degrés), pour les captures |
+| `SH_SCENARIO=walk_ship` | Parcours scripté du vaisseau du joueur (sas → cockpit), avec mesure du temps de frame |
 
 À la sortie, le jeu journalise toujours le **temps de frame moyen et maximal** et le nombre de frames au-dessus de 33 ms (hors chargement). `tools/check.ps1` (Windows) et `tools/check.sh` (Linux) lancent un test de fumée de chaque point d'entrée ; ces deux scripts font la même chose, modifie-les **ensemble**.
 
@@ -162,6 +165,7 @@ Pièges rencontrés dans ce dépôt (M0) :
 - **Boutons** : `bevy::ui_widgets::{Button, ActivateOnPress, Activate}` (observateur `On<Activate>`), survol par `On<PointerOver>` / `On<PointerOut>`, désactivation par `InteractionDisabled`.
 - `RenderTarget` est un composant séparé de `Camera` ; `ClearColorConfig` et `RenderTarget` n'implémentent pas `PartialEq` (comparer avec `matches!`).
 - **glTF (M1)** : une scène s'instancie avec `WorldAssetRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset(…)))` (l'ancien `SceneRoot`) ; l'instance prête déclenche `On<WorldInstanceReady>` sur la racine ; les extras d'un nœud arrivent en JSON dans `GltfExtras { value }` ; le maillage d'un nœud est souvent sur ses enfants (primitives).
+- **Lightmaps (M1)** : composant `bevy::pbr::Lightmap { image, .. }` sur chaque entité maillage qui a un 2e jeu d'UV (`Mesh::ATTRIBUTE_UV_1`, TEXCOORD_1 du glTF : il faut donc aussi un TEXCOORD_0) ; la valeur lue est multipliée par `StandardMaterial::lightmap_exposure` puis par la couleur diffuse. `PointLight::affects_lightmapped_mesh_diffuse: false` évite de compter deux fois la lumière cuite (le spéculaire reste dynamique) ; `GlobalAmbientLight::affects_lightmapped_meshes` idem pour l'ambiante. Le chargeur EXR de Bevy produit du `Rgba32Float` (non filtrable sur tous les GPU) : les lightmaps sont des **PNG sRGB normalisés** (`tools/blender/lightmap.py`).
 - **avian3d 0.8** : `MoveAndSlide` (paramètre système) fait le « collide and slide » d'un contrôleur cinématique ; dans `ShapeHitData`, `normal1` est la normale de la surface touchée. Un collider sans corps rigide s'attache au `RigidBody` ancêtre le plus proche.
 
 Quand une API te surprend, cherche un exemple : `rg -l "NomDeLApi" .reference/bevy-0.20.1/examples`.
@@ -198,7 +202,7 @@ art/                       sources .blend (LFS), même arborescence que assets/m
 docs/                      conception, feuille de route, registres
 ```
 
-État après M0 : tout ce qui précède existe, sauf `tools/blender/`, `art/` et `assets/models/` (M1). Modules de `sh_game` : `state` (états), `loading` (démarrage, chargement asynchrone et validation), `data` (ressources de données et textes), `ui` (thème, menu), `input` (contextes), `views` (vues de test Galaxie, Globale, Sectorielle), `graphics` (préréglages, échelle de rendu), `dev` (autopilote), `dev_tools` (feature `dev`).
+État après M1 : tout ce qui précède existe (`tools/blender/`, `art/` et `assets/models/` depuis M1 ; lightmaps dans `assets/textures/lightmaps/`). Modules de `sh_game` : `state` (états), `loading` (démarrage, chargement asynchrone et validation), `data` (ressources de données et textes), `ui` (thème, menu), `input` (contextes), `views` (vues de test Galaxie, Globale, Sectorielle), `graphics` (préréglages, échelle de rendu), `dev` (autopilote), `dev_tools` (feature `dev`).
 
 ### 5.2 Règles de dépendance
 
