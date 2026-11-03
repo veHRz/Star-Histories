@@ -16,6 +16,7 @@ use serde::de::DeserializeOwned;
 use thiserror::Error;
 
 pub mod career;
+pub mod combat;
 pub mod common;
 pub mod currencies;
 pub mod dialogue;
@@ -34,6 +35,7 @@ pub mod travel;
 pub mod validate;
 
 pub use career::{CareerRules, Ranks};
+pub use combat::{CombatRules, SectionId, WeaponKind};
 pub use common::{Location, Place, Population, Status};
 pub use currencies::{CurrenciesFile, Currency};
 pub use dialogue::Dialogue;
@@ -73,6 +75,7 @@ pub mod paths {
     pub const TRAVEL: &str = "gameplay/travel.ron";
     pub const SIM: &str = "gameplay/sim.ron";
     pub const CAREER: &str = "gameplay/career.ron";
+    pub const COMBAT: &str = "gameplay/combat.ron";
     pub const RANKS: &str = "propositions/ranks.ron";
     pub const RAILS: &str = "canon/rails.ron";
     pub const PORTAL_LINKS: &str = "propositions/portal_links.ron";
@@ -106,6 +109,7 @@ pub struct GameData {
     pub travel: TravelSettings,
     pub sim: SimSettings,
     pub career: CareerRules,
+    pub combat: CombatRules,
     pub ranks: Ranks,
     pub rails: Rails,
     pub portal_links: PortalLinks,
@@ -170,6 +174,7 @@ impl GameData {
             travel: read_ron(&file(paths::TRAVEL))?,
             sim: read_ron(&file(paths::SIM))?,
             career: read_ron(&file(paths::CAREER))?,
+            combat: read_ron(&file(paths::COMBAT))?,
             ranks: read_ron(&file(paths::RANKS))?,
             rails: read_ron(&file(paths::RAILS))?,
             portal_links: read_ron(&file(paths::PORTAL_LINKS))?,

@@ -701,6 +701,7 @@ fn career_error(texts: &Texts, err: &CareerError) -> String {
         CareerError::Refused => "career.error.refused",
         CareerError::AlreadyTaken => "career.error.taken",
         CareerError::NoDebt => "career.error.no_debt",
+        CareerError::NothingToRepair => "career.error.no_repair",
     };
     texts.get(key)
 }

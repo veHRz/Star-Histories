@@ -4,9 +4,10 @@
 //! économies, stabilité, projets) et avance d'un jour à la fois ; il produit des [`SimEvent`],
 //! publics (nouvelles, connaissance du joueur) ou secrets (ils pilotent sans être montrés).
 //! Les rails du canon (`canon/rails.ron`) tiennent la trajectoire connue ; les interdits durs
-//! n'ont pas d'événement. [`travel`] chiffre les voyages ; [`career`] tient le capitaine du joueur.
+//! n'ont pas d'événement. [`travel`] chiffre les voyages ; [`career`] tient le capitaine du joueur ; [`combat`], les coques, les impacts et les raids.
 
 pub mod career;
+pub mod combat;
 pub mod events;
 pub mod travel;
 pub mod world;

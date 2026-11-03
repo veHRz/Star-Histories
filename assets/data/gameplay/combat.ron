@@ -1,0 +1,98 @@
+// Règles du combat : PROPOSITION P26 (docs/propositions.md). Le cadre est canon (§2.4) :
+// canons à projectiles magnétiques, missiles et torpilles, aucun bouclier, seul le blindage
+// protège ; corvettes de 50 à 150 m. Les chiffres et la composition d'un raid sont proposés.
+(
+    status: Proposition("P26"),
+    ship_weapons: {
+        "mag_cannon_light": (kind: Cannon, speed: 2500.0, damage: 30.0, penetration: 40.0, cooldown: 0.25, spread_deg: 0.4, lifetime: 3.0),
+        "mag_cannon_heavy": (kind: Cannon, speed: 2200.0, damage: 60.0, penetration: 70.0, cooldown: 0.7, spread_deg: 0.7, lifetime: 3.5),
+        "missile": (kind: Missile, speed: 700.0, damage: 220.0, penetration: 90.0, cooldown: 4.0, lifetime: 15.0, turn_rate_deg: 70.0, decoy_chance: 0.7),
+        "torpedo": (kind: Torpedo, speed: 260.0, damage: 900.0, penetration: 160.0, cooldown: 20.0, lifetime: 40.0, turn_rate_deg: 20.0, decoy_chance: 0.35),
+    },
+    ships: {
+        // Le cargo du joueur (P12), ≈ 40 m : armé pour se défendre, pas pour la ligne.
+        "player_ship": (
+            name_key: "hull.player_ship",
+            // Le joueur est à bord : sa coque extérieure ne se dessine pas en combat.
+            model: "models/space/freighter.glb",
+            radius: 9.0,
+            length: 42.0,
+            max_speed: 320.0,
+            accel: 60.0,
+            turn_rate_deg: 60.0,
+            sections: [
+                (id: Bow, armor: 30.0, structure: 120.0),
+                (id: Stern, armor: 20.0, structure: 100.0),
+                (id: Port, armor: 25.0, structure: 110.0),
+                (id: Starboard, armor: 25.0, structure: 110.0),
+            ],
+            core: 220.0,
+            weapons: [(weapon: "mag_cannon_light"), (weapon: "missile", ammo: 6)],
+            countermeasures: 8,
+        ),
+        // Corvette « de facture pirate » (§2.4) : assemblée, rapide, mal blindée.
+        "pirate_corvette": (
+            name_key: "hull.pirate_corvette",
+            model: "models/space/pirate_corvette.glb",
+            radius: 16.0,
+            length: 70.0,
+            max_speed: 290.0,
+            accel: 45.0,
+            turn_rate_deg: 38.0,
+            sections: [
+                (id: Bow, armor: 45.0, structure: 200.0),
+                (id: Stern, armor: 30.0, structure: 160.0),
+                (id: Port, armor: 40.0, structure: 180.0),
+                (id: Starboard, armor: 40.0, structure: 180.0),
+            ],
+            core: 380.0,
+            weapons: [(weapon: "mag_cannon_heavy"), (weapon: "missile", ammo: 2)],
+            countermeasures: 3,
+        ),
+        // Corvette de l'Union (classe conventionnée, §2.4), de la Flotte de défense.
+        "ugl_corvette": (
+            name_key: "hull.ugl_corvette",
+            model: "models/space/ugl_corvette.glb",
+            radius: 18.0,
+            length: 90.0,
+            max_speed: 260.0,
+            accel: 40.0,
+            turn_rate_deg: 32.0,
+            sections: [
+                (id: Bow, armor: 60.0, structure: 260.0),
+                (id: Stern, armor: 45.0, structure: 220.0),
+                (id: Port, armor: 55.0, structure: 240.0),
+                (id: Starboard, armor: 55.0, structure: 240.0),
+            ],
+            core: 520.0,
+            weapons: [(weapon: "mag_cannon_heavy"), (weapon: "missile", ammo: 4), (weapon: "torpedo", ammo: 1)],
+            countermeasures: 5,
+        ),
+    },
+    firearms: {
+        "pistol": (name_key: "firearm.pistol", damage: 34.0, penetration: 22.0, rate: 3.0, magazine: 12, reserve: 48, reload_seconds: 1.6, speed: 380.0, spread_deg: 0.6, recoil_deg: 1.8, range: 80.0),
+        "rifle": (name_key: "firearm.rifle", damage: 28.0, penetration: 36.0, rate: 7.0, magazine: 30, reserve: 120, reload_seconds: 2.4, speed: 620.0, spread_deg: 1.1, recoil_deg: 0.9, range: 150.0),
+    },
+    armors: {
+        "flak_vest": (name_key: "armor.flak_vest", protection: 30.0, absorb: 0.6),
+    },
+    fighters: {
+        "player": (health: 100.0, weapon: "pistol", armor: "flak_vest"),
+        "pirate": (health: 80.0, weapon: "rifle", aim_error_deg: 3.0, reaction_seconds: 0.7, sight: 40.0, hearing: 25.0),
+    },
+    // Un raid : cinq corvettes pirates ; la Flotte de défense en envoie quatre (avec le
+    // joueur, dix coques : le budget de performance de M6).
+    raid: (
+        chance_on_arrival: 0.5,
+        attackers: ["pirate_corvette", "pirate_corvette", "pirate_corvette", "pirate_corvette", "pirate_corvette"],
+        defenders: ["ugl_corvette", "ugl_corvette", "ugl_corvette", "ugl_corvette"],
+        spawn_distance: 6000.0,
+        defenders_delay: 45.0,
+        escape_distance: 15000.0,
+        condition_per_kill: 0.004,
+    ),
+    repair: (
+        issuer: "hc_chantiers",
+        credits_per_point: 6.0,
+    ),
+)

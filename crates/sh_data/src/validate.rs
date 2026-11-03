@@ -866,6 +866,66 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
         }
     }
 
+    // --- Combat -----------------------------------------------------------------------------
+    let combat = &data.combat;
+    c.status("combat.ron", &combat.status, None);
+    for (key, ship) in &combat.ships {
+        let ctx = format!("combat.ron : coque {key}");
+        c.check(
+            data.lang.has(&ship.name_key),
+            &ctx,
+            format!("texte absent : {}", ship.name_key),
+        );
+        for section in crate::SectionId::ALL {
+            c.check(
+                ship.sections.iter().filter(|s| s.id == section).count() == 1,
+                &ctx,
+                format!("section {} absente ou en double", section.key()),
+            );
+        }
+        for mount in &ship.weapons {
+            c.check(
+                combat.ship_weapons.contains_key(&mount.weapon),
+                &ctx,
+                format!("arme inconnue : {}", mount.weapon),
+            );
+        }
+    }
+    for key in combat.raid.attackers.iter().chain(&combat.raid.defenders) {
+        c.check(
+            combat.ships.contains_key(key),
+            "combat.ron : raid",
+            format!("coque inconnue : {key}"),
+        );
+    }
+    for (role, fighter) in &combat.fighters {
+        let ctx = format!("combat.ron : combattant {role}");
+        c.check(
+            combat.firearms.contains_key(&fighter.weapon),
+            &ctx,
+            format!("arme inconnue : {}", fighter.weapon),
+        );
+        if let Some(armor) = &fighter.armor {
+            c.check(
+                combat.armors.contains_key(armor),
+                &ctx,
+                format!("protection inconnue : {armor}"),
+            );
+        }
+    }
+    for (key, firearm) in &combat.firearms {
+        c.check(
+            data.lang.has(&firearm.name_key),
+            "combat.ron",
+            format!("texte absent pour l'arme {key} : {}", firearm.name_key),
+        );
+    }
+    c.check(
+        faction_known(&combat.repair.issuer),
+        "combat.ron",
+        "chantier de réparation inconnu",
+    );
+
     // --- Dialogues ---------------------------------------------------------------------------
     for id in duplicates(data.dialogues.iter().map(|d| d.id.as_str())) {
         c.fail("dialogues", format!("identifiant en double : {id}"));

@@ -53,6 +53,8 @@ pub enum SimCommand {
         commodity: String,
         amount: f64,
     },
+    /// Une flotte a perdu des coques face au joueur : son état baisse d'autant.
+    FleetLosses { fleet: Id<Fleet>, condition: f64 },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -355,6 +357,11 @@ impl SimWorld {
             } => {
                 if let Some(sys) = self.systems.get_mut(at) {
                     *sys.stock.entry(commodity.clone()).or_default() += amount.max(0.0);
+                }
+            }
+            SimCommand::FleetLosses { fleet, condition } => {
+                if let Some(f) = self.fleets.get_mut(fleet) {
+                    f.condition = (f.condition - condition.max(0.0)).max(0.0);
                 }
             }
             SimCommand::Take {

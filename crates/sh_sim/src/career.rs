@@ -146,6 +146,8 @@ pub enum CareerError {
     AlreadyTaken,
     #[error("aucune dette")]
     NoDebt,
+    #[error("rien à réparer")]
+    NothingToRepair,
 }
 
 /// Traits gagnés par les actes (P9).
@@ -171,6 +173,8 @@ pub struct Captain {
     pub loan: Option<Loan>,
     /// Mémoire des PNJ : ce que chaque interlocuteur sait du joueur.
     pub memory: BTreeMap<String, BTreeSet<String>>,
+    /// La coque du vaisseau : ses dégâts restent jusqu'à réparation (M6).
+    pub hull: Option<crate::combat::Hull>,
 }
 
 /// La maison mère d'une faction (une division d'Hexa-Corp → Hexa-Corp).
@@ -212,6 +216,9 @@ impl Captain {
                 missed: 0,
             }),
             memory: BTreeMap::new(),
+            hull: start
+                .and_then(|s| data.combat.ship(&s.ship))
+                .map(crate::combat::Hull::new),
         }
     }
 
@@ -626,6 +633,23 @@ impl Captain {
             self.change_reputation(data, &issuer, rules.contracts.rep_failure, &mut out);
         }
         out
+    }
+
+    /// Fait réparer le vaisseau au chantier : tout remis à neuf, au prix des dégâts.
+    pub fn repair_ship(&mut self, data: &GameData) -> Result<Credits, CareerError> {
+        let hull = self.hull.as_mut().ok_or(CareerError::NothingToRepair)?;
+        let cost = hull.repair_cost(&data.combat.repair);
+        if cost.cents <= 0 {
+            return Err(CareerError::NothingToRepair);
+        }
+        let left = self
+            .credits
+            .checked_sub(cost)
+            .filter(|c| !c.is_negative())
+            .ok_or(CareerError::NotEnoughCredits)?;
+        self.credits = left;
+        hull.repair();
+        Ok(cost)
     }
 
     pub fn remember(&mut self, npc: &str, fact: &str) {

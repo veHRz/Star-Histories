@@ -235,6 +235,7 @@ fn les_modeles_des_scenes_existent() {
         let mut chemins: Vec<String> = scene.structures.iter().map(|s| s.model.clone()).collect();
         chemins.extend(scene.station_models.values().cloned());
         chemins.extend(scene.traffic.as_ref().map(|t| t.model.clone()));
+        chemins.extend(data.combat.ships.values().map(|c| c.model.clone()));
         for chemin in chemins {
             assert!(
                 assets.join(&chemin).is_file(),
