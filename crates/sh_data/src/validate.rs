@@ -502,6 +502,11 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
         "clock.ron",
         "time_scale doit être positif",
     );
+    c.check(
+        data.space.recenter_distance.is_finite() && data.space.recenter_distance >= 0.0,
+        "space.ron",
+        "recenter_distance doit être positive ou nulle",
+    );
 
     // --- Secteurs ----------------------------------------------------------------------------
     for s in &data.sectors {

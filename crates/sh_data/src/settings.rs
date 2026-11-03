@@ -66,6 +66,14 @@ pub struct GraphicsPreset {
     pub detail_distance: f32,
 }
 
+/// Espace de la vue Globale (AGENTS.md §6.4).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SpaceSettings {
+    /// Distance (m) du point suivi à l'origine flottante au-delà de laquelle on recentre. Sous
+    /// 2 km, un `f32` reste précis au dixième de millimètre.
+    pub recenter_distance: f64,
+}
+
 /// Horloge du monde.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ClockSettings {

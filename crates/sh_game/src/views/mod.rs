@@ -74,12 +74,18 @@ pub fn view_banner(
 
 /// Étiquette d'interface accrochée à un point du monde (noms sur les cartes de test).
 #[derive(Component)]
-pub struct WorldLabel(pub Vec3);
+pub enum WorldLabel {
+    /// Un point fixe du rendu (carte galactique).
+    At(Vec3),
+    /// Une entité : l'étiquette la suit, y compris quand l'origine flottante se déplace.
+    Follow(Entity),
+}
 
 pub(crate) fn place_labels(
     camera: Query<(&Camera, &GlobalTransform), With<WorldCamera>>,
     window: Single<&Window, With<PrimaryWindow>>,
     mut labels: Query<(&WorldLabel, &mut Node, &mut Visibility)>,
+    targets: Query<&GlobalTransform>,
 ) {
     let Ok((camera, camera_transform)) = camera.single() else {
         return;
@@ -89,7 +95,17 @@ pub(crate) fn place_labels(
         .logical_viewport_size()
         .map_or(Vec2::ONE, |size| window.size() / size.max(Vec2::ONE));
     for (label, mut node, mut visibility) in &mut labels {
-        match camera.world_to_viewport(camera_transform, label.0) {
+        let anchor = match label {
+            WorldLabel::At(point) => *point,
+            WorldLabel::Follow(entity) => match targets.get(*entity) {
+                Ok(t) => t.translation(),
+                Err(_) => {
+                    *visibility = Visibility::Hidden;
+                    continue;
+                }
+            },
+        };
+        match camera.world_to_viewport(camera_transform, anchor) {
             Ok(point) => {
                 let point = point * to_window;
                 node.left = px(point.x + 7.0);

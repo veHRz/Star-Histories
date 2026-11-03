@@ -181,7 +181,7 @@ fn spawn_galaxy(
 fn label(fonts: &UiFonts, name: &str, anchor: Vec3, color: Color) -> impl Bundle {
     (
         SCOPE,
-        WorldLabel(anchor),
+        WorldLabel::At(anchor),
         Text::new(name),
         fonts.body(13.0),
         TextColor(color),

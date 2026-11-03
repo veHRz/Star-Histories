@@ -4,14 +4,19 @@
 //! d'après la carte canon, agrandie. La disposition canon à l'intérieur d'un système est
 //! schématique (§0 de l'export) : cette vue ne prétend rien sur les orbites. L'échelle et la
 //! mise en scène réelles des systèmes viendront en M2 (P2). Les corps secrets ne sont pas dessinés.
+//!
+//! Positions absolues en `f64` ([`SpacePosition`]) ; la caméra est le point suivi par l'origine
+//! flottante ([`crate::space`]).
 
 use bevy::prelude::*;
 use bevy_enhanced_input::prelude::*;
+use sh_core::SpacePos;
 use sh_data::{BodyKind, Galaxy, Place};
 
 use crate::data::{Data, Texts};
 use crate::graphics::WorldCamera;
 use crate::input::{Roll, Steer, Thrust};
+use crate::space::{OriginFocus, PositionDriver, SpacePosition};
 use crate::state::{ControlMode, CurrentPlace, ViewLevel};
 use crate::ui::theme::{self, UiFonts};
 use crate::views::{WorldLabel, view_banner};
@@ -27,7 +32,7 @@ impl Plugin for GlobalViewPlugin {
 
 const SCOPE: DespawnOnExit<ViewLevel> = DespawnOnExit(ViewLevel::Global);
 /// Agrandissement de la disposition schématique de la carte, pour la vue de test.
-const LAYOUT_SCALE: f32 = 40.0;
+const LAYOUT_SCALE: f64 = 40.0;
 
 /// Le système à afficher pour un lieu : le lieu lui-même s'il est un système, sinon le système
 /// de l'astre ou de la station.
@@ -70,10 +75,11 @@ fn spawn_global(
             emissive: LinearRgba::rgb(40.0, 30.0, 18.0),
             ..default()
         })),
+        SpacePosition(SpacePos::ZERO),
         Transform::from_scale(Vec3::splat(30.0)),
     ));
 
-    let mut focus = Vec3::new(0.0, 0.0, 0.0);
+    let mut focus = SpacePos::ZERO;
     let mut title_place = place_id.clone();
     if let Some(system) = system {
         title_place = system.name.clone();
@@ -83,11 +89,10 @@ fn spawn_global(
                 continue;
             };
             let Some(pos) = body.pos else { continue };
-            let offset =
-                Vec3::new((pos.x - center.x) as f32, 0.0, (pos.y - center.y) as f32) * LAYOUT_SCALE;
+            let offset = SpacePos::new(pos.x - center.x, 0.0, pos.y - center.y) * LAYOUT_SCALE;
             // Un corps posé sur l'étoile dans la carte schématique est écarté pour rester visible.
             let offset = if offset.length() < 60.0 {
-                offset + Vec3::new(90.0, 0.0, 0.0)
+                offset + SpacePos::new(90.0, 0.0, 0.0)
             } else {
                 offset
             };
@@ -96,18 +101,21 @@ fn spawn_global(
                 BodyKind::Belt => continue,
                 _ => 8.0,
             };
-            commands.spawn((
-                Name::new(body.name.clone()),
-                SCOPE,
-                Mesh3d(sphere.clone()),
-                MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color: Color::srgb(0.45, 0.52, 0.60),
-                    perceptual_roughness: 0.9,
-                    ..default()
-                })),
-                Transform::from_translation(offset).with_scale(Vec3::splat(radius)),
-            ));
-            commands.spawn(label(&fonts, &body.name, offset));
+            let entity = commands
+                .spawn((
+                    Name::new(body.name.clone()),
+                    SCOPE,
+                    Mesh3d(sphere.clone()),
+                    MeshMaterial3d(materials.add(StandardMaterial {
+                        base_color: Color::srgb(0.45, 0.52, 0.60),
+                        perceptual_roughness: 0.9,
+                        ..default()
+                    })),
+                    SpacePosition(offset),
+                    Transform::from_scale(Vec3::splat(radius)),
+                ))
+                .id();
+            commands.spawn(label(&fonts, &body.name, entity));
             if id.as_str() == place_id {
                 focus = offset;
             }
@@ -117,16 +125,18 @@ fn spawn_global(
                 continue;
             };
             let pos = station.pos;
-            let offset =
-                Vec3::new((pos.x - center.x) as f32, 0.0, (pos.y - center.y) as f32) * LAYOUT_SCALE;
-            commands.spawn((
-                Name::new(station.name.clone()),
-                SCOPE,
-                Mesh3d(station_mesh.clone()),
-                MeshMaterial3d(materials.add(Color::srgb(0.75, 0.66, 0.45))),
-                Transform::from_translation(offset).with_scale(Vec3::splat(10.0)),
-            ));
-            commands.spawn(label(&fonts, &station.name, offset));
+            let offset = SpacePos::new(pos.x - center.x, 0.0, pos.y - center.y) * LAYOUT_SCALE;
+            let entity = commands
+                .spawn((
+                    Name::new(station.name.clone()),
+                    SCOPE,
+                    Mesh3d(station_mesh.clone()),
+                    MeshMaterial3d(materials.add(Color::srgb(0.75, 0.66, 0.45))),
+                    SpacePosition(offset),
+                    Transform::from_scale(Vec3::splat(10.0)),
+                ))
+                .id();
+            commands.spawn(label(&fonts, &station.name, entity));
         }
     } else if place_id != "test" {
         warn!("vue Globale : aucun système public pour « {place_id} »");
@@ -140,7 +150,10 @@ fn spawn_global(
             illuminance: light_consts::lux::FULL_DAYLIGHT,
             ..default()
         },
-        Transform::default().looking_to(focus.normalize_or(Vec3::NEG_Z), Vec3::Y),
+        Transform::default().looking_to(
+            Vec3::from_array(focus.relative_to(SpacePos::ZERO)).normalize_or(Vec3::NEG_Z),
+            Vec3::Y,
+        ),
     ));
 
     commands.spawn((
@@ -152,8 +165,11 @@ fn spawn_global(
             clear_color: ClearColorConfig::Custom(Color::BLACK),
             ..default()
         },
-        Transform::from_translation(focus + Vec3::new(-40.0, 60.0, 160.0))
-            .looking_at(focus, Vec3::Y),
+        // La caméra est pilotée par son Transform, et l'origine flottante la suit.
+        SpacePosition(focus + SpacePos::new(-40.0, 60.0, 160.0)),
+        PositionDriver::Render,
+        OriginFocus,
+        Transform::default().looking_to(Vec3::new(40.0, -60.0, -160.0), Vec3::Y),
     ));
 
     commands.spawn(view_banner(
@@ -165,10 +181,10 @@ fn spawn_global(
     ));
 }
 
-fn label(fonts: &UiFonts, name: &str, anchor: Vec3) -> impl Bundle {
+fn label(fonts: &UiFonts, name: &str, target: Entity) -> impl Bundle {
     (
         SCOPE,
-        WorldLabel(anchor),
+        WorldLabel::Follow(target),
         Text::new(name),
         fonts.body(14.0),
         TextColor(theme::TEXT),

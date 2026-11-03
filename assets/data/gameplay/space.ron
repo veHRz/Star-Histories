@@ -1,0 +1,6 @@
+// Espace de la vue Globale (AGENTS.md §6.4). Réglages techniques, pas des faits d'univers.
+(
+    // Recentrage de l'origine flottante quand le point suivi s'en éloigne de plus de 2 km
+    // (un f32 y reste précis au dixième de millimètre).
+    recenter_distance: 2000.0,
+)

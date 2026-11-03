@@ -17,6 +17,7 @@ pub mod interaction;
 pub mod loading;
 pub mod player;
 pub mod sector;
+pub mod space;
 pub mod state;
 pub mod ui;
 pub mod views;
@@ -48,6 +49,7 @@ impl Plugin for StarHistoriesPlugin {
         ))
         .add_plugins((
             avian3d::PhysicsPlugins::default(),
+            space::SpacePlugin,
             sector::SectorPlugin,
             player::PlayerPlugin,
             interaction::InteractionPlugin,

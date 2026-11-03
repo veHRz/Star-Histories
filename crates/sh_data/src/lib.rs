@@ -34,7 +34,9 @@ pub use galaxy::{
 };
 pub use lang::Lang;
 pub use sector::{Cell, Portal, PortalKind, Sector, SectorKind, Spawn};
-pub use settings::{AntiAliasing, ClockSettings, GraphicsPreset, GraphicsPresets, PresetLevel};
+pub use settings::{
+    AntiAliasing, ClockSettings, GraphicsPreset, GraphicsPresets, PresetLevel, SpaceSettings,
+};
 pub use ships::{Formation, FormationsFile, ShipClass, ShipClassesFile};
 pub use validate::{Issue, ValidationReport};
 
@@ -47,6 +49,7 @@ pub mod paths {
     pub const CURRENCIES: &str = "canon/currencies.ron";
     pub const GRAPHICS: &str = "gameplay/graphics.ron";
     pub const CLOCK: &str = "gameplay/clock.ron";
+    pub const SPACE: &str = "gameplay/space.ron";
     pub const LANG_EN: &str = "lang/en.ron";
     /// Dossiers scannés pour les descripteurs de secteurs (`*.ron`).
     pub const SECTOR_DIRS: [&str; 2] = ["canon/sectors", "propositions/sectors"];
@@ -62,6 +65,7 @@ pub struct GameData {
     pub currencies: CurrenciesFile,
     pub graphics: GraphicsPresets,
     pub clock: ClockSettings,
+    pub space: SpaceSettings,
     pub lang: Lang,
     pub sectors: Vec<Sector>,
 }
@@ -114,6 +118,7 @@ impl GameData {
             currencies: read_ron(&file(paths::CURRENCIES))?,
             graphics: read_ron(&file(paths::GRAPHICS))?,
             clock: read_ron(&file(paths::CLOCK))?,
+            space: read_ron(&file(paths::SPACE))?,
             lang: read_ron(&file(paths::LANG_EN))?,
             sectors: read_dir_ron(data_dir, &paths::SECTOR_DIRS)?,
         })

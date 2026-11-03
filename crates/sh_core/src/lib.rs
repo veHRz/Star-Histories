@@ -9,9 +9,11 @@ pub mod grid;
 pub mod id;
 pub mod money;
 pub mod rng;
+pub mod space;
 
 pub use date::{DAYS_PER_YEAR, StellarDate, Year};
 pub use grid::{GridCell, MapPos};
 pub use id::{Id, IdError};
 pub use money::{Credits, ExchangeRate, Wuro};
 pub use rng::SimRng;
+pub use space::SpacePos;
