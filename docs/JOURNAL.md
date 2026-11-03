@@ -2,6 +2,14 @@
 
 > Une entrée courte par session (2 à 5 lignes) : ce qui a été fait, ce qui reste en suspens, les décisions prises. Le plus récent en haut.
 
+## 03/11/2026 — M1 À pied (vaisseau du joueur)
+
+- Pipeline Blender versionné (`tools/blender/`) : bibliothèque commune, kit d'intérieur paramétrique (P13), vaisseau du joueur en 8 cellules (P12) avec descripteur de secteur généré. Conventions `_col`, `LIGHT_`, `INTERACT_`, `SOCKET_` relues par le jeu.
+- Jeu : streaming Locale/Sectorielle (anticipation, hystérésis, budget), portes de chargement, contrôleur cinématique avian3d (`MoveAndSlide`, marches), interactions par rayon, HUD minimal. Scénario `walk_ship` : sas → cockpit, 25 étapes, 12 transitions de cellule, toutes portes franchies.
+- Non vérifié automatiquement : saut, accroupi, pentes (pas de rampe dans le vaisseau), s'asseoir. **Non fait** : essai de lightmaps précalculées (reporté, éclairage dynamique + budget d'ombres en attendant).
+- **Mesures release (UHD 770, fenêtre 1600×900, scénario `walk_ship`)** : Moyen 28,6 ms (35 i/s), pire 86 ms, 310 frames > 33 ms ; Moyen avec 1 seule lumière ombrée (nouvelle valeur par défaut) 25,0 ms, pire 70 ms ; Bas 13,2 ms (76 i/s), pire 51 ms, 23 frames > 33 ms. **Critères de performance de M1 non atteints** : les ombres de lumières ponctuelles (cubemaps) et le bloom pèsent lourd, et l'instanciation d'une cellule (colliders convexes, scène) crée des pics. Pistes pour la suite : lightmaps précalculées, carte d'ombre ponctuelle réduite, colliders boîtes au lieu d'enveloppes convexes, instanciation étalée sur plusieurs frames.
+- Arrêt demandé par l'auteur après M1 (limite d'usage) : M2 non commencé. `.gitignore` (caches Python) et `docs/reprise-autre-pc.md` ajoutés par l'auteur, commités ici.
+
 ## 03/11/2026 — M0 Fondations
 
 - Environnement vérifié : jeu OK (fumée 120 frames), MCP Blender OK (Blender 5.2.3, addon 1.8). Réponses de l'auteur intégrées : **interface en anglais** (textes dans `assets/data/lang/en.ron`), temps ×30, année de 365 jours, DA « réaliste stylisé ».

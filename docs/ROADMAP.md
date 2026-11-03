@@ -3,7 +3,7 @@
 > Suis les jalons **dans l'ordre**. Coche chaque tâche (`[x]`) dans le commit qui la termine. Un jalon est fini quand **tous ses critères « Fini quand »** sont vérifiés (tests, autopilote, captures regardées). Push à la fin de chaque jalon.
 > Tu peux découper une tâche, en ajouter, en réordonner à l'intérieur d'un jalon : note-le dans `docs/JOURNAL.md`. Changer l'ordre des jalons ou leur périmètre : demande à l'auteur.
 
-État : **M0 terminé (03/11/2026), M1 en cours.**
+État : **M0 terminé ; M1 fonctionnel mais critères de performance non atteints** (03/11/2026) : à reprendre avant M2 (lightmaps, ombres, pics d'instanciation). M2 non commencé.
 
 ---
 
@@ -32,15 +32,15 @@ But : une architecture propre, les données canon chargées, des outils pour te 
 
 But : marcher dans son vaisseau, à la première personne, sans aucun chargement visible.
 
-- [ ] Pipeline Blender (§9 d'AGENTS.md) : `tools/blender/README.md`, script commun d'export, conventions de noms vérifiées de bout en bout (empties `CELL_`, `PORTAL_`, `SPAWN_`, `INTERACT_`, colliders `_col` lus dans Bevy).
-- [ ] Kit modulaire d'intérieur de vaisseau généré par script : couloirs (droit, angle, T), sas, porte coulissante, salle, escalier ou échelle, console, siège, couchette, caisses, éclairages. Captures Blender (`look`) et en jeu.
-- [ ] Le vaisseau du joueur (≈ 60–80 m, proposition) assemblé à partir du kit : cockpit, quartiers, soute, salle des machines, sas.
-- [ ] Format de secteur (cellules, portails, apparitions) lu depuis le glTF et/ou le RON.
-- [ ] Contrôleur FPS (avian3d) : marcher, courir, s'accroupir, sauter, escaliers et pentes, visée souris, capture du curseur.
-- [ ] Interactions (rayon de visée + touche) : portes, consoles, siège, objets à ramasser.
-- [ ] Streaming de cellules Locale ↔ Sectorielle : chargement asynchrone anticipé, hystérésis, portes comme portes de chargement, budget par frame.
+- [x] Pipeline Blender (§9 d'AGENTS.md) : `tools/blender/README.md`, script commun d'export, conventions de noms vérifiées de bout en bout (empties `CELL_`, `PORTAL_`, `SPAWN_`, `INTERACT_`, colliders `_col` lus dans Bevy).
+- [x] Kit modulaire d'intérieur de vaisseau généré par script : couloirs (droit, angle, T), sas, porte coulissante, salle, escalier ou échelle, console, siège, couchette, caisses, éclairages. Captures Blender (`look`) et en jeu.
+- [x] Le vaisseau du joueur (≈ 60–80 m, proposition) assemblé à partir du kit : cockpit, quartiers, soute, salle des machines, sas.
+- [x] Format de secteur (cellules, portails, apparitions) lu depuis le glTF et/ou le RON.
+- [x] Contrôleur FPS (avian3d) : marcher, courir, s'accroupir, sauter, escaliers et pentes, visée souris, capture du curseur.
+- [x] Interactions (rayon de visée + touche) : portes, consoles, siège, objets à ramasser.
+- [x] Streaming de cellules Locale ↔ Sectorielle : chargement asynchrone anticipé, hystérésis, portes comme portes de chargement, budget par frame.
 - [ ] Éclairage d'intérieur performant (essai de lightmaps précalculées dans Blender).
-- [ ] Mesures sur UHD 770 en release, préréglage Moyen.
+- [x] Mesures sur UHD 770 en release, préréglage Moyen (faites : objectif non atteint, voir `docs/JOURNAL.md`).
 
 **Fini quand** : on parcourt tout le vaisseau du sas au cockpit, portes comprises ; aucune frame > 33 ms pendant les transitions de cellules (mesuré par l'autopilote) ; ≥ 60 i/s en Moyen ; captures regardées et propres.
 

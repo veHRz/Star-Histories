@@ -18,7 +18,7 @@
         shadow_map_size: 2048,
         shadow_cascades: 2,
         shadow_max_distance: 60.0,
-        max_shadowed_point_lights: 2,
+        max_shadowed_point_lights: 1,
         bloom: true,
         anti_aliasing: Fxaa,
         detail_distance: 120.0,

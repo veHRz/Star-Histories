@@ -9,6 +9,10 @@
 *.blend2
 *.blend@
 
+# Cache Python (scripts Blender)
+__pycache__/
+*.pyc
+
 # Sauvegardes et réglages locaux du jeu
 /saves/
 /settings.local.ron
