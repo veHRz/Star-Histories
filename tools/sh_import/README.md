@@ -8,9 +8,9 @@ jamais à la main.
 
 Depuis la racine du dépôt :
 
-```powershell
+```
 cargo run -p sh_import            # régénère assets/data/canon/galaxy.ron
-cargo run -p sh_import -- --check # vérifie seulement qu'il est à jour (utilisé par tools/check.ps1)
+cargo run -p sh_import -- --check # vérifie seulement qu'il est à jour (utilisé par tools/check.ps1 et tools/check.sh)
 ```
 
 Options : `--input <json>` et `--output <ron>` (chemins relatifs à la racine du dépôt).

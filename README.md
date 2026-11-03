@@ -8,9 +8,9 @@ Fait avec [Bevy](https://bevyengine.org/) 0.20 (Rust) ; modèles 3D générés d
 
 ## Lancer le jeu (développement)
 
-Prérequis Windows : Rust (rustup, cible MSVC) et Visual Studio Build Tools avec la charge « Développement Desktop en C++ ».
+Prérequis Windows : Rust (rustup, cible MSVC) et Visual Studio Build Tools avec la charge « Développement Desktop en C++ ». Prérequis Linux (Arch, CachyOS) : `tools/setup-linux.sh` installe tout.
 
-```powershell
+```
 cargo dev
 ```
 
@@ -20,7 +20,11 @@ La première compilation prend plusieurs minutes. Vérification complète avant 
 powershell -ExecutionPolicy Bypass -File tools/check.ps1
 ```
 
-Raccourcis de développement : F1 inspecteur, F2 caméra libre, F3 FPS. Démarrage direct dans une vue : `$env:SH_START = "galaxy"; cargo dev` (voir `AGENTS.md` §3.3).
+```bash
+tools/check.sh
+```
+
+Raccourcis de développement : F1 inspecteur, F2 caméra libre, F3 FPS. Démarrage direct dans une vue : `$env:SH_START = "galaxy"; cargo dev` sous Windows, `SH_START=galaxy cargo dev` sous Linux (voir `AGENTS.md` §3.3).
 
 ## Documentation
 

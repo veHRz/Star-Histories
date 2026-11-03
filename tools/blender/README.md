@@ -12,16 +12,20 @@ source de vérité.
 
 ## Lancer
 
-En arrière-plan (sans interface) :
+En arrière-plan (sans interface), sous Windows puis sous Linux :
 
 ```powershell
 & "$env:LOCALAPPDATA\Programs\Blender Foundation\Blender 5.2\blender.exe" --background --factory-startup --python tools/blender/ships/player_ship.py
 ```
 
+```bash
+blender --background --factory-startup --python tools/blender/ships/player_ship.py
+```
+
 Dans le Blender ouvert, par le MCP (`execute_blender_code`) :
 
 ```python
-import sys; sys.path.insert(0, r"D:\Projets\Star Histories\tools\blender")
+import sys; sys.path.insert(0, r"<racine du dépôt>/tools/blender")  # ex. D:\Projets\Star Histories, ~/Projets/Star-Histories
 import common; common.run_in_open_blender("tools/blender/ships/player_ship.py")
 ```
 

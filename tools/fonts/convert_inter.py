@@ -17,18 +17,38 @@ from pathlib import Path
 from fontTools.ttLib import TTFont
 from fontTools.varLib import instancer
 
-BLENDER = Path(os.environ["LOCALAPPDATA"]) / "Programs" / "Blender Foundation" / "Blender 5.2"
-SOURCE = BLENDER / "5.2" / "datafiles" / "fonts" / "Inter.woff2"
-LICENSE = BLENDER / "license" / "spdx" / "OFL-1.1.txt"
 OUT = Path(__file__).resolve().parents[2] / "assets" / "fonts"
+
+
+def blender_dirs() -> list[Path]:
+    """Dossiers d'installation de Blender 5.2 possibles, du plus précis au plus général."""
+    dirs = []
+    if "SH_BLENDER" in os.environ:  # chemin de l'exécutable, si Blender est ailleurs
+        dirs.append(Path(os.environ["SH_BLENDER"]).resolve().parent)
+    if "LOCALAPPDATA" in os.environ:  # Windows : version portable (AGENTS.md §3.1)
+        dirs.append(Path(os.environ["LOCALAPPDATA"]) / "Programs" / "Blender Foundation" / "Blender 5.2")
+    if exe := shutil.which("blender"):  # Linux : archive officielle à côté de l'exécutable
+        dirs.append(Path(exe).resolve().parent)
+    dirs.append(Path("/usr/share/blender"))  # Linux : paquet de la distribution (Arch, CachyOS)
+    return dirs
+
+
+def find(rel: str) -> Path | None:
+    return next((d / rel for d in blender_dirs() if (d / rel).exists()), None)
+
+
+SOURCE = find("5.2/datafiles/fonts/Inter.woff2")
+# Les paquets Linux ne fournissent pas toujours la licence : on garde alors le fichier déjà versionné.
+LICENSE = find("license/spdx/OFL-1.1.txt")
 
 # Graisses utilisées par l'interface : texte courant et titres.
 WEIGHTS = {"Regular": 400, "SemiBold": 600}
 
 
 def main() -> int:
-    if not SOURCE.exists():
-        print(f"police introuvable : {SOURCE}", file=sys.stderr)
+    if SOURCE is None:
+        searched = ", ".join(str(d) for d in blender_dirs())
+        print(f"Inter.woff2 introuvable dans : {searched} (SH_BLENDER=<blender> pour préciser)", file=sys.stderr)
         return 1
     OUT.mkdir(parents=True, exist_ok=True)
     for style, weight in WEIGHTS.items():
@@ -42,6 +62,9 @@ def main() -> int:
         target = OUT / f"Inter-{style}.ttf"
         static.save(target)
         print(f"écrit {target} ({target.stat().st_size} octets)")
+    if LICENSE is None:
+        print("licence OFL absente de cette installation de Blender : OFL-Inter.txt inchangé")
+        return 0
     header = (
         "Inter — Copyright 2020 The Inter Project Authors (https://github.com/rsms/inter)\n"
         "Fichiers convertis depuis la police fournie avec Blender 5.2 (tools/fonts/convert_inter.py).\n\n"

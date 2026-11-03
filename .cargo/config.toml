@@ -1,4 +1,5 @@
 # Linker LLD fourni avec Rust : liaisons nettement plus rapides que link.exe (recommandation Bevy).
+# Sous Linux (x86_64-unknown-linux-gnu), rust-lld est déjà le linker par défaut : rien à régler.
 [target.x86_64-pc-windows-msvc]
 linker = "rust-lld.exe"
 rustdocflags = ["-Clinker=rust-lld.exe"]
