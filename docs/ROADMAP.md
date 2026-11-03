@@ -97,12 +97,12 @@ But : la galaxie bouge toute seule, de façon cohérente avec le canon.
 
 But : un personnage, des réputations, des organisations, des contrats.
 
-- [ ] Fiche de personnage, compétences par l'usage, inventaire, portefeuille crédit/Wuro avec taux d'Hexis.
-- [ ] Réputations par organisation et sous-organisation ; appartenance et échelles de grades (données ; grades non canon proposés) ; promotion, dégradation ; détection et conséquences des trahisons ; mémoire des PNJ.
-- [ ] Système de dialogues en données + interface de dialogue.
-- [ ] Contrats Hexa-Corp (CT, CR, CRS en premier) et missions systémiques issues de la simulation ; journal de missions.
-- [ ] Interface de commerce sur les terminaux de marché.
-- [ ] Dettes à la Banque d'Hexis (échéances, saisie).
+- [x] Fiche de personnage, compétences par l'usage, inventaire, portefeuille crédit/Wuro avec taux d'Hexis.
+- [x] Réputations par organisation et sous-organisation ; appartenance et échelles de grades (données ; grades non canon proposés) ; promotion, dégradation ; détection et conséquences des trahisons ; mémoire des PNJ.
+- [x] Système de dialogues en données + interface de dialogue.
+- [x] Contrats Hexa-Corp (CT, CR, CRS en premier) et missions systémiques issues de la simulation ; journal de missions.
+- [x] Interface de commerce sur les terminaux de marché.
+- [x] Dettes à la Banque d'Hexis (échéances, saisie).
 
 **Fini quand** : prendre un contrat de transport à Hexis, le livrer à Cygnara, être payé, voir sa réputation changer, rembourser une échéance ; la trahison d'un contrat a des conséquences visibles.
 

@@ -2,6 +2,14 @@
 
 > Une entrée courte par session (2 à 5 lignes) : ce qui a été fait, ce qui reste en suspens, les décisions prises. Le plus récent en haut.
 
+## 03/11/2026 — Poste Linux (CachyOS) : M5, le cœur RPG
+
+- **Modèle pur** (`sh_sim::career`, P23, P24, testé sur les vraies données) : compétences par l'usage, portefeuille crédit/Wuro au taux d'Hexis, soute, réputations (une division rejaillit pour moitié sur Hexa-Corp), grades, contrats CT/CR/CRS (offres déterministes, ravitaillements issus des pénuries de la simulation), trahison toujours détectée (indemnité ×2, exclusion définitive, « Traître notoire »), Banque (échéances, pénalité, saisie après trois retards), mémoire des PNJ. `SimCommand` : livraisons, achats et trahisons changent les stocks.
+- **Jeu** : dialogues en données (`sh_data::dialogue`, P25 : guichetier d'Hexa-Corp, tavernier, accueil selon la mémoire et la réputation), terminal modal (dialogue, contrats, marché, fiche `C`, journal `J`), livraison en orbite par la touche d'amarrage près d'un hub ou de chantiers, épave de CRS à accrocher.
+- **Interface en français** : réponse de l'auteur à Q11, intégrée avec retard (elle était dans l'arbre de travail au début de la session ; Q12 aussi, déjà conforme). `fr.ron` + `en.ron` aux mêmes clés, nombres « 12 500,5 ». Nouvelle question Q13 (clavier AZERTY / QWERTY).
+- Scénario `contract_loop` (check.sh / check.ps1) : contrat Hexis → Cygnara payé (+6 Logistique, +3 Hexa-Corp), échéance payée, remorquage livré, trahison et dossier clos. Captures : `target/shots/m5-{bureau,contrats,journal,epave,trahison,porte-close,fiche}.png`.
+- Limites : le scénario ouvre les consoles par raccourci (l'interaction à pied passe par le même message, non rejouée) ; pas de missions hors Hexa-Corp ni de PNJ incarnés (M6–M7) ; grades seulement chez Hexa-Corp en pratique. **À vérifier sous Windows** : `check.ps1` (nouvelle étape) et les mesures de M1/M2 toujours en attente.
+
 ## 03/11/2026 — Poste Linux (CachyOS) : M4, le monde vivant
 
 - **Simulation** (`sh_sim::world`, P22, rails dans `canon/rails.ron`) : flottes du canon à leurs positions de 425at (patrouilles de l'Aube et de la 3e Flotte, errance de la Flotte Beta, réparations des flottes diminuées), économies et pénuries, convois (Cygnara nourrie par Ambroise), raids de la Ligue qui **épargnent l'Empire** (🔒, effet visible seulement), « Grande Faucheuse » sur les convois grothul, guerre Tosear–Ligue, révoltes de Primaterre et d'Ostrag, projets (L'Enclume accélère ; la Flotte d'Attaque reste secrète), Arène et campagne de l'UGL. Aucun événement pour l'Essaim, un vaisseau capitale ou une désassimilation : impossibles par construction.
