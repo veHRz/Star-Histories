@@ -120,6 +120,7 @@ Le jeu lit des variables d'environnement (`crates/sh_game/src/dev.rs`) :
 | `SH_LOOK=x,y,z` | Direction initiale de la caméra en vue Globale (captures du ciel, des astres) |
 | `SH_ARRIVAL=<objet>,<distance>` | Vue Globale : arrivée près d'un autre objet (station, structure, astre), à cette distance en mètres |
 | `SH_SCENARIO=walk_ship` | Parcours scripté du vaisseau du joueur (sas → cockpit), avec mesure du temps de frame |
+| `SH_SCENARIO=port_loop` | Avec `SH_START=sector:hexis_spaceport` : quai → cockpit → départ → vol → amarrage → quai (critère de M2) |
 | `SH_SCENARIO=fly_ship` | Avec `SH_START=global:hexis` : vol aux commandes (assisté, croisière, lacet, découplé), puis marche du cockpit au couloir en plein vol |
 
 À la sortie, le jeu journalise toujours le **temps de frame moyen et maximal** et le nombre de frames au-dessus de 33 ms (hors chargement). `tools/check.ps1` (Windows) et `tools/check.sh` (Linux) lancent un test de fumée de chaque point d'entrée ; ces deux scripts font la même chose, modifie-les **ensemble**.
@@ -205,7 +206,7 @@ art/                       sources .blend (LFS), même arborescence que assets/m
 docs/                      conception, feuille de route, registres
 ```
 
-État après M1 : tout ce qui précède existe (`tools/blender/`, `art/` et `assets/models/` depuis M1 ; lightmaps dans `assets/textures/lightmaps/`). Modules de `sh_game` : `state` (états), `loading` (démarrage, chargement asynchrone et validation), `data` (ressources de données et textes), `ui` (thème, menu), `input` (contextes), `views` (vues de test Galaxie, Globale, Sectorielle), `graphics` (préréglages, échelle de rendu), `dev` (autopilote), `dev_tools` (feature `dev`).
+État après M1 : tout ce qui précède existe (`tools/blender/`, `art/` et `assets/models/` depuis M1 ; lightmaps dans `assets/textures/lightmaps/`). Modules de `sh_game` : `state` (états), `loading` (démarrage, chargement asynchrone et validation), `data` (ressources de données et textes), `ui` (thème, menu), `input` (contextes), `views` (Galaxie de test ; Globale : système à l'échelle, ciel, astres ; Sectorielle de test), `graphics` (préréglages, échelle de rendu), `dev` (autopilote), `dev_tools` (feature `dev`).
 
 ### 5.2 Règles de dépendance
 
