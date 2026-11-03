@@ -157,7 +157,7 @@ fn value_noise(x: f64, y: f64, z: f64) -> f64 {
 }
 
 /// Trois octaves de bruit : la texture filamenteuse des nébuleuses.
-fn fbm(x: f64, y: f64, z: f64) -> f64 {
+pub(crate) fn fbm(x: f64, y: f64, z: f64) -> f64 {
     (0..3)
         .map(|o| {
             let f = f64::from(1 << o);

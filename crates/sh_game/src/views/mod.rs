@@ -14,6 +14,7 @@ use crate::ui::theme::{self, UiFonts};
 
 pub mod galaxy;
 pub mod global;
+pub mod planet;
 pub mod sector;
 pub mod sky;
 

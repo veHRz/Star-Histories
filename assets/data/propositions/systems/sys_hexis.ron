@@ -15,6 +15,7 @@
             around: "hexis",
             altitude_radii: 1.5,
             angle_deg: 50.7,
+            model: "models/space/shipyard.glb",
         ),
         // Le hub de Portails, un peu à l'écart (≈ 120 km) : trafic dense entre lui et les cales.
         (
@@ -24,12 +25,23 @@
             around: "hexis",
             altitude_radii: 1.5,
             angle_deg: 54.5,
+            model: "models/space/portal_hub.glb",
         ),
     ],
-    traffic: 16,
+    station_models: {
+        "l_enclume": "models/space/l_enclume.glb",
+    },
+    // Cargos qui font la navette entre le hub, les chantiers et L'Enclume.
+    traffic: (
+        ships: 24,
+        model: "models/space/freighter.glb",
+        speed: 900.0,
+    ),
     arrival: (
         near: "l_enclume",
-        distance: 9000.0,
+        distance: 25000.0,
+        // L'étoile de trois quarts : Hexis à demi éclairée derrière L'Enclume.
+        azimuth_deg: -50.0,
         elevation_deg: 12.0,
     ),
 )

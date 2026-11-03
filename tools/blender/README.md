@@ -9,6 +9,7 @@ source de vérité.
 | `common.py` | Bibliothèque : scène vide, matériaux partagés, pavés, cylindres, collisions `_col`, repères, fusion par matériau, export glTF, conversion de repère |
 | `lightmap.py` | Éclairage précalculé : 2e jeu d'UV (`lightmap`) par cellule, bake diffus Cycles (une lampe par `LIGHT_`), PNG sRGB normalisés + exposition écrite dans le descripteur |
 | `kit/ship_interior.py` | Kit d'intérieur de vaisseau (P13) : `assets/models/kit/ship_interior/*.glb`, `art/kit/ship_interior.blend` |
+| `space/hexis_orbitals.py` | Installations orbitales d'Hexis (P15, P18) : `assets/models/space/{l_enclume,portal_hub,shipyard,freighter}.glb`, `art/space/hexis_orbitals.blend` |
 | `ships/player_ship.py` | Vaisseau du joueur (P12) : une paire de modèles par cellule dans `assets/models/ships/player_ship/`, une lightmap par cellule dans `assets/textures/lightmaps/player_ship/`, le descripteur `assets/data/propositions/sectors/player_ship.ron`, `art/ships/player_ship.blend` |
 
 ## Lancer

@@ -228,6 +228,24 @@ fn les_modeles_des_secteurs_existent() {
 }
 
 #[test]
+fn les_modeles_des_scenes_existent() {
+    let data = donnees();
+    let assets = racine().join("assets");
+    for scene in &data.scenes {
+        let mut chemins: Vec<String> = scene.structures.iter().map(|s| s.model.clone()).collect();
+        chemins.extend(scene.station_models.values().cloned());
+        chemins.extend(scene.traffic.as_ref().map(|t| t.model.clone()));
+        for chemin in chemins {
+            assert!(
+                assets.join(&chemin).is_file(),
+                "{} : modèle absent {chemin}",
+                scene.system
+            );
+        }
+    }
+}
+
+#[test]
 fn le_vaisseau_du_joueur_est_connexe() {
     let data = donnees();
     let vaisseau = data

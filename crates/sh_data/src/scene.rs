@@ -5,6 +5,8 @@
 //! sans nom : tout cela est **proposé** (`status: Proposition`), un fichier par système dans
 //! `assets/data/propositions/systems/`.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use sh_core::Id;
 
@@ -20,9 +22,11 @@ pub struct SystemScene {
     pub star_name: Option<String>,
     #[serde(default)]
     pub structures: Vec<Structure>,
-    /// Vaisseaux du trafic ambiant (figurants, sans simulation en M2).
+    /// Modèle (sous `assets/`) des stations canon du système, par identifiant.
     #[serde(default)]
-    pub traffic: u32,
+    pub station_models: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub traffic: Option<Traffic>,
     /// Où apparaît le joueur en arrivant dans le système.
     pub arrival: Arrival,
 }
@@ -40,6 +44,18 @@ pub struct Structure {
     pub altitude_radii: f64,
     /// Direction autour de l'astre dans le plan du système, en degrés (0 = est, 90 = sud).
     pub angle_deg: f64,
+    /// Modèle, sous `assets/`.
+    pub model: String,
+}
+
+/// Trafic ambiant : des figurants qui font la navette entre les stations et les structures du
+/// système (sans simulation en M2).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Traffic {
+    pub ships: u32,
+    pub model: String,
+    /// Vitesse de croisière des figurants (m/s).
+    pub speed: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -50,12 +66,15 @@ pub enum StructureKind {
     Shipyard,
 }
 
-/// Point d'arrivée : à `distance` mètres d'un objet (station, structure ou astre), du côté de
-/// l'étoile, à `elevation_deg` au-dessus du plan.
+/// Point d'arrivée : à `distance` mètres d'un objet (station, structure ou astre), à
+/// `azimuth_deg` de la direction de l'étoile dans le plan (0 : l'étoile dans le dos, 90 : de
+/// côté) et à `elevation_deg` au-dessus du plan, en regardant l'objet.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Arrival {
     pub near: String,
     pub distance: f64,
+    #[serde(default)]
+    pub azimuth_deg: f64,
     #[serde(default)]
     pub elevation_deg: f64,
 }
