@@ -1,0 +1,10 @@
+// Le départ de la v1 (P1, validé par l'auteur) : capitaine indépendant d'un petit vaisseau
+// marchand, endetté auprès de la Banque d'Hexis, aux commandes dans le système d'Hexis.
+(
+    id: "hexis_captain",
+    status: Proposition("P1"),
+    system: "sys_hexis",
+    ship: "player_ship",
+    aboard_spawn: "cockpit",
+    seat_role: "pilot",
+)

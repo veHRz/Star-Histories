@@ -9,7 +9,7 @@ use bevy_enhanced_input::prelude::*;
 use crate::data::Texts;
 use crate::graphics::WorldCamera;
 use crate::input::Pause;
-use crate::state::AppState;
+use crate::state::{AppState, ControlMode};
 use crate::ui::theme::{self, UiFonts};
 
 pub mod galaxy;
@@ -88,7 +88,10 @@ pub(crate) fn place_labels(
     window: Single<&Window, With<PrimaryWindow>>,
     mut labels: Query<(&WorldLabel, &mut Node, &mut Visibility)>,
     targets: Query<&GlobalTransform>,
+    mode: Res<State<ControlMode>>,
 ) {
+    // Les repères des astres sont une aide de navigation : affichés aux commandes seulement.
+    let follow_visible = *mode.get() == ControlMode::Piloting;
     let Ok((camera, camera_transform)) = camera.single() else {
         return;
     };
@@ -99,6 +102,10 @@ pub(crate) fn place_labels(
     for (label, mut node, mut visibility) in &mut labels {
         let anchor = match label {
             WorldLabel::At(point) => *point,
+            WorldLabel::Follow(_) if !follow_visible => {
+                *visibility = Visibility::Hidden;
+                continue;
+            }
             WorldLabel::Follow(entity) => match targets.get(*entity) {
                 Ok(t) => t.translation(),
                 Err(_) => {

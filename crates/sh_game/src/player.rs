@@ -17,7 +17,7 @@ use bevy_enhanced_input::prelude::*;
 use crate::graphics::WorldCamera;
 use crate::input::{Crouch, Jump, Look, Move, Sprint};
 use crate::sector::streaming::{CellReady, CellStates};
-use crate::sector::{ActiveSector, Layer, v3};
+use crate::sector::{Aboard, ActiveSector, Layer, v3};
 use crate::state::{ControlMode, ViewLevel};
 
 pub struct PlayerPlugin;
@@ -35,7 +35,9 @@ impl Plugin for PlayerPlugin {
                     .run_if(resource_exists::<ActiveSector>),
             )
             .add_systems(OnEnter(ViewLevel::Sector), grab_cursor)
-            .add_systems(OnExit(ViewLevel::Sector), release_cursor);
+            .add_systems(OnExit(ViewLevel::Sector), release_cursor)
+            .add_systems(OnEnter(ViewLevel::Global), grab_cursor)
+            .add_systems(OnExit(ViewLevel::Global), release_cursor);
     }
 }
 
@@ -123,12 +125,16 @@ pub struct ScriptedControl(pub bool);
 fn spawn_player(
     mut commands: Commands,
     sector: Res<ActiveSector>,
+    aboard: Option<Res<Aboard>>,
     mut mode: ResMut<NextState<ControlMode>>,
 ) {
     mode.set(ControlMode::OnFoot);
     let s = &sector.sector;
-    // `SH_SPAWN=<id>` (autopilote) choisit le point d'apparition ; sinon le premier du secteur.
-    let wanted = std::env::var("SH_SPAWN").ok();
+    // `SH_SPAWN=<id>` (autopilote) choisit le point d'apparition ; sinon celui du départ quand
+    // on est à bord en vol, sinon le premier du secteur.
+    let wanted = std::env::var("SH_SPAWN")
+        .ok()
+        .or_else(|| aboard.map(|a| a.spawn.clone()));
     let spawn = wanted
         .as_deref()
         .and_then(|id| s.spawns.iter().find(|sp| sp.id == id))
@@ -153,7 +159,7 @@ fn spawn_player(
             },
             Transform::from_translation(v3(spawn.pos)).with_rotation(Quat::from_rotation_y(yaw)),
             Visibility::default(),
-            DespawnOnExit(ViewLevel::Sector),
+            sector.scope(),
         ))
         .id();
     commands.spawn((

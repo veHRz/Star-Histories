@@ -20,9 +20,8 @@ impl Plugin for HudPlugin {
                 Update,
                 (show_prompt, show_notices, show_veil).run_if(resource_exists::<ActiveSector>),
             )
-            .add_systems(OnExit(ViewLevel::Sector), |mut prompt: ResMut<Prompt>| {
-                prompt.0 = None
-            });
+            .add_systems(OnExit(ViewLevel::Sector), clear_prompt)
+            .add_systems(OnExit(ViewLevel::Global), clear_prompt);
     }
 }
 
@@ -47,8 +46,17 @@ struct NoticeText {
 #[derive(Component)]
 struct LoadingVeil;
 
-fn spawn_hud(mut commands: Commands, texts: Res<Texts>, fonts: Res<UiFonts>) {
-    let scope = DespawnOnExit(ViewLevel::Sector);
+fn clear_prompt(mut prompt: ResMut<Prompt>) {
+    prompt.0 = None;
+}
+
+fn spawn_hud(
+    mut commands: Commands,
+    texts: Res<Texts>,
+    fonts: Res<UiFonts>,
+    sector: Res<ActiveSector>,
+) {
+    let scope = sector.scope();
     // Réticule.
     commands.spawn((
         scope.clone(),

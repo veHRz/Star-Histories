@@ -71,8 +71,10 @@ def material(
     roughness: float = 0.6,
     emission: tuple[float, float, float] | None = None,
     emission_strength: float = 0.0,
+    alpha: float = 1.0,
 ) -> bpy.types.Material:
-    """Matériau PBR partagé (peu de matériaux par scène : AGENTS.md §9.3)."""
+    """Matériau PBR partagé (peu de matériaux par scène : AGENTS.md §9.3). `alpha` < 1 : matériau
+    transparent mélangé (vitrages), exporté en `alphaMode: BLEND`."""
     if name in _MATERIALS:
         return _MATERIALS[name]
     mat = bpy.data.materials.get(name) or bpy.data.materials.new(name)
@@ -85,7 +87,10 @@ def material(
     if emission is not None:
         bsdf.inputs["Emission Color"].default_value = (*emission, 1.0)
         bsdf.inputs["Emission Strength"].default_value = emission_strength
-    mat.diffuse_color = (*color, 1.0)
+    if alpha < 1.0:
+        bsdf.inputs["Alpha"].default_value = alpha
+        mat.surface_render_method = "BLENDED"
+    mat.diffuse_color = (*color, alpha)
     _MATERIALS[name] = mat
     return mat
 

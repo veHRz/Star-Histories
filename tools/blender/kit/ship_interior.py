@@ -42,6 +42,7 @@ def palette() -> dict:
         "crate": c.material("sh_crate", (0.30, 0.33, 0.21), metallic=0.2, roughness=0.6),
         "machine": c.material("sh_machine", (0.38, 0.39, 0.41), metallic=0.8, roughness=0.35),
         "hazard": c.material("sh_hazard", (0.85, 0.65, 0.08), roughness=0.5),
+        "glass": c.material("sh_glass", (0.55, 0.70, 0.80), roughness=0.05, alpha=0.12),
     }
 
 
@@ -64,9 +65,10 @@ def room_shell(
 ) -> dict:
     """Sol, plafond et quatre cloisons d'une salle de dimensions intérieures données.
 
-    `openings` : (côté, position le long du mur, largeur, hauteur) ; côtés N (+Y), S (−Y),
-    E (+X), W (−X). Renvoie {"visual": [...], "structure": [...], "colliders": [...]}
-    (`structure` : ce qui reste dans la version simplifiée de la cellule).
+    `openings` : (côté, position le long du mur, largeur, hauteur[, allège]) ; côtés N (+Y),
+    S (−Y), E (+X), W (−X). Une allège > 0 fait une fenêtre : vitrage transparent, cadre et
+    collision pleine (on ne passe pas). Renvoie {"visual": [...], "structure": [...],
+    "colliders": [...]} (`structure` : ce qui reste dans la version simplifiée de la cellule).
     """
     out = {"visual": [], "structure": [], "colliders": []}
     w, d = x1 - x0, y1 - y0
@@ -94,13 +96,17 @@ def room_shell(
     }
     for side, (axis, start, length, fixed, inward) in walls.items():
         holes = sorted(
-            (pos - ow / 2, pos + ow / 2, oh) for s, pos, ow, oh in openings if s == side
+            (o[1] - o[2] / 2, o[1] + o[2] / 2, o[3], o[4] if len(o) > 4 else 0.0)
+            for o in openings
+            if o[0] == side
         )
         cursor = start
         segments = []
-        for a, b, oh in holes:
+        for a, b, oh, sill in holes:
             segments.append((cursor, a, z0, height))  # plein mur avant l'ouverture
-            segments.append((a, b, z0 + oh, height - oh))  # linteau
+            if sill > 0.0:
+                segments.append((a, b, z0, sill))  # allège sous la fenêtre
+            segments.append((a, b, z0 + sill + oh, height - sill - oh))  # linteau
             cursor = b
         segments.append((cursor, start + length, z0, height))
         for i, (a, b, zb, h) in enumerate(segments):
@@ -112,32 +118,44 @@ def room_shell(
             else:
                 size, center = (WALL, b - a, h), (fixed, mid, zb + h / 2)
             solid(f"{prefix}_wall_{side}{i}", size, center, m["wall"])
-        # Cadres de porte.
-        for a, b, oh in holes:
+        # Cadres de porte et de fenêtre ; vitrage et collision pleine pour les fenêtres.
+        for a, b, oh, sill in holes:
             mid = (a + b) / 2
+            zb = z0 + sill
             for edge in (a, b):
                 if axis == "x":
-                    add(c.box(f"{prefix}_jamb", (0.12, WALL + 0.08, oh), (edge, fixed, z0 + oh / 2), m["trim"]), False)
+                    add(c.box(f"{prefix}_jamb", (0.12, WALL + 0.08, oh), (edge, fixed, zb + oh / 2), m["trim"]), False)
                 else:
-                    add(c.box(f"{prefix}_jamb", (WALL + 0.08, 0.12, oh), (fixed, edge, z0 + oh / 2), m["trim"]), False)
-            if axis == "x":
-                add(c.box(f"{prefix}_header", (b - a + 0.24, WALL + 0.1, 0.16), (mid, fixed, z0 + oh + 0.08), m["accent"]), False)
-            else:
-                add(c.box(f"{prefix}_header", (WALL + 0.1, b - a + 0.24, 0.16), (fixed, mid, z0 + oh + 0.08), m["accent"]), False)
+                    add(c.box(f"{prefix}_jamb", (WALL + 0.08, 0.12, oh), (fixed, edge, zb + oh / 2), m["trim"]), False)
+            header = m["trim"] if sill > 0.0 else m["accent"]
+            frames = [zb + oh + 0.08] + ([zb - 0.08] if sill > 0.0 else [])
+            for zf in frames:
+                if axis == "x":
+                    add(c.box(f"{prefix}_header", (b - a + 0.24, WALL + 0.1, 0.16), (mid, fixed, zf), header), False)
+                else:
+                    add(c.box(f"{prefix}_header", (WALL + 0.1, b - a + 0.24, 0.16), (fixed, mid, zf), header), False)
+            if sill > 0.0:
+                size = (b - a, 0.03, oh) if axis == "x" else (0.03, b - a, oh)
+                center = (mid, fixed, zb + oh / 2) if axis == "x" else (fixed, mid, zb + oh / 2)
+                add(c.box(f"{prefix}_glass", size, center, m["glass"], coll))
+                wall_size = (b - a, WALL, oh) if axis == "x" else (WALL, b - a, oh)
+                out["colliders"].append(c.collider_box(f"{prefix}_glass", wall_size, center, coll))
         if not ribs:
             continue
         # Membrures verticales tous les 2 m et plinthe : la lecture « intérieur de vaisseau ».
         inner = fixed + inward * (WALL / 2 + 0.03)
         pos = start + WALL + GRID
         while pos < start + length - WALL - 0.3:
-            if all(not (a - 0.2 < pos < b + 0.2) for a, b, _ in holes):
+            if all(not (a - 0.2 < pos < b + 0.2) for a, b, _, _ in holes):
                 if axis == "x":
                     add(c.box(f"{prefix}_rib", (0.14, 0.06, height), (pos, inner, z0 + height / 2), m["trim"]), False)
                 else:
                     add(c.box(f"{prefix}_rib", (0.06, 0.14, height), (inner, pos, z0 + height / 2), m["trim"]), False)
             pos += GRID
         span = (start + WALL, start + length - WALL)
-        cuts = [span[0]] + [v for a, b, _ in holes for v in (a, b)] + [span[1]]
+        # La plinthe ne s'interrompt qu'aux portes (pas sous une fenêtre).
+        doors = [(a, b) for a, b, _, sill in holes if sill <= 0.0]
+        cuts = [span[0]] + [v for a, b in doors for v in (a, b)] + [span[1]]
         for a, b in zip(cuts[0::2], cuts[1::2]):
             if b - a < 0.05:
                 continue
@@ -183,12 +201,14 @@ def _place(objs, center, facing):
         obj.rotation_euler[2] += facing
 
 
-def console(name: str, center, facing: float, m: dict, coll, label: str = "console"):
+def console(name: str, center, facing: float, m: dict, coll, label: str = "console", low: bool = False):
+    """Console ; `low` : écran bas, sous la ligne des yeux assis (postes devant un hublot)."""
+    sz, sh = (0.38, 1.0) if low else (0.55, 1.2)
     vis = [
         c.box(f"{name}_base", (1.2, 0.6, 0.85), (0, 0, 0.425), m["machine"], coll, bevel=0.02),
         c.box(f"{name}_desk", (1.3, 0.45, 0.06), (0, 0.12, 0.88), m["trim"], coll),
-        c.box(f"{name}_screen", (1.1, 0.05, 0.55), (0, -0.2, 1.2), m["screen"], coll),
-        c.box(f"{name}_bezel", (1.2, 0.04, 0.62), (0, -0.23, 1.2), m["trim"], coll),
+        c.box(f"{name}_screen", (1.1, 0.05, sz), (0, -0.2, sh), m["screen"], coll),
+        c.box(f"{name}_bezel", (1.2, 0.04, sz + 0.07), (0, -0.23, sh), m["trim"], coll),
     ]
     col = [c.collider_box(f"{name}", (1.3, 0.6, 1.0), (0, 0, 0.5), coll)]
     marks = [c.empty(f"INTERACT_{name}", (0, 0.1, 1.0), coll, {"interact": "console", "label": label})]

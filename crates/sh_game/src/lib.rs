@@ -17,6 +17,7 @@ pub mod interaction;
 pub mod loading;
 pub mod player;
 pub mod sector;
+pub mod ship;
 pub mod space;
 pub mod state;
 pub mod ui;
@@ -53,6 +54,7 @@ impl Plugin for StarHistoriesPlugin {
             sector::SectorPlugin,
             player::PlayerPlugin,
             interaction::InteractionPlugin,
+            ship::ShipPlugin,
         ));
         #[cfg(feature = "dev")]
         app.add_plugins(dev_tools::DevToolsPlugin);

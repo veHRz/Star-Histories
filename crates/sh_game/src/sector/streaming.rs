@@ -23,12 +23,8 @@ pub struct StreamingPlugin;
 impl Plugin for StreamingPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CellStates>()
-            .add_systems(
-                OnExit(ViewLevel::Sector),
-                |mut states: ResMut<CellStates>| {
-                    *states = CellStates::default();
-                },
-            )
+            .add_systems(OnExit(ViewLevel::Sector), reset_states)
+            .add_systems(OnExit(ViewLevel::Global), reset_states)
             .add_systems(
                 Update,
                 (track_current_cell, stream_cells)
@@ -36,6 +32,10 @@ impl Plugin for StreamingPlugin {
                     .run_if(resource_exists::<ActiveSector>),
             );
     }
+}
+
+fn reset_states(mut states: ResMut<CellStates>) {
+    *states = CellStates::default();
 }
 
 pub const LOCAL_DEPTH: usize = 1;

@@ -14,7 +14,7 @@
             lod: "models/ships/player_ship/machines_lod.glb",
             min: (-5.200, -0.200, 14.200),
             max: (5.200, 3.600, 26.200),
-            lightmap: (image: "textures/lightmaps/player_ship/machines.png", exposure: 1716.285),
+            lightmap: (image: "textures/lightmaps/player_ship/machines.png", exposure: 1716.282),
         ),
         (
             id: "couloir_arriere",
@@ -22,7 +22,7 @@
             lod: "models/ships/player_ship/couloir_arriere_lod.glb",
             min: (-1.400, -0.200, -0.200),
             max: (1.400, 2.800, 14.200),
-            lightmap: (image: "textures/lightmaps/player_ship/couloir_arriere.png", exposure: 1575.669),
+            lightmap: (image: "textures/lightmaps/player_ship/couloir_arriere.png", exposure: 1586.012),
         ),
         (
             id: "sas",
@@ -30,7 +30,7 @@
             lod: "models/ships/player_ship/sas_lod.glb",
             min: (-5.800, -0.200, 0.800),
             max: (-1.400, 2.800, 5.200),
-            lightmap: (image: "textures/lightmaps/player_ship/sas.png", exposure: 626.394),
+            lightmap: (image: "textures/lightmaps/player_ship/sas.png", exposure: 619.646),
         ),
         (
             id: "soute",
@@ -38,7 +38,7 @@
             lod: "models/ships/player_ship/soute_lod.glb",
             min: (1.400, -0.200, 1.800),
             max: (10.200, 3.600, 12.200),
-            lightmap: (image: "textures/lightmaps/player_ship/soute.png", exposure: 2176.034),
+            lightmap: (image: "textures/lightmaps/player_ship/soute.png", exposure: 2174.899),
         ),
         (
             id: "couloir_avant",
@@ -46,7 +46,7 @@
             lod: "models/ships/player_ship/couloir_avant_lod.glb",
             min: (-1.400, -0.200, -14.200),
             max: (1.400, 2.800, 0.200),
-            lightmap: (image: "textures/lightmaps/player_ship/couloir_avant.png", exposure: 1472.716),
+            lightmap: (image: "textures/lightmaps/player_ship/couloir_avant.png", exposure: 1499.226),
         ),
         (
             id: "quartiers",
@@ -54,7 +54,7 @@
             lod: "models/ships/player_ship/quartiers_lod.glb",
             min: (-8.600, -0.200, -10.200),
             max: (-1.400, 3.000, -1.800),
-            lightmap: (image: "textures/lightmaps/player_ship/quartiers.png", exposure: 650.558),
+            lightmap: (image: "textures/lightmaps/player_ship/quartiers.png", exposure: 651.582),
         ),
         (
             id: "carre",
@@ -62,7 +62,7 @@
             lod: "models/ships/player_ship/carre_lod.glb",
             min: (1.400, -0.200, -10.200),
             max: (8.600, 3.000, -1.800),
-            lightmap: (image: "textures/lightmaps/player_ship/carre.png", exposure: 1019.228),
+            lightmap: (image: "textures/lightmaps/player_ship/carre.png", exposure: 1029.141),
         ),
         (
             id: "cockpit",
@@ -70,7 +70,7 @@
             lod: "models/ships/player_ship/cockpit_lod.glb",
             min: (-4.200, -0.200, -22.200),
             max: (4.200, 3.600, -14.200),
-            lightmap: (image: "textures/lightmaps/player_ship/cockpit.png", exposure: 1747.021),
+            lightmap: (image: "textures/lightmaps/player_ship/cockpit.png", exposure: 1227.909),
         ),
     ],
     portals: [

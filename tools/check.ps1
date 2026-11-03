@@ -62,4 +62,15 @@ Step "scénario walk_ship" {
     $global:LASTEXITCODE = $code
 }
 
+# Vol aux commandes (assisté, croisière, découplé), puis marche dans le vaisseau en plein vol.
+Step "scénario fly_ship" {
+    $env:SH_START = "global:hexis"
+    $env:SH_SCENARIO = "fly_ship"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_START, Env:SH_SCENARIO
+    $log | Select-String -Pattern "ERROR|panicked|sc.{1,3}nario" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
 Write-Host "Tout est vert." -ForegroundColor Green

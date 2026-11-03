@@ -612,6 +612,65 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
         c.fail("scènes", format!("système mis en scène deux fois : {id}"));
     }
 
+    // --- Maniement des vaisseaux ------------------------------------------------------------
+    for (ship, h) in &data.flight.ships {
+        let ctx = format!("flight.ron : {ship}");
+        c.check(
+            data.sectors.iter().any(|s| s.id.as_str() == ship),
+            &ctx,
+            "secteur de vaisseau inconnu",
+        );
+        let values = [
+            h.max_speed,
+            h.accel_forward,
+            h.accel_backward,
+            h.accel_lateral,
+            h.accel_vertical,
+            h.pitch_rate_deg,
+            h.yaw_rate_deg,
+            h.roll_rate_deg,
+            h.turn_response,
+            h.cruise_spool_down,
+        ];
+        c.check(
+            values.iter().all(|v| v.is_finite() && *v > 0.0),
+            &ctx,
+            "toutes les valeurs doivent être positives",
+        );
+        c.check(
+            h.max_speed <= data.space.scale.manoeuvre_max_speed,
+            &ctx,
+            "max_speed au-delà de la vitesse de manœuvre de l'échelle (space.ron)",
+        );
+    }
+    for start in &data.starts {
+        c.check(
+            data.flight.ships.contains_key(&start.ship),
+            format!("départ {}", start.id),
+            format!("vaisseau sans maniement dans flight.ron : {}", start.ship),
+        );
+    }
+
+    // --- Départs de partie ------------------------------------------------------------------
+    c.check(!data.starts.is_empty(), "départs", "aucun départ de partie");
+    for start in &data.starts {
+        let ctx = format!("départ {}", start.id);
+        c.status(&ctx, &start.status, None);
+        c.check(
+            data.galaxy.system(&start.system).is_some_and(|s| !s.secret),
+            &ctx,
+            format!("système inconnu ou secret : {}", start.system),
+        );
+        match data.sectors.iter().find(|s| s.id.as_str() == start.ship) {
+            Some(ship) => c.check(
+                ship.spawns.iter().any(|sp| sp.id == start.aboard_spawn),
+                &ctx,
+                format!("apparition inconnue à bord : {}", start.aboard_spawn),
+            ),
+            None => c.fail(&ctx, format!("vaisseau inconnu : {}", start.ship)),
+        }
+    }
+
     // --- Langue -----------------------------------------------------------------------------
     for (key, text) in &data.lang.strings {
         c.check(

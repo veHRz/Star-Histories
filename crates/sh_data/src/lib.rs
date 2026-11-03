@@ -25,6 +25,7 @@ pub mod scene;
 pub mod sector;
 pub mod settings;
 pub mod ships;
+pub mod start;
 pub mod validate;
 
 pub use common::{Location, Place, Population, Status};
@@ -39,10 +40,11 @@ pub use layout::{Placed, PlacedKind, system_layout};
 pub use scene::{Arrival, Structure, StructureKind, SystemScene, Traffic};
 pub use sector::{Cell, Portal, PortalKind, Sector, SectorKind, Spawn};
 pub use settings::{
-    AntiAliasing, ClockSettings, GraphicsPreset, GraphicsPresets, PresetLevel, SpaceSettings,
-    SystemScale,
+    AntiAliasing, ClockSettings, FlightSettings, GraphicsPreset, GraphicsPresets, Handling,
+    PresetLevel, SpaceSettings, SystemScale,
 };
 pub use ships::{Formation, FormationsFile, ShipClass, ShipClassesFile};
+pub use start::Start;
 pub use validate::{Issue, ValidationReport};
 
 /// Chemins relatifs des fichiers, sous le dossier de données.
@@ -55,11 +57,14 @@ pub mod paths {
     pub const GRAPHICS: &str = "gameplay/graphics.ron";
     pub const CLOCK: &str = "gameplay/clock.ron";
     pub const SPACE: &str = "gameplay/space.ron";
+    pub const FLIGHT: &str = "gameplay/flight.ron";
     pub const LANG_EN: &str = "lang/en.ron";
     /// Dossiers scannés pour les descripteurs de secteurs (`*.ron`).
     pub const SECTOR_DIRS: [&str; 2] = ["canon/sectors", "propositions/sectors"];
     /// Dossiers scannés pour les mises en scène de systèmes (`*.ron`).
     pub const SCENE_DIRS: [&str; 2] = ["canon/systems", "propositions/systems"];
+    /// Dossiers scannés pour les départs de partie (`*.ron`).
+    pub const START_DIRS: [&str; 1] = ["propositions/starts"];
 }
 
 /// Toutes les données chargées au démarrage du jeu.
@@ -73,9 +78,11 @@ pub struct GameData {
     pub graphics: GraphicsPresets,
     pub clock: ClockSettings,
     pub space: SpaceSettings,
+    pub flight: FlightSettings,
     pub lang: Lang,
     pub sectors: Vec<Sector>,
     pub scenes: Vec<SystemScene>,
+    pub starts: Vec<Start>,
 }
 
 #[derive(Debug, Error)]
@@ -127,15 +134,22 @@ impl GameData {
             graphics: read_ron(&file(paths::GRAPHICS))?,
             clock: read_ron(&file(paths::CLOCK))?,
             space: read_ron(&file(paths::SPACE))?,
+            flight: read_ron(&file(paths::FLIGHT))?,
             lang: read_ron(&file(paths::LANG_EN))?,
             sectors: read_dir_ron(data_dir, &paths::SECTOR_DIRS)?,
             scenes: read_dir_ron(data_dir, &paths::SCENE_DIRS)?,
+            starts: read_dir_ron(data_dir, &paths::START_DIRS)?,
         })
     }
 
     /// Vérifie la cohérence de l'ensemble (identifiants, références, cases, sources, secrets).
     pub fn validate(&self) -> Result<(), ValidationReport> {
         validate::validate(self)
+    }
+
+    /// Le départ de partie (la v1 n'en a qu'un : le premier, par ordre de fichier).
+    pub fn start(&self) -> Option<&Start> {
+        self.starts.first()
     }
 
     /// La mise en scène d'un système, s'il en a une.

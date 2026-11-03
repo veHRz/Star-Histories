@@ -16,6 +16,7 @@ use crate::player::{Player, PlayerCamera, PlayerController, PlayerMode};
 use crate::sector::doors::Door;
 use crate::sector::gltf::{Interactable, Socket};
 use crate::sector::{ActiveSector, Layer};
+use crate::state::ControlMode;
 use crate::ui::hud::{Notice, Prompt};
 
 pub struct InteractionPlugin;
@@ -126,6 +127,7 @@ fn find_focus(
 fn update_prompt(
     focus: Res<Focus>,
     texts: Res<Texts>,
+    mode: Res<State<ControlMode>>,
     player: Query<&PlayerController, With<Player>>,
     doors: Query<&Door>,
     mut prompt: ResMut<Prompt>,
@@ -146,6 +148,10 @@ fn update_prompt(
             "interact.console",
             &[("console", &texts.get(&format!("console.{label}.name")))],
         ),
+        // Aux commandes, E fait rouler le vaisseau : on se lève avec F (contexte Pilotage).
+        Interactable::Seat { .. } if seated && *mode.get() == ControlMode::Piloting => {
+            texts.get("interact.seat.leave_helm")
+        }
         Interactable::Seat { .. } if seated => texts.get("interact.seat.leave"),
         Interactable::Seat { .. } => texts.get("interact.seat.sit"),
         Interactable::Pickup { item } => texts.format(
@@ -157,6 +163,58 @@ fn update_prompt(
     if prompt.0 != text {
         prompt.0 = text;
     }
+}
+
+/// L'œil d'un siège : le point d'attache `SOCKET_<nom>_eye`, voisin du repère `INTERACT_<nom>`
+/// (convention de tools/blender/kit/ship_interior.py).
+pub fn seat_eye(
+    seat: Entity,
+    names: &Query<&Name>,
+    parents: &Query<&ChildOf>,
+    children: &Query<&Children>,
+    sockets: &Query<(&Socket, &GlobalTransform)>,
+) -> Option<Transform> {
+    let wanted = names
+        .get(seat)
+        .ok()
+        .and_then(|n| n.as_str().strip_prefix("INTERACT_"))
+        .map(|n| format!("{n}_eye"))?;
+    let parent = parents.get(seat).map(ChildOf::parent).ok()?;
+    children
+        .get(parent)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| sockets.get(*e).ok())
+        .find(|(socket, _)| socket.usage == "seat_eye" && socket.name == wanted)
+        .map(|(_, t)| t.compute_transform())
+}
+
+/// S'asseoir : le joueur s'attache à l'œil du siège.
+pub fn sit(controller: &mut PlayerController, seat: Entity, eye: Transform) {
+    let facing = eye.rotation.to_euler(EulerRot::YXZ).0;
+    controller.mode = PlayerMode::Seated {
+        seat,
+        eye: eye.translation,
+        facing,
+    };
+    controller.yaw = facing;
+    controller.pitch = -0.1;
+}
+
+/// Se lever : un pas devant le siège.
+pub fn stand_up(world: &mut World) {
+    let mut query = world.query_filtered::<(&mut Transform, &mut PlayerController), With<Player>>();
+    let Ok((mut transform, mut controller)) = query.single_mut(world) else {
+        return;
+    };
+    let PlayerMode::Seated { facing, eye, .. } = controller.mode else {
+        return;
+    };
+    let forward = Quat::from_rotation_y(facing) * Vec3::NEG_Z;
+    let feet = eye - Vec3::Y * controller.eye_height() + forward * 0.75;
+    controller.mode = PlayerMode::Walking;
+    controller.velocity = Vec3::ZERO;
+    transform.translation = feet + Vec3::Y * 0.05;
 }
 
 fn perform(
@@ -196,49 +254,13 @@ fn perform(
             notices.write(Notice(texts.get(&format!("console.{label}.message"))));
         }
         Interactable::Seat { .. } => match controller.mode {
-            PlayerMode::Seated { facing, .. } => {
-                // Se lever : un pas devant le siège.
-                let forward = Quat::from_rotation_y(facing) * Vec3::NEG_Z;
-                let feet = player_transform.translation() + forward * 0.75;
-                controller.mode = PlayerMode::Walking;
-                controller.velocity = Vec3::ZERO;
-                commands.queue(move |world: &mut World| {
-                    if let Ok(mut q) = world
-                        .query_filtered::<&mut Transform, With<Player>>()
-                        .single_mut(world)
-                    {
-                        q.translation = Vec3::new(feet.x, feet.y + 0.05, feet.z);
-                    }
-                });
+            PlayerMode::Seated { .. } => {
+                commands.queue(stand_up);
             }
             PlayerMode::Walking => {
-                // L'œil du siège est le point d'attache `SOCKET_<nom>_eye`, voisin du repère
-                // `INTERACT_<nom>` (convention de tools/blender/kit/ship_interior.py).
-                let wanted = names
-                    .get(target.entity)
-                    .ok()
-                    .and_then(|n| n.as_str().strip_prefix("INTERACT_"))
-                    .map(|n| format!("{n}_eye"));
-                let parent = parents.get(target.entity).map(ChildOf::parent).ok();
-                let eye = parent
-                    .into_iter()
-                    .flat_map(|p| children.get(p).into_iter().flatten().copied())
-                    .filter_map(|e| sockets.get(e).ok())
-                    .find(|(socket, _)| {
-                        socket.usage == "seat_eye" && Some(&socket.name) == wanted.as_ref()
-                    })
-                    .map(|(_, t)| t.compute_transform());
-                if let Some(eye) = eye {
-                    let facing = eye.rotation.to_euler(EulerRot::YXZ).0;
-                    controller.mode = PlayerMode::Seated {
-                        seat: target.entity,
-                        eye: eye.translation,
-                        facing,
-                    };
-                    controller.yaw = facing;
-                    controller.pitch = -0.1;
-                } else {
-                    warn!("siège sans point d'attache SOCKET_*_eye");
+                match seat_eye(target.entity, &names, &parents, &children, &sockets) {
+                    Some(eye) => sit(controller, target.entity, eye),
+                    None => warn!("siège sans point d'attache SOCKET_*_eye"),
                 }
             }
         },

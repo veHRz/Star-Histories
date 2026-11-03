@@ -64,6 +64,12 @@ PORTALS = [
     ("couloir_avant", "cockpit", "Door", 0.0, 14.2, "y"),
 ]
 
+# Fenêtres : (côté, position, largeur, hauteur, allège) ; le hublot avant du cockpit, au-dessus
+# des consoles de pilotage (plate-forme surélevée de 0,8 m).
+WINDOWS = {
+    "cockpit": [("N", 0.0, 6.4, 1.45, 1.75)],
+}
+
 SPAWNS = [
     # (id, cellule, x, y, z, cap en degrés autour de Z : 0 = vers l'avant +Y)
     ("sas", "sas", -3.8, -3.0, 0.0, -90.0),
@@ -89,6 +95,7 @@ def openings_for(cell: str) -> list[tuple[str, float, float, float]]:
         else:
             side = "E" if abs(x - x1) < abs(x - x0) else "W"
             out.append((side, y, width, height))
+    out.extend(WINDOWS.get(cell, []))
     return out
 
 
@@ -188,11 +195,9 @@ def build_cell(cell: str, m: dict) -> dict:
             out["colliders"].append(c.collider_box(f"{cell}_rail{side}", (3.0, 0.1, 1.0), (xr, platform_y0 + 0.05, rise + 0.5), coll))
         add(kit.seat(f"{cell}_pilot", (-1.0, 19.6, rise), 0.0, m, coll, role="pilot"))
         add(kit.seat(f"{cell}_copilot", (1.0, 19.6, rise), 0.0, m, coll, role="copilot"))
-        add(kit.console(f"{cell}_helm", (-1.0, 21.2, rise), math.pi, m, coll, label="helm"))
-        add(kit.console(f"{cell}_nav", (1.0, 21.2, rise), math.pi, m, coll, label="navigation"))
+        add(kit.console(f"{cell}_helm", (-1.0, 21.2, rise), math.pi, m, coll, label="helm", low=True))
+        add(kit.console(f"{cell}_nav", (1.0, 21.2, rise), math.pi, m, coll, label="navigation", low=True))
         add(kit.console(f"{cell}_comms", (3.4, 18.5, rise), math.pi / 2, m, coll, label="comms"))
-        # Grand écran de vue avant (l'extérieur réel arrive en M2).
-        out["visual"].append(c.box(f"{cell}_viewscreen", (6.0, 0.05, 1.4), (0.0, y1 - 0.02, rise + 1.9), m["screen"], coll))
         for i, (x, y) in enumerate(((0.0, 15.6), (0.0, 19.0))):
             add(light(f"{cell}_l{i}", x, y, h, m, coll, 22000.0, 9.0, shadow=(i == 1)))
     return out

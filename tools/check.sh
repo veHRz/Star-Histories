@@ -55,4 +55,8 @@ step "fumée sector:player_ship sans lightmaps" \
 step "scénario walk_ship" \
     run_game "ERROR|panicked|sc.{1,3}nario" SH_START=sector:player_ship SH_SCENARIO=walk_ship
 
+# Vol aux commandes (assisté, croisière, découplé), puis marche dans le vaisseau en plein vol.
+step "scénario fly_ship" \
+    run_game "ERROR|panicked|sc.{1,3}nario" SH_START=global:hexis SH_SCENARIO=fly_ship
+
 echo "${green}Tout est vert.${reset}"

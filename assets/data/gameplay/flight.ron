@@ -1,0 +1,18 @@
+// Maniement des vaisseaux pilotables (réglages de jeu, pas des faits d'univers).
+// Le vaisseau du joueur (P12) : petit marchand de taille corvette, agile sans être un chasseur.
+(
+    ships: {
+        "player_ship": (
+            max_speed: 250.0,
+            accel_forward: 45.0,
+            accel_backward: 25.0,
+            accel_lateral: 20.0,
+            accel_vertical: 20.0,
+            pitch_rate_deg: 40.0,
+            yaw_rate_deg: 30.0,
+            roll_rate_deg: 80.0,
+            turn_response: 3.0,
+            cruise_spool_down: 1.5,
+        ),
+    },
+)

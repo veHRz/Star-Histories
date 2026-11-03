@@ -141,6 +141,32 @@ impl SystemScale {
     }
 }
 
+/// Maniement des vaisseaux pilotables, par identifiant de secteur (`gameplay/flight.ron`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FlightSettings {
+    pub ships: std::collections::BTreeMap<String, Handling>,
+}
+
+/// Maniement d'un vaisseau (réglage de jeu, pas un fait d'univers).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Handling {
+    /// Vitesse maximale en vol assisté (m/s), hors croisière.
+    pub max_speed: f64,
+    /// Accélérations par axe (m/s²).
+    pub accel_forward: f64,
+    pub accel_backward: f64,
+    pub accel_lateral: f64,
+    pub accel_vertical: f64,
+    /// Vitesses de rotation maximales (degrés/s).
+    pub pitch_rate_deg: f64,
+    pub yaw_rate_deg: f64,
+    pub roll_rate_deg: f64,
+    /// Réactivité de la rotation (1/s) : à quelle vitesse la rotation suit la commande.
+    pub turn_response: f64,
+    /// Durée caractéristique (s) du retour de la croisière à la vitesse de manœuvre.
+    pub cruise_spool_down: f64,
+}
+
 /// Horloge du monde.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ClockSettings {

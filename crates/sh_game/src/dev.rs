@@ -264,12 +264,34 @@ const WALK_SHIP: &[(f32, f32, Option<&str>)] = &[
     (0.0, 18.4, None),
 ];
 
+/// Fin du scénario `fly_ship` : du poste de pilotage au couloir avant, à pied, en plein vol.
+const FLY_SHIP_WALK: &[(f32, f32, Option<&str>)] = &[
+    (0.0, 20.3, None),
+    (0.0, 18.0, None),
+    (0.0, 16.4, None),
+    (0.0, 15.0, Some("couloir_avant__cockpit")),
+    (0.0, 12.8, None),
+    (0.0, 10.0, None),
+];
+
+/// Les phases de vol du scénario `fly_ship`, chronométrées.
+#[derive(Default)]
+struct FlightCheck {
+    step: u8,
+    t: f32,
+    start: Option<(sh_core::SpacePos, Quat)>,
+    walk_start: Option<sh_core::SpacePos>,
+}
+
 /// Délai sans progrès au-delà duquel un scénario est déclaré bloqué.
 const STUCK_SECONDS: f32 = 8.0;
 
 #[derive(Resource)]
 struct Scenario {
     name: String,
+    path: &'static [(f32, f32, Option<&'static str>)],
+    /// `fly_ship` : les phases de vol précèdent la marche.
+    flight: Option<FlightCheck>,
     index: usize,
     best_distance: f32,
     since_progress: f32,
@@ -287,8 +309,13 @@ impl Plugin for ScenarioPlugin {
         let Ok(name) = std::env::var("SH_SCENARIO") else {
             return;
         };
-        if name != "walk_ship" {
-            error!("SH_SCENARIO inconnu : « {name} » (walk_ship)");
+        let (path, flight) = match name.as_str() {
+            "walk_ship" => (WALK_SHIP, None),
+            "fly_ship" => (FLY_SHIP_WALK, Some(FlightCheck::default())),
+            _ => (WALK_SHIP, None),
+        };
+        if name != "walk_ship" && name != "fly_ship" {
+            error!("SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship)");
             app.add_systems(Startup, |mut exit: MessageWriter<AppExit>| {
                 exit.write(AppExit::error());
             });
@@ -296,6 +323,8 @@ impl Plugin for ScenarioPlugin {
         }
         app.insert_resource(Scenario {
             name,
+            path,
+            flight,
             index: 0,
             best_distance: f32::MAX,
             since_progress: 0.0,
@@ -314,17 +343,25 @@ impl Plugin for ScenarioPlugin {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_scenario(
+    mut commands: Commands,
     time: Res<Time>,
     real: Res<Time<Real>>,
     mut scenario: ResMut<Scenario>,
     mut scripted: ResMut<crate::player::ScriptedControl>,
     mut intent: ResMut<crate::player::PlayerIntent>,
+    mut pilot: ResMut<crate::ship::PilotIntent>,
     cells: Res<crate::sector::streaming::CellStates>,
     player: Query<
         (&GlobalTransform, &crate::player::PlayerController),
         With<crate::player::Player>,
     >,
+    mut ships: Query<(
+        &crate::space::SpacePosition,
+        &crate::space::SpaceRotation,
+        &mut crate::ship::ShipMotion,
+    )>,
     mut doors: Query<&mut crate::sector::doors::Door>,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -332,9 +369,42 @@ fn run_scenario(
 
     scripted.0 = true;
     *intent = crate::player::PlayerIntent::default();
+    *pilot = crate::ship::PilotIntent::default();
     let Ok((transform, controller)) = player.single() else {
         return;
     };
+    if let Some(flight) = scenario.flight.as_mut() {
+        let seated = matches!(controller.mode, crate::player::PlayerMode::Seated { .. });
+        if flight.step < 5 {
+            let Ok((pos, rot, mut motion)) = ships.single_mut() else {
+                return;
+            };
+            if !seated {
+                return; // attend d'être assis au poste de pilotage
+            }
+            match fly_phase(
+                flight,
+                pos.0,
+                rot.0,
+                &mut motion,
+                &mut pilot,
+                time.delta_secs(),
+            ) {
+                Ok(true) => commands.queue(crate::interaction::stand_up),
+                Ok(false) => {}
+                Err(message) => {
+                    error!("scénario {} : {message}", scenario.name);
+                    exit.write(AppExit::error());
+                }
+            }
+            return;
+        }
+        if flight.walk_start.is_none()
+            && let Ok((pos, _, _)) = ships.single()
+        {
+            flight.walk_start = Some(pos.0);
+        }
+    }
     if !controller.grounded && !scenario.started {
         return; // attend que le joueur soit posé (cellule prête, physique active)
     }
@@ -343,7 +413,7 @@ fn run_scenario(
         info!(
             "scénario {} : départ ({} étapes)",
             scenario.name,
-            WALK_SHIP.len()
+            scenario.path.len()
         );
         info!(
             "scénario : joueur posé en {:?}, hauteur {:.2}",
@@ -360,8 +430,26 @@ fn run_scenario(
         scenario.over_33ms += 1;
     }
 
-    let Some(&(x, y, door)) = WALK_SHIP.get(scenario.index) else {
+    let Some(&(x, y, door)) = scenario.path.get(scenario.index) else {
         let mean = scenario.total_ms / f64::from(scenario.frames.max(1));
+        // `fly_ship` : le vaisseau a continué sur sa lancée pendant la marche.
+        if let Some(start) = scenario.flight.as_ref().and_then(|f| f.walk_start)
+            && let Ok((pos, _, _)) = ships.single()
+        {
+            let drift = pos.0.distance(start);
+            info!(
+                "scénario {} : le vaisseau a parcouru {drift:.0} m pendant la marche",
+                scenario.name
+            );
+            if drift < 100.0 {
+                error!(
+                    "scénario {} : le vaisseau ne volait pas pendant la marche",
+                    scenario.name
+                );
+                exit.write(AppExit::error());
+                return;
+            }
+        }
         info!(
             "scénario {} terminé : {} transitions de cellule, temps de frame moyen {mean:.2} ms, pire {:.2} ms, {} frame(s) > 33 ms",
             scenario.name, cells.transitions, scenario.worst_ms, scenario.over_33ms
@@ -414,4 +502,63 @@ fn run_scenario(
     );
     let aligned = delta.abs() < 0.5;
     intent.movement = Vec2::new(0.0, if aligned { 1.0 } else { 0.25 });
+}
+
+/// Les phases de vol de `fly_ship`. Renvoie `Ok(true)` quand il est temps de se lever.
+fn fly_phase(
+    flight: &mut FlightCheck,
+    pos: sh_core::SpacePos,
+    rot: Quat,
+    motion: &mut crate::ship::ShipMotion,
+    pilot: &mut crate::ship::PilotIntent,
+    dt: f32,
+) -> Result<bool, String> {
+    use crate::ship::FlightMode;
+
+    let (start, start_rot) = *flight.start.get_or_insert((pos, rot));
+    flight.t += dt;
+    let speed = motion.velocity.length();
+    // (durée, commande) de chaque phase ; la vérification se fait à la fin de la phase.
+    let duration = [6.0, 4.0, 22.0, 5.0, 2.5][usize::from(flight.step)];
+    match flight.step {
+        0 => pilot.thrust = Vec3::NEG_Z,
+        1 => pilot.cruise = true,
+        3 => pilot.turn = Vec2::new(if flight.t < 3.0 { -1.0 } else { 0.0 }, 0.0),
+        4 => {
+            motion.mode = FlightMode::Decoupled;
+            pilot.thrust = Vec3::NEG_Z;
+        }
+        _ => {}
+    }
+    if flight.t < duration {
+        return Ok(false);
+    }
+    let check = match flight.step {
+        0 => (
+            (240.0..=251.0).contains(&speed),
+            format!(
+                "vol assisté : {speed:.1} m/s, {:.0} m parcourus",
+                pos.distance(start)
+            ),
+        ),
+        1 => (speed > 2000.0, format!("croisière : {speed:.0} m/s")),
+        2 => (speed < 5.0, format!("retour au calme : {speed:.2} m/s")),
+        3 => {
+            let turned = (rot * Vec3::NEG_Z)
+                .angle_between(start_rot * Vec3::NEG_Z)
+                .to_degrees();
+            (turned > 45.0, format!("lacet : {turned:.0}°"))
+        }
+        _ => (
+            speed > 60.0,
+            format!("vol découplé avant de se lever : {speed:.0} m/s"),
+        ),
+    };
+    if !check.0 {
+        return Err(format!("échec de la phase {} — {}", flight.step, check.1));
+    }
+    info!("scénario fly_ship : {}", check.1);
+    flight.step += 1;
+    flight.t = 0.0;
+    Ok(flight.step == 5)
 }

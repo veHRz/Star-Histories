@@ -7,21 +7,22 @@
 //! Le ciel est généré depuis la position du système dans la galaxie ([`super::sky`]).
 //! Les corps secrets ne sont jamais dessinés.
 //!
-//! Le vol est encore celui d'une caméra libre : le pilotage depuis le cockpit arrive avec la
-//! tâche suivante de M2. `Boost` passe en croisière (loi de vitesse de l'échelle P2).
+//! Le joueur est **à bord de son vaisseau** (départ de partie) : le secteur du vaisseau est
+//! chargé ([`crate::sector`]), sa racine reçoit la pose d'arrivée et devient le référentiel de
+//! l'origine flottante ; le pilotage est dans [`crate::ship`].
 
 use bevy::light::Skybox;
 use bevy::prelude::*;
 use bevy::world_serialization::WorldAssetRoot;
-use bevy_enhanced_input::prelude::*;
 use sh_core::{SimRng, SpacePos};
-use sh_data::{Galaxy, Place, PlacedKind, StructureKind, SystemScale, system_layout};
+use sh_data::{Galaxy, Place, PlacedKind, StructureKind, system_layout};
 
 use crate::data::{Data, Texts};
 use crate::graphics::WorldCamera;
-use crate::input::{Boost, Roll, Steer, Thrust};
-use crate::space::{FloatingOrigin, OriginFocus, PositionDriver, SpacePosition, SpaceRotation};
-use crate::state::{ControlMode, CurrentPlace, ViewLevel};
+use crate::sector::{ActiveSector, EnterSector};
+use crate::ship::{ShipMotion, SurfaceBody};
+use crate::space::{FloatingOrigin, PositionDriver, SpacePosition, SpaceRotation};
+use crate::state::{CurrentPlace, ViewLevel};
 use crate::ui::theme::{self, UiFonts};
 use crate::views::planet::{Look, planet_texture};
 use crate::views::sky::{SkyNebula, SkySpec, cube_image, render_sky};
@@ -31,10 +32,10 @@ pub struct GlobalViewPlugin;
 
 impl Plugin for GlobalViewPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(ViewLevel::Global), spawn_global)
+        app.add_systems(OnEnter(ViewLevel::Global), spawn_global.after(EnterSector))
             .add_systems(
                 Update,
-                (fly, move_traffic, aim_sunlight)
+                (move_traffic, aim_sunlight, attach_sky)
                     .chain()
                     .run_if(in_state(ViewLevel::Global)),
             );
@@ -42,19 +43,19 @@ impl Plugin for GlobalViewPlugin {
 }
 
 const SCOPE: DespawnOnExit<ViewLevel> = DespawnOnExit(ViewLevel::Global);
+/// La caméra du joueur a l'exposition d'intérieur (`Exposure::INDOOR`, EV100 7) : l'extérieur,
+/// vu par le hublot, est réglé pour elle (2,7 IL plus sensible que l'exposition par défaut).
 /// Luminance du ciel (cd/m²) pour une valeur 1 de la cubemap.
-const SKY_BRIGHTNESS: f32 = 900.0;
+const SKY_BRIGHTNESS: f32 = 140.0;
 const SKY_SIZE: usize = 1024;
 /// Éclairement de l'étoile, avec l'exposition par défaut de la caméra (réglage visuel).
-const SUNLIGHT_LUX: f32 = 2500.0;
+const SUNLIGHT_LUX: f32 = 400.0;
 /// Hauteur des textures de planète (la largeur est double).
 const PLANET_TEXTURE: usize = 512;
 
-/// Un astre : sa surface compte pour la vitesse de croisière.
-#[derive(Component)]
-struct Body {
-    radius: f64,
-}
+/// Le ciel du système, posé sur la caméra du joueur dès qu'elle existe.
+#[derive(Resource)]
+struct GlobalSky(Handle<Image>);
 
 /// L'étoile qui éclaire le système.
 #[derive(Component)]
@@ -114,9 +115,8 @@ fn spawn_global(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
-    mut mode: ResMut<NextState<ControlMode>>,
+    sector: Option<Res<ActiveSector>>,
 ) {
-    mode.set(ControlMode::Piloting);
     let g = &data.galaxy;
     let scale = &data.space.scale;
     let place_id = place.0.clone().unwrap_or_else(|| "test".into());
@@ -125,8 +125,9 @@ fn spawn_global(
     let sky = images.add(sky_for(g, system.map(|s| (s.id.as_str(), s.center))));
     commands.insert_resource(GlobalAmbientLight {
         color: Color::srgb(0.6, 0.7, 0.9),
-        brightness: 15.0,
-        ..default()
+        brightness: 2.5,
+        // L'intérieur du vaisseau a ses lightmaps (rebonds compris).
+        affects_lightmapped_meshes: false,
     });
 
     let sphere = meshes.add(Sphere::new(1.0).mesh().uv(128, 64));
@@ -166,12 +167,12 @@ fn spawn_global(
             PlacedKind::Star => commands
                 .spawn((
                     Star,
-                    Body { radius: p.radius },
+                    SurfaceBody { radius: p.radius },
                     Mesh3d(sphere.clone()),
                     // Émissif intense (en nits) : le disque sature et le bloom fait le halo.
                     MeshMaterial3d(materials.add(StandardMaterial {
                         base_color: Color::BLACK,
-                        emissive: LinearRgba::rgb(4.0e4, 3.4e4, 2.6e4),
+                        emissive: LinearRgba::rgb(6.0e3, 5.2e3, 4.0e3),
                         ..default()
                     })),
                     Transform::from_scale(Vec3::splat(p.radius as f32)),
@@ -214,7 +215,7 @@ fn spawn_global(
                 let texture = images.add(planet_texture(look, seed, PLANET_TEXTURE));
                 commands
                     .spawn((
-                        Body { radius: p.radius },
+                        SurfaceBody { radius: p.radius },
                         Mesh3d(sphere.clone()),
                         MeshMaterial3d(materials.add(StandardMaterial {
                             base_color_texture: Some(texture),
@@ -360,30 +361,20 @@ fn spawn_global(
         ) * distance;
     let look = look_from_env().unwrap_or(-offset);
 
-    commands.spawn((
-        Name::new("Caméra de la vue Globale"),
-        SCOPE,
-        WorldCamera,
-        Camera3d::default(),
-        Camera {
-            clear_color: ClearColorConfig::Custom(Color::BLACK),
-            ..default()
-        },
-        Projection::Perspective(PerspectiveProjection {
-            fov: 70f32.to_radians(),
-            ..default()
-        }),
-        Skybox {
-            image: Some(sky),
-            brightness: SKY_BRIGHTNESS,
-            ..default()
-        },
-        // La caméra est pilotée par son Transform, et l'origine flottante la suit.
-        SpacePosition(eye),
-        PositionDriver::Render,
-        OriginFocus,
-        Transform::default().looking_to(look, Vec3::Y),
-    ));
+    // Le vaisseau du joueur arrive là, l'avant vers l'objet visé : sa racine devient le
+    // référentiel de l'origine flottante.
+    match sector {
+        Some(sector) => {
+            commands.entity(sector.root).insert((
+                SpacePosition(eye),
+                SpaceRotation(facing(look)),
+                PositionDriver::Frame,
+                ShipMotion::default(),
+            ));
+        }
+        None => warn!("vue Globale sans vaisseau du joueur (aucun départ de partie ?)"),
+    }
+    commands.insert_resource(GlobalSky(sky));
 
     commands.spawn(view_banner(
         &texts,
@@ -458,55 +449,6 @@ fn label(fonts: &UiFonts, name: &str, target: Entity) -> impl Bundle {
     )
 }
 
-/// Vitesse permise à la caméra : manœuvre, ou croisière (`Boost`) selon la distance à la
-/// surface la plus proche (loi de l'échelle P2).
-fn flight_speed(
-    scale: &SystemScale,
-    boost: bool,
-    eye: SpacePos,
-    bodies: &[(SpacePos, f64)],
-) -> f64 {
-    if !boost {
-        return scale.manoeuvre_max_speed;
-    }
-    let nearest = bodies
-        .iter()
-        .map(|(pos, radius)| eye.distance(*pos) - radius)
-        .fold(f64::MAX, f64::min);
-    scale.cruise_speed_limit(nearest)
-}
-
-/// Vol libre de test : poussée 3 axes, souris pour orienter, Q/E pour le roulis.
-#[allow(clippy::too_many_arguments)]
-fn fly(
-    time: Res<Time>,
-    data: Res<Data>,
-    origin: Res<FloatingOrigin>,
-    thrust: Single<&Action<Thrust>>,
-    steer: Single<&Action<Steer>>,
-    roll: Single<&Action<Roll>>,
-    boost: Single<&Action<Boost>>,
-    bodies: Query<(&SpacePosition, &Body)>,
-    mut camera: Single<&mut Transform, With<WorldCamera>>,
-) {
-    let dt = time.delta_secs();
-    let steer: Vec2 = ***steer;
-    let roll: f32 = ***roll;
-    let rotation = Quat::from_euler(
-        EulerRot::YXZ,
-        -steer.x * 0.002,
-        -steer.y * 0.002,
-        -roll * 1.2 * dt,
-    );
-    camera.rotation *= rotation;
-    let bodies: Vec<(SpacePos, f64)> = bodies.iter().map(|(p, b)| (p.0, b.radius)).collect();
-    let eye = origin.to_space(camera.translation);
-    let speed = flight_speed(&data.space.scale, ***boost, eye, &bodies) as f32;
-    let thrust: Vec3 = ***thrust;
-    let movement = camera.rotation * thrust * speed * dt;
-    camera.translation += movement;
-}
-
 /// Les figurants avancent sur leur trajet, et repartent en sens inverse au bout.
 fn move_traffic(
     time: Res<Time>,
@@ -551,5 +493,23 @@ fn aim_sunlight(
         if sky.rotation != sky_rotation {
             sky.rotation = sky_rotation;
         }
+    }
+}
+
+/// Le ciel sur la caméra du monde (celle du joueur, créée après la vue).
+fn attach_sky(
+    mut commands: Commands,
+    sky: Option<Res<GlobalSky>>,
+    cameras: Query<Entity, (With<WorldCamera>, Without<Skybox>)>,
+) {
+    let Some(sky) = sky else {
+        return;
+    };
+    for camera in &cameras {
+        commands.entity(camera).insert(Skybox {
+            image: Some(sky.0.clone()),
+            brightness: SKY_BRIGHTNESS,
+            ..default()
+        });
     }
 }
