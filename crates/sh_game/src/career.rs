@@ -417,10 +417,35 @@ pub fn deliver_or_tow(world: &mut World, ship: SpacePos) -> bool {
         }
     }
     let mut points = world.query::<(&CargoPoint, &SpacePosition)>();
-    let near = points
+    let near: Vec<StructureKind> = points
         .iter(world)
-        .any(|(_, p)| p.0.distance(ship) <= rules.delivery_range);
-    near && deliver_here(world, &system)
+        .filter(|(_, p)| p.0.distance(ship) <= rules.delivery_range)
+        .map(|(c, _)| c.0)
+        .collect();
+    if near.is_empty() {
+        return false;
+    }
+    if deliver_here(world, &system) {
+        return true;
+    }
+    // Rien à livrer, mais un vaisseau abîmé près des chantiers qui le réparent : le devis.
+    let data = world.resource::<Data>().clone();
+    let damaged = world
+        .resource::<Career>()
+        .captain
+        .hull
+        .as_ref()
+        .is_some_and(|h| h.damage_points() > 0.0);
+    if damaged
+        && near.contains(&StructureKind::Shipyard)
+        && data.combat.repair.systems.contains(&system)
+    {
+        world.write_message(crate::ui::terminal::OpenTerminal(
+            crate::ui::terminal::Screen::Repair,
+        ));
+        return true;
+    }
+    false
 }
 
 /// Les compétences de vol montent à l'usage : piloter fait progresser le pilotage, arriver dans

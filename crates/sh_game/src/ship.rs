@@ -48,11 +48,16 @@ impl Plugin for ShipPlugin {
                         .run_if(not(resource_exists::<Sequence>)),
                 )
                     .chain()
+                    .in_set(ShipSystems)
                     .after(PlayerSystems)
                     .run_if(resource_exists::<ActiveSector>),
             );
     }
 }
+
+/// Pilotage et vol du vaisseau du joueur.
+#[derive(SystemSet, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ShipSystems;
 
 /// Mouvement du vaisseau : vitesse absolue (m/s), vitesse de rotation dans ses axes (rad/s).
 #[derive(Component, Clone, Debug, Default)]
@@ -282,6 +287,8 @@ fn fly(
     data: Res<Data>,
     sector: Res<ActiveSector>,
     intent: Res<PilotIntent>,
+    career: Option<Res<crate::career::Career>>,
+    lock: Option<Res<crate::combat::CruiseLock>>,
     bodies: Query<(&SpacePosition, &SurfaceBody)>,
     mut ship: Query<
         (
@@ -304,6 +311,17 @@ fn fly(
     };
     let nearest = nearest_surface(pos.0, bodies.iter().map(|(p, b)| (p.0, b.radius)));
     let dt = f64::from(time.delta_secs().min(0.1));
+    // Moteurs touchés (poupe ouverte) : il ne reste que les verniers.
+    let thrust = career
+        .as_ref()
+        .and_then(|c| c.captain.hull.as_ref())
+        .map_or(1.0, |h| h.thrust_factor()) as f32;
+    let intent = PilotIntent {
+        thrust: intent.thrust * thrust,
+        // Hostiles trop proches : pas de croisière.
+        cruise: intent.cruise && !lock.is_some_and(|l| l.0),
+        ..intent.clone()
+    };
     rotation.0 = step(
         &mut motion,
         rotation.0,

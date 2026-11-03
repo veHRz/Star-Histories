@@ -26,8 +26,22 @@ pub struct CombatRules {
     pub armors: BTreeMap<String, BodyArmor>,
     /// Combattants à pied, par rôle (`player`, `pirate`).
     pub fighters: BTreeMap<String, FighterDef>,
+    pub hull: HullRules,
     pub raid: RaidRules,
     pub repair: RepairRules,
+}
+
+/// Comment un impact se répartit (blindage, structure, cœur).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct HullRules {
+    /// Part des dégâts d'un projectile qui perce reportée sur le cœur.
+    pub core_share: f64,
+    /// Usure du blindage par un projectile qui perce, en part de ses dégâts.
+    pub armor_wear_penetrating: f64,
+    /// Usure du blindage et éclats d'un projectile arrêté, en part de ses dégâts (multipliés
+    /// par le rapport pénétration / blindage).
+    pub armor_wear_stopped: f64,
+    pub spall_stopped: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -190,6 +204,9 @@ pub struct RaidRules {
     pub defenders_delay: f64,
     /// Au-delà de cette distance de tous les pillards, le joueur a fui (m).
     pub escape_distance: f64,
+    /// Pas de croisière à moins de cette distance d'une coque hostile (m) : fuir, c'est
+    /// d'abord distancer les pillards.
+    pub cruise_lock_distance: f64,
     /// Perte d'état de la flotte de pillards par coque détruite.
     pub condition_per_kill: f64,
 }
@@ -199,6 +216,8 @@ pub struct RepairRules {
     /// Le chantier qui répare (division Chantiers d'Hexa-Corp : CRV, §4.4).
     pub issuer: Id<Faction>,
     pub credits_per_point: f64,
+    /// Les systèmes dont les chantiers réparent le vaisseau du joueur.
+    pub systems: Vec<Id<crate::common::Place>>,
 }
 
 impl CombatRules {

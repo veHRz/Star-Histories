@@ -75,6 +75,8 @@ pub enum Screen {
     Commodity(String),
     Sheet,
     Journal,
+    /// Le chantier : devis et réparation du vaisseau.
+    Repair,
 }
 
 impl From<DialogueScreen> for Screen {
@@ -126,6 +128,7 @@ pub enum Action {
     /// Vendre la cargaison d'un contrat : trahison.
     Betray(String),
     Exchange(Credits),
+    Repair,
 }
 
 impl Action {
@@ -203,6 +206,7 @@ pub fn page(ctx: &Ctx, term: &Terminal) -> Page {
         Screen::Commodity(c) => commodity_page(ctx, c),
         Screen::Sheet => sheet_page(ctx),
         Screen::Journal => journal_page(ctx),
+        Screen::Repair => repair_page(ctx),
     };
     if let Some(note) = &term.note {
         page.body = format!("{}\n\n{note}", page.body);
@@ -523,6 +527,34 @@ fn sheet_page(ctx: &Ctx) -> Page {
             t.get("journal.title"),
             Action::Goto(Screen::Journal),
         )],
+    }
+}
+
+fn repair_page(ctx: &Ctx) -> Page {
+    let t = ctx.texts;
+    let rules = &ctx.data.combat.repair;
+    let Some(hull) = ctx.cap.hull.as_ref() else {
+        return Page::default();
+    };
+    let cost = hull.repair_cost(rules);
+    let body = t.format(
+        "repair.body",
+        &[
+            ("yard", &faction_name(t, ctx.data, &rules.issuer)),
+            ("integrity", &t.number(hull.integrity() * 100.0, 0)),
+            ("cost", &money(t, cost)),
+            ("credits", &money(t, ctx.cap.credits)),
+        ],
+    );
+    let damaged = cost.cents > 0;
+    Page {
+        title: t.get("repair.title"),
+        body,
+        choices: vec![Choice {
+            label: t.format("repair.do", &[("cost", &money(t, cost))]),
+            action: Action::Repair,
+            enabled: damaged && ctx.cap.credits.cents >= cost.cents,
+        }],
     }
 }
 
@@ -906,6 +938,13 @@ fn apply_choices(
                     Err(e) => term.note = Some(career_error(&texts, &e)),
                 }
             }
+            Action::Repair => match cap.repair_ship(&data) {
+                Ok(cost) => {
+                    term.note =
+                        Some(texts.format("repair.done", &[("cost", &money(&texts, cost))]));
+                }
+                Err(e) => term.note = Some(career_error(&texts, &e)),
+            },
             Action::Exchange(amount) => match cap.exchange_to_wuro(&data.career, amount) {
                 Ok(w) => {
                     term.note = Some(texts.format(

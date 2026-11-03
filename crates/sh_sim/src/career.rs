@@ -218,7 +218,7 @@ impl Captain {
             memory: BTreeMap::new(),
             hull: start
                 .and_then(|s| data.combat.ship(&s.ship))
-                .map(crate::combat::Hull::new),
+                .map(|def| crate::combat::Hull::new(def, data.combat.hull)),
         }
     }
 

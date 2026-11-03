@@ -130,6 +130,23 @@ pub struct ToggleFlightAssist;
 #[action_output(bool)]
 pub struct LeaveSeat;
 
+// --- Combat (aux commandes) ----------------------------------------------------------------
+
+/// Canons de chasse (maintenu).
+#[derive(InputAction)]
+#[action_output(bool)]
+pub struct FireGuns;
+
+/// Missile sur la cible verrouillée.
+#[derive(InputAction)]
+#[action_output(bool)]
+pub struct FireMissile;
+
+/// Contre-mesures (leurres).
+#[derive(InputAction)]
+#[action_output(bool)]
+pub struct Countermeasure;
+
 // --- Fiche et journal (à pied et aux commandes) -------------------------------------------
 
 #[derive(InputAction)]
@@ -251,6 +268,15 @@ fn spawn_contexts(mut commands: Commands) {
             --
             Action::<LeaveSeat>::new()
             Bindings [ Binding(KeyCode::KeyF) ]
+            --
+            Action::<FireGuns>::new()
+            Bindings [ Binding(MouseButton::Left) ]
+            --
+            Action::<FireMissile>::new()
+            Bindings [ Binding(MouseButton::Right) ]
+            --
+            Action::<Countermeasure>::new()
+            Bindings [ Binding(KeyCode::KeyX) ]
             --
             Action::<ToggleMap>::new()
             Bindings [ Binding(KeyCode::KeyM) ]

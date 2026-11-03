@@ -5,8 +5,8 @@
     status: Proposition("P26"),
     ship_weapons: {
         "mag_cannon_light": (kind: Cannon, speed: 2500.0, damage: 30.0, penetration: 40.0, cooldown: 0.25, spread_deg: 0.4, lifetime: 3.0),
-        "mag_cannon_heavy": (kind: Cannon, speed: 2200.0, damage: 60.0, penetration: 70.0, cooldown: 0.7, spread_deg: 0.7, lifetime: 3.5),
-        "missile": (kind: Missile, speed: 700.0, damage: 220.0, penetration: 90.0, cooldown: 4.0, lifetime: 15.0, turn_rate_deg: 70.0, decoy_chance: 0.7),
+        "mag_cannon_heavy": (kind: Cannon, speed: 2200.0, damage: 45.0, penetration: 55.0, cooldown: 0.9, spread_deg: 1.4, lifetime: 3.5),
+        "missile": (kind: Missile, speed: 700.0, damage: 150.0, penetration: 75.0, cooldown: 6.0, lifetime: 15.0, turn_rate_deg: 70.0, decoy_chance: 0.75),
         "torpedo": (kind: Torpedo, speed: 260.0, damage: 900.0, penetration: 160.0, cooldown: 20.0, lifetime: 40.0, turn_rate_deg: 20.0, decoy_chance: 0.35),
     },
     ships: {
@@ -21,12 +21,12 @@
             accel: 60.0,
             turn_rate_deg: 60.0,
             sections: [
-                (id: Bow, armor: 30.0, structure: 120.0),
-                (id: Stern, armor: 20.0, structure: 100.0),
-                (id: Port, armor: 25.0, structure: 110.0),
-                (id: Starboard, armor: 25.0, structure: 110.0),
+                (id: Bow, armor: 30.0, structure: 260.0),
+                (id: Stern, armor: 20.0, structure: 220.0),
+                (id: Port, armor: 25.0, structure: 240.0),
+                (id: Starboard, armor: 25.0, structure: 240.0),
             ],
-            core: 220.0,
+            core: 420.0,
             weapons: [(weapon: "mag_cannon_light"), (weapon: "missile", ammo: 6)],
             countermeasures: 8,
         ),
@@ -40,13 +40,13 @@
             accel: 45.0,
             turn_rate_deg: 38.0,
             sections: [
-                (id: Bow, armor: 45.0, structure: 200.0),
-                (id: Stern, armor: 30.0, structure: 160.0),
-                (id: Port, armor: 40.0, structure: 180.0),
-                (id: Starboard, armor: 40.0, structure: 180.0),
+                (id: Bow, armor: 45.0, structure: 300.0),
+                (id: Stern, armor: 30.0, structure: 240.0),
+                (id: Port, armor: 40.0, structure: 280.0),
+                (id: Starboard, armor: 40.0, structure: 280.0),
             ],
-            core: 380.0,
-            weapons: [(weapon: "mag_cannon_heavy"), (weapon: "missile", ammo: 2)],
+            core: 500.0,
+            weapons: [(weapon: "mag_cannon_heavy"), (weapon: "missile", ammo: 1)],
             countermeasures: 3,
         ),
         // Corvette de l'Union (classe conventionnée, §2.4), de la Flotte de défense.
@@ -59,12 +59,12 @@
             accel: 40.0,
             turn_rate_deg: 32.0,
             sections: [
-                (id: Bow, armor: 60.0, structure: 260.0),
-                (id: Stern, armor: 45.0, structure: 220.0),
-                (id: Port, armor: 55.0, structure: 240.0),
-                (id: Starboard, armor: 55.0, structure: 240.0),
+                (id: Bow, armor: 60.0, structure: 380.0),
+                (id: Stern, armor: 45.0, structure: 320.0),
+                (id: Port, armor: 55.0, structure: 360.0),
+                (id: Starboard, armor: 55.0, structure: 360.0),
             ],
-            core: 520.0,
+            core: 700.0,
             weapons: [(weapon: "mag_cannon_heavy"), (weapon: "missile", ammo: 4), (weapon: "torpedo", ammo: 1)],
             countermeasures: 5,
         ),
@@ -80,6 +80,14 @@
         "player": (health: 100.0, weapon: "pistol", armor: "flak_vest"),
         "pirate": (health: 80.0, weapon: "rifle", aim_error_deg: 3.0, reaction_seconds: 0.7, sight: 40.0, hearing: 25.0),
     },
+    // Un impact : ce qui perce frappe la structure, un dixième atteint le cœur ; ce qui ne perce
+    // pas use le blindage et projette des éclats.
+    hull: (
+        core_share: 0.1,
+        armor_wear_penetrating: 0.1,
+        armor_wear_stopped: 0.25,
+        spall_stopped: 0.1,
+    ),
     // Un raid : cinq corvettes pirates ; la Flotte de défense en envoie quatre (avec le
     // joueur, dix coques : le budget de performance de M6).
     raid: (
@@ -87,12 +95,15 @@
         attackers: ["pirate_corvette", "pirate_corvette", "pirate_corvette", "pirate_corvette", "pirate_corvette"],
         defenders: ["ugl_corvette", "ugl_corvette", "ugl_corvette", "ugl_corvette"],
         spawn_distance: 6000.0,
-        defenders_delay: 45.0,
+        defenders_delay: 25.0,
         escape_distance: 15000.0,
+        cruise_lock_distance: 8000.0,
         condition_per_kill: 0.004,
     ),
     repair: (
         issuer: "hc_chantiers",
         credits_per_point: 6.0,
+        // Les chantiers d'Hexis travaillent pour tous ; ceux de Cygnara, pour l'Union.
+        systems: ["sys_hexis"],
     ),
 )

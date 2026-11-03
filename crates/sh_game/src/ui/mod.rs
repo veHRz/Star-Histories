@@ -7,6 +7,7 @@ use bevy::ui::IsDefaultUiCamera;
 
 use crate::data::assets_dir;
 
+pub mod combat_hud;
 pub mod flight_hud;
 pub mod hud;
 pub mod menu;
@@ -21,6 +22,7 @@ impl Plugin for UiPlugin {
             menu::MenuPlugin,
             hud::HudPlugin,
             flight_hud::FlightHudPlugin,
+            combat_hud::CombatHudPlugin,
             terminal::TerminalPlugin,
         ))
         .add_systems(Startup, (setup_fonts, spawn_ui_camera))

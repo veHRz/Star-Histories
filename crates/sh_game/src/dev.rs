@@ -314,10 +314,29 @@ enum Step {
     Shot(&'static str),
     /// Attendre tant de secondes (chargement des modèles avant une capture).
     Wait(f32),
+    /// Jouer le raid en cours (combattre, fuir, rester passif) jusqu'à l'issue attendue, en
+    /// au plus tant de secondes ; capture facultative après quelques secondes de combat.
+    Raid(RaidPlay, RaidEnd, f32, Option<(&'static str, f32)>),
     /// Placer le vaisseau, à l'arrêt, à 1 km d'une cible (`wreck` : l'épave d'un remorquage ;
     /// `shipyard` : les chantiers du système). Raccourci de l'autopilote : le vol est testé
     /// par `fly_ship`.
     JumpNear(&'static str),
+}
+
+/// La conduite de l'autopilote pendant un raid.
+#[derive(Clone, Copy, Debug)]
+enum RaidPlay {
+    Fight,
+    Flee,
+    Idle,
+}
+
+/// L'issue attendue d'un raid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RaidEnd {
+    Won,
+    Fled,
+    Lost,
 }
 
 /// Un écran du terminal à ouvrir.
@@ -479,6 +498,54 @@ const CONTRACT_LOOP: &[Step] = &[
     Step::Choose("close"),
 ];
 
+/// `raid_win` (avec `SH_START=global:cygnara SH_RAID=1`) : l'embuscade de la Ligue, combattue
+/// aux côtés de la Flotte de défense jusqu'à la victoire (critère de M6).
+const RAID_WIN: &[Step] = &[
+    Step::Wait(3.0),
+    Step::Shot("m6-contact"),
+    Step::Raid(
+        RaidPlay::Fight,
+        RaidEnd::Won,
+        400.0,
+        Some(("m6-combat", 50.0)),
+    ),
+    Step::Shot("m6-victoire"),
+    // Les dégâts persistent : retour à Hexis, puis le chantier.
+    Step::OpenMap,
+    Step::Route("sys_hexis"),
+    Step::Depart(sh_sim::travel::TravelMode::Portal),
+    Step::Assert("dégâts toujours là", |c, _| {
+        c.hull.as_ref().is_some_and(|h| h.integrity() < 1.0)
+    }),
+    Step::JumpNear("shipyard"),
+    Step::Hail,
+    Step::Shot("m6-chantier"),
+    Step::Choose("repair"),
+    Step::Choose("close"),
+    Step::Assert("réparé, et payé", |c, _| {
+        c.hull.as_ref().is_some_and(|h| h.integrity() >= 1.0) && c.credits.cents < 300_000
+    }),
+];
+
+/// `raid_flee` : le joueur fait demi-tour et file en croisière.
+const RAID_FLEE: &[Step] = &[
+    Step::Wait(3.0),
+    Step::Raid(RaidPlay::Flee, RaidEnd::Fled, 180.0, None),
+];
+
+/// `raid_lose` (avec `SH_RAID=alone`) : seul et passif, le vaisseau est perdu.
+const RAID_LOSE: &[Step] = &[
+    Step::Wait(3.0),
+    Step::Raid(
+        RaidPlay::Idle,
+        RaidEnd::Lost,
+        240.0,
+        Some(("m6-alarme", 12.0)),
+    ),
+    Step::Wait(1.5),
+    Step::Shot("m6-mort"),
+];
+
 /// Délai maximal d'une transition de vue (amarrage, départ) dans un scénario.
 const TRANSITION_SECONDS: f32 = 30.0;
 
@@ -508,6 +575,8 @@ struct Scenario {
     flight: Option<FlightCheck>,
     /// La page du terminal au moment d'un choix (on attend qu'elle change).
     page_seen: Option<crate::ui::terminal::Page>,
+    /// Pendant un raid : coques en jeu au plus fort du combat.
+    max_ships: usize,
     index: usize,
     best_distance: f32,
     since_progress: f32,
@@ -531,14 +600,24 @@ impl Plugin for ScenarioPlugin {
             "port_loop" => (PORT_LOOP, None),
             "voyage" => (VOYAGE, None),
             "contract_loop" => (CONTRACT_LOOP, None),
+            "raid_win" => (RAID_WIN, None),
+            "raid_flee" => (RAID_FLEE, None),
+            "raid_lose" => (RAID_LOSE, None),
             _ => (WALK_SHIP, None),
         };
         if !matches!(
             name.as_str(),
-            "walk_ship" | "fly_ship" | "port_loop" | "voyage" | "contract_loop"
+            "walk_ship"
+                | "fly_ship"
+                | "port_loop"
+                | "voyage"
+                | "contract_loop"
+                | "raid_win"
+                | "raid_flee"
+                | "raid_lose"
         ) {
             error!(
-                "SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage, contract_loop)"
+                "SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage, contract_loop, raid_win, raid_flee, raid_lose)"
             );
             app.add_systems(Startup, |mut exit: MessageWriter<AppExit>| {
                 exit.write(AppExit::error());
@@ -555,6 +634,7 @@ impl Plugin for ScenarioPlugin {
             last_issue: 0.0,
             flight,
             page_seen: None,
+            max_ships: 0,
             index: 0,
             best_distance: f32::MAX,
             since_progress: 0.0,
@@ -619,6 +699,33 @@ fn run_scenario(
     *intent = crate::player::PlayerIntent::default();
     *pilot = crate::ship::PilotIntent::default();
     let current_view = *view.get();
+    if let Some(&step) = scenario.steps.get(scenario.index)
+        && let Step::Raid(_, _, max, shot) = step
+    {
+        scenario.step_time += time.delta_secs();
+        // Mesures pendant le combat (critère de performance de M6), hors capture d'écran
+        // (elle coûte à elle seule plusieurs dizaines de millisecondes).
+        let capturing = shot.is_some_and(|(_, at)| (scenario.step_time - at).abs() < 0.3);
+        let ms = real.delta_secs_f64() * 1000.0;
+        if !capturing {
+            scenario.frames += 1;
+            scenario.total_ms += ms;
+            scenario.worst_ms = scenario.worst_ms.max(ms);
+            if ms > 33.0 {
+                scenario.over_33ms += 1;
+            }
+        }
+        if scenario.step_time > max {
+            error!(
+                "scénario {} : le raid n'a pas fini en {max} s ({step:?})",
+                scenario.name
+            );
+            exit.write(AppExit::error());
+            return;
+        }
+        commands.queue(move |world: &mut World| raid_step(world, step));
+        return;
+    }
     if let Some(&step) = scenario.steps.get(scenario.index)
         && is_career_step(&step)
     {
@@ -788,7 +895,8 @@ fn run_scenario(
         | Step::Assert(..)
         | Step::Shot(_)
         | Step::Wait(_)
-        | Step::JumpNear(_) => return,
+        | Step::JumpNear(_)
+        | Step::Raid(..) => return,
         Step::SitAtHelm | Step::StandUp | Step::DockOrDepart => {
             let done = match step {
                 Step::SitAtHelm => seated,
@@ -1048,6 +1156,7 @@ fn choice_matches(choice: &crate::ui::terminal::Choice, pattern: &str) -> bool {
         (Action::Say { key, .. }, Some(("say", k))) => key == k,
         (Action::Accept(c), Some(("accept", to))) => to == "any" || c.to.as_str() == to,
         (Action::Betray(_), None) => pattern == "betray",
+        (Action::Repair, None) => pattern == "repair",
         (action, None) if pattern == "close" => action.closes(),
         _ => false,
     }
@@ -1197,4 +1306,172 @@ fn career_step(world: &mut World, step: Step) {
         }
         _ => next(world),
     }
+}
+
+/// Une étape de raid, jouée avec le `World` à chaque frame : l'autopilote pilote, tire, lance
+/// ses leurres ; l'étape finit à l'issue du raid (erreur si ce n'est pas celle attendue).
+fn raid_step(world: &mut World, step: Step) {
+    use crate::combat::space::{AiPilot, Combatant, FireIntent, PlayerTarget, Shot, Side};
+    use crate::combat::{Raid, RaidOutcome};
+    use bevy::math::DVec3;
+    let Step::Raid(play, end, _, shot) = step else {
+        return;
+    };
+    let elapsed = world.resource::<Scenario>().step_time;
+    let next = |world: &mut World| {
+        let mut scenario = world.resource_mut::<Scenario>();
+        scenario.index += 1;
+        scenario.issued = None;
+        scenario.step_time = 0.0;
+    };
+    // La capture en cours de combat.
+    if let Some((name, at)) = shot
+        && elapsed >= at
+        && world.resource::<Scenario>().issued.is_none()
+    {
+        world
+            .spawn(Screenshot::primary_window())
+            .observe(save_to_disk(format!("target/shots/{name}.png")));
+        world.resource_mut::<Scenario>().issued = Some(None);
+    }
+    match world.get_resource::<Raid>().map(|r| r.outcome) {
+        None => return,
+        Some(Some(outcome)) => {
+            let got = match outcome {
+                RaidOutcome::Won => RaidEnd::Won,
+                RaidOutcome::Fled => RaidEnd::Fled,
+                RaidOutcome::Lost => RaidEnd::Lost,
+            };
+            let name = world.resource::<Scenario>().name.clone();
+            let kills = world.get_resource::<Raid>().map_or(0, |r| r.kills);
+            if got == end {
+                let s = world.resource::<Scenario>();
+                info!(
+                    "scénario {name} : raid fini ({got:?}, {kills} pillard(s) détruit(s)) après {elapsed:.0} s ; \
+                     pendant le combat : {} coques au plus, temps de frame moyen {:.2} ms, pire {:.2} ms, {} frame(s) > 33 ms",
+                    s.max_ships,
+                    s.total_ms / f64::from(s.frames.max(1)),
+                    s.worst_ms,
+                    s.over_33ms
+                );
+                next(world);
+            } else {
+                error!("scénario {name} : raid fini en {got:?}, attendu {end:?}");
+                world.write_message(AppExit::error());
+            }
+            return;
+        }
+        Some(None) => {}
+    }
+    let Some(root) = world
+        .get_resource::<crate::sector::ActiveSector>()
+        .map(|s| s.root)
+    else {
+        return;
+    };
+    let Some((pos, rot)) = world
+        .get::<crate::space::SpacePosition>(root)
+        .zip(world.get::<crate::space::SpaceRotation>(root))
+        .map(|(p, r)| (p.0, r.0))
+    else {
+        return;
+    };
+    let me = DVec3::new(pos.x, pos.y, pos.z);
+    let to_world = rot.as_dquat();
+    let mut q = world.query::<(Entity, &Combatant, &AiPilot, &crate::space::SpacePosition)>();
+    let raiders: Vec<(Entity, DVec3, DVec3)> = q
+        .iter(world)
+        .filter(|(_, c, ai, _)| c.side == Side::Raiders && ai.delay <= 0.0 && !c.hull.destroyed())
+        .map(|(e, _, ai, p)| (e, DVec3::new(p.0.x, p.0.y, p.0.z), ai.velocity))
+        .collect();
+    let defenders: Vec<DVec3> = q
+        .iter(world)
+        .filter(|(_, c, ai, _)| c.side == Side::Defenders && ai.delay <= 0.0 && !c.hull.destroyed())
+        .map(|(_, _, _, p)| DVec3::new(p.0.x, p.0.y, p.0.z))
+        .collect();
+    let in_play = {
+        let mut all = world.query::<(&Combatant, Option<&AiPilot>)>();
+        all.iter(world)
+            .filter(|(c, ai)| !c.hull.destroyed() && ai.is_none_or(|a| a.delay <= 0.0))
+            .count()
+    };
+    {
+        let mut s = world.resource_mut::<Scenario>();
+        s.max_ships = s.max_ships.max(in_play);
+    }
+    let locked = world.resource::<PlayerTarget>().0;
+    let incoming = {
+        let mut shots = world.query::<(&Shot, &crate::space::SpacePosition)>();
+        shots.iter(world).any(|(s, p)| {
+            s.target == Some(root) && DVec3::new(p.0.x, p.0.y, p.0.z).distance(me) < 1500.0
+        })
+    };
+    // Tourner vers une direction absolue : erreurs de lacet et de tangage dans le repère du
+    // vaisseau, commande proportionnelle.
+    let turn_to = |dir: DVec3| {
+        let local = to_world.inverse() * dir.normalize_or(DVec3::NEG_Z);
+        let yaw = local.x.atan2(-local.z);
+        let pitch = local.y.atan2(-local.z);
+        Vec2::new(
+            (yaw * 3.0).clamp(-1.0, 1.0) as f32,
+            (pitch * 3.0).clamp(-1.0, 1.0) as f32,
+        )
+    };
+    let mut intent = crate::ship::PilotIntent::default();
+    let mut fire = FireIntent::default();
+    let nearest = raiders
+        .iter()
+        .min_by(|a, b| a.1.distance(me).total_cmp(&b.1.distance(me)))
+        .copied();
+    let forward = to_world * DVec3::NEG_Z;
+    match (play, nearest) {
+        (RaidPlay::Fight, Some(near)) => {
+            // Un cargo ne tient pas la ligne : il frappe les pillards déjà aux prises avec la
+            // Flotte de défense, et garde ses distances avec les autres.
+            let engaged = |p: DVec3| defenders.iter().any(|d| d.distance(p) < 3500.0);
+            let prey = raiders
+                .iter()
+                .filter(|r| engaged(r.1))
+                .min_by(|a, b| a.1.distance(me).total_cmp(&b.1.distance(me)))
+                .copied();
+            let threat = me.distance(near.1) < 2800.0 && !engaged(near.1);
+            if let (Some((_, tp, tv)), false) = (prey, threat) {
+                let aim = crate::combat::space::lead(me, DVec3::ZERO, tp, tv, 2500.0);
+                intent.turn = turn_to(aim - me);
+                let dist = me.distance(tp);
+                intent.thrust = if dist > 1500.0 {
+                    Vec3::new(0.0, 0.0, -0.8)
+                } else if dist < 700.0 {
+                    Vec3::new(0.8, 0.3, 0.5)
+                } else {
+                    Vec3::new(0.3, 0.0, -0.2)
+                };
+                fire.guns = forward.angle_between(aim - me).to_degrees() < 2.5;
+                fire.missile = locked.is_some() && (1200.0..5000.0).contains(&dist);
+            } else {
+                // Dégagement : à l'opposé des pillards, en zigzag, vers la rescousse.
+                let centre = raiders.iter().map(|r| r.1).sum::<DVec3>() / raiders.len() as f64;
+                let mut away = (me - centre).normalize_or(DVec3::X);
+                if let Some(d) = defenders.first() {
+                    away = (away + (*d - me).normalize_or(away)).normalize_or(away);
+                }
+                let weave = (elapsed * 0.7).sin() as f64;
+                let side = away.cross(DVec3::Y).normalize_or(DVec3::X) * weave * 0.5;
+                intent.turn = turn_to(away + side);
+                intent.thrust = Vec3::new(0.0, 0.0, -1.0);
+            }
+            fire.decoy = incoming;
+        }
+        (RaidPlay::Flee, Some(_)) => {
+            let centre = raiders.iter().map(|r| r.1).sum::<DVec3>() / raiders.len() as f64;
+            let away = me - centre;
+            intent.turn = turn_to(away);
+            intent.cruise = forward.angle_between(away).to_degrees() < 25.0;
+            intent.thrust = Vec3::NEG_Z;
+            fire.decoy = incoming;
+        }
+        _ => {}
+    }
+    *world.resource_mut::<crate::ship::PilotIntent>() = intent;
+    *world.resource_mut::<FireIntent>() = fire;
 }

@@ -26,12 +26,12 @@ OUT = "assets/models/space"
 
 def palette() -> dict:
     return {
-        "rust": c.material("pirate_rust", (0.30, 0.16, 0.10), metallic=0.6, roughness=0.75),
-        "scrap": c.material("pirate_scrap", (0.20, 0.20, 0.19), metallic=0.7, roughness=0.6),
-        "blood": c.material("pirate_blood", (0.42, 0.04, 0.03), metallic=0.3, roughness=0.6),
+        "rust": c.material("pirate_rust", (0.48, 0.26, 0.15), metallic=0.5, roughness=0.7),
+        "scrap": c.material("pirate_scrap", (0.36, 0.35, 0.33), metallic=0.6, roughness=0.6),
+        "blood": c.material("pirate_blood", (0.55, 0.06, 0.04), metallic=0.3, roughness=0.6),
         "dark": c.material("warship_dark", (0.06, 0.06, 0.065), metallic=0.6, roughness=0.5),
-        "ugl_hull": c.material("ugl_hull", (0.26, 0.30, 0.36), metallic=0.7, roughness=0.45),
-        "ugl_plate": c.material("ugl_plate", (0.20, 0.23, 0.28), metallic=0.75, roughness=0.4),
+        "ugl_hull": c.material("ugl_hull", (0.42, 0.47, 0.54), metallic=0.6, roughness=0.45),
+        "ugl_plate": c.material("ugl_plate", (0.32, 0.36, 0.42), metallic=0.65, roughness=0.4),
         "ugl_stripe": c.material("ugl_stripe", (0.55, 0.72, 0.92), metallic=0.2, roughness=0.5),
         "red_engine": c.material(
             "pirate_engine", (1.0, 0.35, 0.15), emission=(1.0, 0.35, 0.12), emission_strength=18.0
@@ -68,8 +68,10 @@ def pirate_corvette(m, coll):
     # Trois tuyères dépareillées.
     for i, (x, z, r) in enumerate(((-5, 0, 3.0), (5, 1, 3.4), (0, -3.5, 2.4))):
         objs.append(c.cylinder(f"pc_nozzle{i}", r, 4, (x, -37, z), m["dark"], coll, axis="Y"))
-        objs.append(c.cylinder(f"pc_glow{i}", r * 0.8, 0.6, (x, -39.2, z), m["red_engine"], coll, axis="Y"))
-    objs.append(c.box("pc_nav", (0.6, 0.6, 0.6), (-2.5, 22, 8.8), m["light"], coll))
+        objs.append(c.cylinder(f"pc_glow{i}", r * 0.9, 1.2, (x, -39.6, z), m["red_engine"], coll, axis="Y"))
+    # Feux de position : lisibles de loin (rouge sang à bâbord, comme le reste).
+    for i, p in enumerate(((-2.5, 22, 8.8), (-15, 4, 1.8), (7, -30, 6))):
+        objs.append(c.box(f"pc_nav{i}", (1.6, 1.6, 1.6), p, m["red_engine" if i == 1 else "light"], coll))
     return objs
 
 
@@ -92,8 +94,9 @@ def ugl_corvette(m, coll):
         objs.append(c.box(f"uc_launcher{side}", (3, 14, 4), (side * 8.5, 6, 0), m["ugl_plate"], coll, bevel=0.4))
     for i, x in enumerate((-6, 0, 6)):
         objs.append(c.cylinder(f"uc_nozzle{i}", 3.0, 4, (x, -44, 0), m["dark"], coll, axis="Y"))
-        objs.append(c.cylinder(f"uc_glow{i}", 2.4, 0.6, (x, -46.2, 0), m["engine"], coll, axis="Y"))
-    objs.append(c.box("uc_nav", (0.6, 0.6, 0.6), (0, 22, 10.2), m["light"], coll))
+        objs.append(c.cylinder(f"uc_glow{i}", 2.7, 1.2, (x, -46.6, 0), m["engine"], coll, axis="Y"))
+    for i, p in enumerate(((0, 22, 10.2), (-9, -36, 6.5), (9, -36, 6.5))):
+        objs.append(c.box(f"uc_nav{i}", (1.6, 1.6, 1.6), p, m["light"], coll))
     return objs
 
 

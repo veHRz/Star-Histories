@@ -15,18 +15,10 @@ use std::collections::BTreeMap;
 
 use sh_core::rng::fnv1a;
 use sh_core::{Credits, Id, SimRng};
-use sh_data::combat::{BodyArmor, RepairRules, ShipCombat};
+use sh_data::combat::{BodyArmor, HullRules, RepairRules, ShipCombat};
 use sh_data::{Fleet, GameData, Place, SectionId};
 
 use crate::SimWorld;
-
-/// Part des dégâts d'un projectile qui perce reportée sur le cœur.
-const CORE_SHARE: f64 = 0.25;
-/// Usure du blindage par un projectile qui perce, en part de ses dégâts.
-const ARMOR_WEAR_PENETRATING: f64 = 0.1;
-/// Usure et éclats d'un projectile arrêté, en part de ses dégâts (× rapport de pénétration).
-const ARMOR_WEAR_STOPPED: f64 = 0.25;
-const SPALL_STOPPED: f64 = 0.1;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SectionState {
@@ -47,6 +39,7 @@ pub struct Hull {
     pub sections: BTreeMap<SectionId, SectionState>,
     pub core: f64,
     pub max_core: f64,
+    pub rules: HullRules,
 }
 
 /// Ce qu'un impact a fait.
@@ -62,7 +55,7 @@ pub struct Hit {
 }
 
 impl Hull {
-    pub fn new(def: &ShipCombat) -> Self {
+    pub fn new(def: &ShipCombat, rules: HullRules) -> Self {
         Self {
             sections: def
                 .sections
@@ -81,6 +74,7 @@ impl Hull {
                 .collect(),
             core: def.core,
             max_core: def.core,
+            rules,
         }
     }
 
@@ -110,12 +104,12 @@ impl Hull {
             };
             let structure_damage = if ratio >= 1.0 {
                 hit.penetrated = true;
-                s.armor = (s.armor - damage * ARMOR_WEAR_PENETRATING).max(0.0);
-                to_core = damage * CORE_SHARE;
+                s.armor = (s.armor - damage * self.rules.armor_wear_penetrating).max(0.0);
+                to_core = damage * self.rules.core_share;
                 damage
             } else {
-                s.armor = (s.armor - damage * ARMOR_WEAR_STOPPED * ratio).max(0.0);
-                damage * SPALL_STOPPED * ratio
+                s.armor = (s.armor - damage * self.rules.armor_wear_stopped * ratio).max(0.0);
+                damage * self.rules.spall_stopped * ratio
             };
             let before = s.structure;
             s.structure = (s.structure - structure_damage).max(0.0);
@@ -308,27 +302,37 @@ mod tests {
 
     use super::*;
 
+    const REGLES: HullRules = HullRules {
+        core_share: 0.25,
+        armor_wear_penetrating: 0.1,
+        armor_wear_stopped: 0.25,
+        spall_stopped: 0.1,
+    };
+
     fn coque() -> Hull {
-        Hull::new(&ShipCombat {
-            name_key: String::new(),
-            model: String::new(),
-            radius: 10.0,
-            length: 40.0,
-            max_speed: 100.0,
-            accel: 10.0,
-            turn_rate_deg: 30.0,
-            sections: SectionId::ALL
-                .iter()
-                .map(|&id| SectionDef {
-                    id,
-                    armor: 40.0,
-                    structure: 100.0,
-                })
-                .collect(),
-            core: 200.0,
-            weapons: Vec::new(),
-            countermeasures: 0,
-        })
+        Hull::new(
+            &ShipCombat {
+                name_key: String::new(),
+                model: String::new(),
+                radius: 10.0,
+                length: 40.0,
+                max_speed: 100.0,
+                accel: 10.0,
+                turn_rate_deg: 30.0,
+                sections: SectionId::ALL
+                    .iter()
+                    .map(|&id| SectionDef {
+                        id,
+                        armor: 40.0,
+                        structure: 100.0,
+                    })
+                    .collect(),
+                core: 200.0,
+                weapons: Vec::new(),
+                countermeasures: 0,
+            },
+            REGLES,
+        )
     }
 
     #[test]
@@ -382,6 +386,7 @@ mod tests {
         let rules = RepairRules {
             issuer: Id::new("hc_chantiers").unwrap_or_else(|e| panic!("{e}")),
             credits_per_point: 2.0,
+            systems: Vec::new(),
         };
         // 60 de structure, 6 de blindage, 15 de cœur : 81 points.
         assert_eq!(h.repair_cost(&rules), Credits::units(162));

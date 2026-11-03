@@ -67,7 +67,7 @@ fn les_coques_du_raid_sont_jouables() {
     let data = donnees();
     for key in ["player_ship", "pirate_corvette", "ugl_corvette"] {
         let def = data.combat.ship(key).expect("coque");
-        let hull = Hull::new(def);
+        let hull = Hull::new(def, data.combat.hull);
         assert_eq!(hull.integrity(), 1.0);
         assert_eq!(hull.damage_points(), 0.0);
     }

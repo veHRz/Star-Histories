@@ -925,6 +925,13 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
         "combat.ron",
         "chantier de réparation inconnu",
     );
+    for system in &combat.repair.systems {
+        c.check(
+            data.galaxy.system(system).is_some_and(|s| !s.secret),
+            "combat.ron",
+            format!("système de réparation inconnu ou secret : {system}"),
+        );
+    }
 
     // --- Dialogues ---------------------------------------------------------------------------
     for id in duplicates(data.dialogues.iter().map(|d| d.id.as_str())) {
