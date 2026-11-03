@@ -1,0 +1,30 @@
+// Rails souples du canon (AGENTS.md §7.2) : ce que la simulation, laissée à elle-même, ne
+// fait pas. Le joueur pourra les dévier ; la simulation seule, non. Chaque rail cite sa source.
+// Les interdits durs (Essaim, secrets révélés, vaisseau capitale, désassimilation) ne sont pas
+// des données : la simulation n'a tout simplement aucun événement pour eux.
+(
+    fleets_stay: [
+        // 🔒 La Flotte d'Attaque reste cachée à Hargan et n'agit pas avant ≈ 430at.
+        (fleet: "flotte_attaque_federation", at: "hargan", until: (year: "430at", day: 1), source: "§9.3"),
+        // La Flotte Alpha n'a jamais quitté Hexis.
+        (fleet: "flotte_alpha", at: "hexis", source: "§6.5"),
+        // La Flotte de la Libération garde Le Berceau en construction.
+        (fleet: "flotte_liberation", at: "sys_cygnara", source: "§3.5"),
+    ],
+    spares: [
+        // 🔒 L'Empire finance la Ligue : elle épargne curieusement les convois impériaux.
+        (attacker: "ligue_des_pirates", spared: "empire", source: "§10 n°4, §9.2"),
+    ],
+    projects_not_before: [
+        // « Aucune date » : pas d'achèvement dans les premières années de jeu.
+        (project: "l_enclume", not_before: (year: "428at", day: 1), source: "§9.3"),
+        (project: "le_berceau", not_before: (year: "428at", day: 1), source: "§9.3"),
+        (project: "rempart", not_before: (year: "427at", day: 1), source: "§9.3"),
+        (project: "flotte_attaque", not_before: (year: "430at", day: 1), source: "§9.3"),
+    ],
+    // La Fausse Paix armée : pas de guerre ouverte entre les deux blocs.
+    no_open_war: [
+        (a: "empire", b: "ugl", source: "§9.1"),
+        (a: "empire", b: "fou", source: "§9.1"),
+    ],
+)

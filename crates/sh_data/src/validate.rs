@@ -727,6 +727,102 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
         );
     }
 
+    // --- Simulation macro et rails ------------------------------------------------------------
+    let place_known = |id: &Id<Place>| {
+        data.galaxy.system(id).is_some()
+            || data.galaxy.body(id).is_some()
+            || data.galaxy.station(id).is_some()
+    };
+    let fleet_known = |id: &str| data.galaxy.fleets.iter().any(|f| f.id.as_str() == id);
+    let faction_known = |id: &Id<Faction>| data.faction(id).is_some();
+    let sim = &data.sim;
+    c.status("sim.ron", &sim.status, None);
+    for place in sim.economies.keys().chain(sim.stability.keys()) {
+        c.check(
+            place_known(place),
+            "sim.ron",
+            format!("lieu inconnu : {place}"),
+        );
+    }
+    for convoy in &sim.convoys {
+        c.check(
+            place_known(&convoy.from) && place_known(&convoy.to) && faction_known(&convoy.faction),
+            "sim.ron",
+            format!("convoi {} : lieu ou faction inconnus", convoy.id),
+        );
+        c.check(
+            sim.base_prices.contains_key(&convoy.commodity) && convoy.every_days > 0,
+            "sim.ron",
+            format!("convoi {} : marchandise ou fréquence invalide", convoy.id),
+        );
+        if let Some(escort) = &convoy.escort {
+            c.check(
+                fleet_known(escort.as_str()),
+                "sim.ron",
+                format!("escorte inconnue : {escort}"),
+            );
+        }
+    }
+    for r in &sim.raiders {
+        c.check(
+            fleet_known(r.fleet.as_str())
+                && faction_known(&r.faction)
+                && r.grounds.iter().all(place_known)
+                && r.targets.iter().all(faction_known),
+            "sim.ron",
+            format!("pillards {} : référence inconnue", r.fleet),
+        );
+        let secret = data
+            .galaxy
+            .fleets
+            .iter()
+            .any(|f| f.id == r.fleet && f.secret);
+        c.check(
+            !secret || r.public_alias.is_some(),
+            "sim.ron",
+            format!(
+                "pillards secrets {} sans nom public : leurs raids trahiraient le secret",
+                r.fleet
+            ),
+        );
+    }
+    for (fleet, route) in &sim.patrols {
+        c.check(
+            fleet_known(fleet.as_str()) && route.iter().all(place_known),
+            "sim.ron",
+            format!("patrouille {fleet} : référence inconnue"),
+        );
+    }
+    for fleet in sim.wanderers.iter().chain(sim.repairs.keys()) {
+        c.check(
+            fleet_known(fleet.as_str()),
+            "sim.ron",
+            format!("flotte inconnue : {fleet}"),
+        );
+    }
+    for project in &sim.projects {
+        c.check(
+            faction_known(&project.owner) && place_known(&project.place),
+            "sim.ron",
+            format!("projet {} : référence inconnue", project.id),
+        );
+    }
+    let rails = &data.rails;
+    for stay in &rails.fleets_stay {
+        c.check(
+            fleet_known(stay.fleet.as_str()) && place_known(&stay.at),
+            "rails.ron",
+            format!("rail de flotte {} : référence inconnue", stay.fleet),
+        );
+    }
+    for rail in &rails.projects_not_before {
+        c.check(
+            sim.projects.iter().any(|p| p.id == rail.project),
+            "rails.ron",
+            format!("rail de projet inconnu : {}", rail.project),
+        );
+    }
+
     // --- Départs de partie ------------------------------------------------------------------
     c.check(!data.starts.is_empty(), "départs", "aucun départ de partie");
     for start in &data.starts {

@@ -1,0 +1,93 @@
+// Simulation macro du monde vivant (AGENTS.md §7) : réglages et chiffres PROPOSÉS (P22,
+// docs/propositions.md). Les flottes, leurs positions et leurs états de départ viennent du
+// canon (galaxy.ron, §6.1) ; ici, seulement ce que le canon ne chiffre pas. Quantités en unités
+// abstraites de marchandise par jour.
+(
+    status: Proposition("P22"),
+    seed: 425,
+    base_prices: {
+        "food": 10.0,
+        "heavy_fuel": 25.0,
+        "ore": 15.0,
+        "rare_earths": 60.0,
+        "parts": 40.0,
+        "weapons": 80.0,
+    },
+    // Rôles canon (§3.3) : Ambroise, grenier de l'UGL ; Cygnara, poumon industriel qui ne
+    // produit rien à manger ; Concordia, capitale immense ; Hexis, monde-usine ; Vorrh et
+    // Ferrok, cœur industriel impérial ; Ostrag, bagne minier.
+    // Seules les dépendances que la simulation modélise sont comptées (le reste est fourni par
+    // des mondes non simulés) : Cygnara et Concordia mangent par les convois d'Ambroise,
+    // Concordia brûle le carburant de Cygnara, Vorrh fond le minerai de Ferrok, Ostrag vit des
+    // maigres convois de Primaterre (tenu par la faim, §9.4).
+    economies: {
+        "sys_ambroise": (produces: {"food": 320.0}, consumes: {"food": 40.0}),
+        "sys_cygnara": (produces: {"ore": 60.0, "heavy_fuel": 50.0, "rare_earths": 12.0, "parts": 30.0}, consumes: {"food": 70.0, "ore": 20.0}),
+        "sys_concordia": (produces: {"parts": 20.0}, consumes: {"food": 150.0, "heavy_fuel": 30.0}),
+        "sys_hexis": (produces: {"weapons": 40.0, "parts": 50.0}),
+        "sys_vorrh": (produces: {"parts": 40.0, "weapons": 30.0}, consumes: {"ore": 40.0}),
+        "sys_ferrok": (produces: {"ore": 50.0, "parts": 30.0}),
+        "sys_ostrag": (produces: {"ore": 25.0}, consumes: {"food": 6.0}),
+        "sys_primaterre": (produces: {"food": 60.0}, consumes: {"food": 50.0}),
+    },
+    convoys: [
+        // Cygnara mange par les convois d'Ambroise (§3.3, §3.8) : son talon d'Achille.
+        (id: "ambroise_cygnara", faction: "ugl", from: "sys_ambroise", to: "sys_cygnara", commodity: "food", amount: 560.0, every_days: 7, escort: "flotte_defense_cygnara"),
+        (id: "ambroise_concordia", faction: "ugl", from: "sys_ambroise", to: "sys_concordia", commodity: "food", amount: 1150.0, every_days: 7, escort: "flotte_defensive_concordia"),
+        (id: "cygnara_concordia", faction: "ugl", from: "sys_cygnara", to: "sys_concordia", commodity: "heavy_fuel", amount: 240.0, every_days: 8),
+        (id: "hexis_cygnara", faction: "hexa_corp", from: "sys_hexis", to: "sys_cygnara", commodity: "weapons", amount: 120.0, every_days: 10),
+        // Convois impériaux le long du front : ils passent près des repaires de la Ligue.
+        (id: "ferrok_vorrh", faction: "empire", from: "sys_ferrok", to: "sys_vorrh", commodity: "ore", amount: 290.0, every_days: 7),
+        (id: "vorrh_karza", faction: "empire", from: "sys_vorrh", to: "karza", commodity: "parts", amount: 150.0, every_days: 9),
+        (id: "primaterre_ostrag", faction: "empire", from: "sys_primaterre", to: "sys_ostrag", commodity: "food", amount: 45.0, every_days: 8),
+        // Les convois du Syndicat dans le No Man's Land, escortés (le TOS Revenant, §6.6).
+        (id: "terminus_hexis", faction: "syndicat_tosear", from: "terminus", to: "sys_hexis", commodity: "parts", amount: 60.0, every_days: 10, escort: "flotte_terminus"),
+        // Les convois grothul, proie de la « Grande Faucheuse » au nord de la Bordure (§9.1).
+        (id: "grotha_vantra", faction: "royaume_grothul", from: "grotha", to: "vantra", commodity: "food", amount: 120.0, every_days: 9),
+    ],
+    raiders: [
+        // Les huit meutes de la Ligue frappent l'UGL et Tosear depuis le Croissant, et
+        // remontent jusqu'à Cygnara et Ambroise (§9.1, §9.2).
+        (fleet: "meutes_ligue", faction: "ligue_des_pirates", grounds: ["rade_noire", "cendres", "sys_cygnara", "sys_ambroise"], range: 30.0, chance: 0.06, escorted_success: 0.30, targets: ["ugl", "syndicat_tosear"]),
+        // La Flotte Nordique (🔒 Tosear sous faux pavillon) pille les convois grothul.
+        (fleet: "flotte_nordique", faction: "syndicat_tosear", grounds: ["grotha", "vantra"], range: 40.0, chance: 0.20, escorted_success: 0.4, targets: ["royaume_grothul"], public_alias: "la Grande Faucheuse"),
+    ],
+    // La guerre Tosear contre la Ligue, le conflit le plus actif du No Man's Land (§9.2).
+    skirmishes: [
+        (a: "syndicat_tosear", b: "ligue_des_pirates", places: ["cendres", "rade_noire"], chance_per_day: 0.04),
+    ],
+    stability: {
+        // Primaterre se révolte encore, l'Empire réprime (§9.4).
+        "sys_primaterre": (initial: 0.40, revolt_below: 0.20, recovery_per_day: 0.0004, pressure_per_day: 0.0012, after_repression: 0.45),
+        // Ostrag, une poudrière tenue par l'isolement et la faim (§3.3, §9.4).
+        "sys_ostrag": (initial: 0.35, revolt_below: 0.12, recovery_per_day: 0.0004, pressure_per_day: 0.0008, after_repression: 0.40),
+    },
+    patrols: {
+        // La Flotte de l'Aube, basée à Calderis, en patrouille (§6.1).
+        "flotte_aube": ["calderis", "port_vaillant", "alcyone"],
+        // La 3e Flotte, seule pleinement opérationnelle de l'Empire, tient le front (§9.1).
+        "troisieme_flotte": ["karza", "sys_ferrok"],
+    },
+    // La Flotte Beta parcourt la galaxie pour faire payer les mauvais payeurs (§6.5).
+    wanderers: ["flotte_beta"],
+    repairs: {
+        "premiere_flotte": (condition: 0.45, per_day: 0.0004),
+        "deuxieme_flotte": (condition: 0.20, per_day: 0.0003),
+        "flotte_concorde": (condition: 0.35, per_day: 0.0004),
+    },
+    projects: [
+        (id: "l_enclume", name: "L'Enclume", owner: "hexa_corp", place: "l_enclume", progress: 0.40, per_day: 0.00030, acceleration_per_year: 0.15),
+        (id: "le_berceau", name: "Le Berceau", owner: "ugl", place: "le_berceau", progress: 0.30, per_day: 0.00028),
+        (id: "rempart", name: "Rempart", owner: "ugl", place: "rempart", progress: 0.25, per_day: 0.00035),
+        // 🔒 La Flotte d'Attaque fédérale, opérationnelle vers 430-440at (§9.3).
+        (id: "flotte_attaque", name: "Flotte d'Attaque", owner: "federation", place: "hargan", progress: 0.50, per_day: 0.00028, secret: true),
+    ],
+    calendar: [
+        // Prochaine Arène vers 426at (déduction du cycle de cinq ans, §9.3).
+        (date: (year: "426at", day: 180), kind: Arena, place: "tharkast"),
+        // Fin du second mandat de Nyra Maren en 427at : la campagne s'ouvre (§9.3).
+        (date: (year: "426at", day: 300), kind: UglCampaign, place: "concordia"),
+    ],
+    patrol_dwell_days: 12,
+    note: "EESS, FSS, EDS, FDM et flottes « mobiles » sans lieu : non simulées en M4.",
+)

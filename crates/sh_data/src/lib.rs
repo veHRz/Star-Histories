@@ -26,6 +26,7 @@ pub mod scene;
 pub mod sector;
 pub mod settings;
 pub mod ships;
+pub mod sim;
 pub mod start;
 pub mod travel;
 pub mod validate;
@@ -49,6 +50,7 @@ pub use settings::{
     PresetLevel, SpaceSettings, SystemScale,
 };
 pub use ships::{Formation, FormationsFile, ShipClass, ShipClassesFile};
+pub use sim::{CalendarKind, Rails, SimSettings};
 pub use start::Start;
 pub use travel::{PortalLinks, ShipLogistics, TravelSettings};
 pub use validate::{Issue, ValidationReport};
@@ -65,6 +67,8 @@ pub mod paths {
     pub const SPACE: &str = "gameplay/space.ron";
     pub const FLIGHT: &str = "gameplay/flight.ron";
     pub const TRAVEL: &str = "gameplay/travel.ron";
+    pub const SIM: &str = "gameplay/sim.ron";
+    pub const RAILS: &str = "canon/rails.ron";
     pub const PORTAL_LINKS: &str = "propositions/portal_links.ron";
     pub const LANG_EN: &str = "lang/en.ron";
     /// Dossiers scannés pour les descripteurs de secteurs (`*.ron`).
@@ -88,6 +92,8 @@ pub struct GameData {
     pub space: SpaceSettings,
     pub flight: FlightSettings,
     pub travel: TravelSettings,
+    pub sim: SimSettings,
+    pub rails: Rails,
     pub portal_links: PortalLinks,
     pub lang: Lang,
     pub sectors: Vec<Sector>,
@@ -146,6 +152,8 @@ impl GameData {
             space: read_ron(&file(paths::SPACE))?,
             flight: read_ron(&file(paths::FLIGHT))?,
             travel: read_ron(&file(paths::TRAVEL))?,
+            sim: read_ron(&file(paths::SIM))?,
+            rails: read_ron(&file(paths::RAILS))?,
             portal_links: read_ron(&file(paths::PORTAL_LINKS))?,
             lang: read_ron(&file(paths::LANG_EN))?,
             sectors: read_dir_ron(data_dir, &paths::SECTOR_DIRS)?,
