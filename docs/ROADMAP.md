@@ -3,7 +3,7 @@
 > Suis les jalons **dans l'ordre**. Coche chaque tâche (`[x]`) dans le commit qui la termine. Un jalon est fini quand **tous ses critères « Fini quand »** sont vérifiés (tests, autopilote, captures regardées). Push à la fin de chaque jalon.
 > Tu peux découper une tâche, en ajouter, en réordonner à l'intérieur d'un jalon : note-le dans `docs/JOURNAL.md`. Changer l'ordre des jalons ou leur périmètre : demande à l'auteur.
 
-État (03/11/2026) : **M0 terminé ; M1, M2 et M3 faits**, critères vérifiés par l'autopilote (`walk_ship`, `fly_ship`, `port_loop`, `voyage`) et les tests sur le poste Linux. **Les critères de performance de M1 et M2 restent à mesurer sur la machine de référence** (UHD 770, poste Windows). M4 non commencé.
+État (03/11/2026) : **M0 terminé ; M1 à M4 faits**, critères vérifiés par l'autopilote (`walk_ship`, `fly_ship`, `port_loop`, `voyage`) et les tests (dont la simulation de deux ans) sur le poste Linux. **Les critères de performance de M1 et M2 restent à mesurer sur la machine de référence** (UHD 770, poste Windows). M5 non commencé.
 
 ---
 
@@ -82,12 +82,12 @@ But : traverser la galaxie par Portail ou par hyperespace, en voyant le temps pa
 
 But : la galaxie bouge toute seule, de façon cohérente avec le canon.
 
-- [ ] État initial de la simulation depuis les données : factions, contrôle des systèmes, flottes et leurs positions en 425at (§6.1), économie de base, projets (§9.3).
-- [ ] Pas journalier : missions des flottes (patrouille, réparation, escorte), production et consommation → prix, stabilité (Primaterre, Ostrag), raids de la Ligue (épargnant l'Empire 🔒), guerre Tosear–Ligue, avancement des projets, calendrier politique.
-- [ ] Rails souples et interdits durs (`assets/data/canon/rails.ron`, §7.2 d'AGENTS.md) avec tests.
-- [ ] Pont Bevy : `Resource`, accélération du temps pendant les voyages, `SimEvent` → fil de nouvelles et marchés.
-- [ ] Connaissance du joueur : brouillard d'information sur la carte (flottes connues, date de l'information).
-- [ ] Tests : déterminisme (même graine ⇒ même histoire), deux ans de simulation headless < 2 s, aucun rail violé.
+- [x] État initial de la simulation depuis les données : factions, contrôle des systèmes, flottes et leurs positions en 425at (§6.1), économie de base, projets (§9.3).
+- [x] Pas journalier : missions des flottes (patrouille, réparation, escorte), production et consommation → prix, stabilité (Primaterre, Ostrag), raids de la Ligue (épargnant l'Empire 🔒), guerre Tosear–Ligue, avancement des projets, calendrier politique.
+- [x] Rails souples et interdits durs (`assets/data/canon/rails.ron`, §7.2 d'AGENTS.md) avec tests.
+- [x] Pont Bevy : `Resource`, accélération du temps pendant les voyages, `SimEvent` → fil de nouvelles et marchés.
+- [x] Connaissance du joueur : brouillard d'information sur la carte (flottes connues, date de l'information).
+- [x] Tests : déterminisme (même graine ⇒ même histoire), deux ans de simulation headless < 2 s, aucun rail violé.
 
 **Fini quand** : deux ans simulés produisent un journal d'histoire lisible et plausible ; les nouvelles en jeu reflètent la simulation ; tests verts.
 

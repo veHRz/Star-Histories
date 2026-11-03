@@ -265,7 +265,16 @@ fn perform(
     parents: Query<&ChildOf>,
     names: Query<&Name>,
     mut player: Single<(&GlobalTransform, &mut PlayerController), With<Player>>,
+    (data, living, location): (
+        Res<crate::data::Data>,
+        Option<(
+            Res<crate::living::LivingWorld>,
+            Res<crate::living::PlayerKnowledge>,
+        )>,
+        Option<Res<crate::voyage::Location>>,
+    ),
 ) {
+    let living = living.as_ref().map(|(w, k)| (&**w, &**k));
     if requests.read().count() == 0 {
         return;
     }
@@ -286,7 +295,19 @@ fn perform(
             }
         }
         Interactable::Console { label } => {
-            notices.write(Notice(texts.get(&format!("console.{label}.message"))));
+            // Les communications donnent les nouvelles ; le terminal du marché, les prix du
+            // monde vivant ; les autres consoles, leur message.
+            let text = match (label.as_str(), &living) {
+                ("comms", Some((_, knowledge))) => {
+                    crate::living::latest_news(&texts, &data, knowledge, 3)
+                }
+                ("market", Some((world, _))) => match location.as_ref() {
+                    Some(l) => crate::living::market_board(&texts, &data, world, &l.system),
+                    None => texts.get("console.market.message"),
+                },
+                _ => texts.get(&format!("console.{label}.message")),
+            };
+            notices.write(Notice(text));
         }
         Interactable::Seat { .. } => match controller.mode {
             PlayerMode::Seated { .. } => {

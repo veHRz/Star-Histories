@@ -67,7 +67,16 @@ impl GameClock {
 /// sa date.
 fn start_clock(mut commands: Commands, clock: Option<Res<GameClock>>) {
     if clock.is_none() {
-        commands.insert_resource(GameClock::at(StellarDate::start_of(Year::PRESENT)));
+        let mut clock = GameClock::at(StellarDate::start_of(Year::PRESENT));
+        // `SH_DAYS=N` (autopilote) : la partie commence N jours plus tard, le monde vivant
+        // rattrape son retard (captures d'un monde qui a vécu).
+        if let Some(days) = std::env::var("SH_DAYS")
+            .ok()
+            .and_then(|d| d.trim().parse::<u32>().ok())
+        {
+            clock.advance_hours(f64::from(days) * 24.0);
+        }
+        commands.insert_resource(clock);
     }
 }
 

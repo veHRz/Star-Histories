@@ -15,6 +15,7 @@ mod dev_tools;
 pub mod graphics;
 pub mod input;
 pub mod interaction;
+pub mod living;
 pub mod loading;
 pub mod player;
 pub mod sector;
@@ -61,6 +62,7 @@ impl Plugin for StarHistoriesPlugin {
             ship::ShipPlugin,
             transition::TransitionPlugin,
             voyage::VoyagePlugin,
+            living::LivingWorldPlugin,
         ));
         #[cfg(feature = "dev")]
         app.add_plugins(dev_tools::DevToolsPlugin);

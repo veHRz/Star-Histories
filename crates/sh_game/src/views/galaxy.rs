@@ -19,6 +19,7 @@ use sh_data::{Faction, MapEntry, MapKind, entry_at, public_map};
 use crate::data::{Data, Texts};
 use crate::graphics::WorldCamera;
 use crate::input::{Pan, Zoom};
+use crate::living::PlayerKnowledge;
 use crate::state::{ControlMode, ViewLevel};
 use crate::ui::theme::{self, UiFonts};
 use crate::views::{WorldLabel, view_banner};
@@ -53,6 +54,23 @@ const MAX_HEIGHT: f32 = 1400.0;
 #[derive(Resource)]
 struct MapEntries(Vec<MapEntry>);
 
+/// Une flotte connue du joueur, à sa dernière position connue (brouillard d'information).
+#[derive(Clone, Debug, PartialEq)]
+struct FleetMarker {
+    name: String,
+    pos: MapPos,
+    at: String,
+    faction: Option<sh_core::Id<Faction>>,
+    as_of: sh_core::StellarDate,
+}
+
+#[derive(Resource)]
+struct FleetMarkers(Vec<FleetMarker>);
+
+/// La flotte connue sous le curseur, s'il y en a une (elle passe avant les lieux).
+#[derive(Resource, Default)]
+struct HoveredFleet(Option<FleetMarker>);
+
 /// Survol imposé par l'autopilote (`SH_HOVER`) : il remplace le curseur.
 #[derive(Resource)]
 struct ForcedHover(Option<MapEntry>);
@@ -86,6 +104,14 @@ fn faction_color(faction: Option<&sh_core::Id<Faction>>) -> Color {
     }
 }
 
+/// Position sur la carte d'un lieu (système, astre, station).
+fn place_pos(g: &sh_data::Galaxy, id: &sh_core::Id<sh_data::Place>) -> Option<MapPos> {
+    g.system(id)
+        .map(|s| s.center)
+        .or_else(|| g.body(id).and_then(|b| b.pos))
+        .or_else(|| g.station(id).map(|s| s.pos))
+}
+
 /// Population lisible : « 3.4 billion », « 250 million ».
 fn population_text(texts: &Texts, n: u64) -> String {
     let n = n as f64;
@@ -105,6 +131,7 @@ fn spawn_galaxy(
     texts: Res<Texts>,
     fonts: Res<UiFonts>,
     location: Option<Res<Location>>,
+    knowledge: Option<Res<PlayerKnowledge>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut mode: ResMut<NextState<ControlMode>>,
@@ -260,6 +287,41 @@ fn spawn_galaxy(
     }
     commands.insert_resource(ForcedHover(forced_hover.clone()));
     commands.insert_resource(HoveredEntry(forced_hover));
+    // Les flottes connues du joueur, en couronne autour de leur dernière position connue.
+    let mut markers = Vec::new();
+    let diamond = meshes.add(Cuboid::new(2.6, 0.4, 2.6));
+    if let Some(knowledge) = knowledge {
+        let mut per_place: std::collections::BTreeMap<String, usize> = Default::default();
+        for (id, known) in &knowledge.fleets {
+            let Some(base) = place_pos(g, &known.at) else {
+                continue;
+            };
+            let Some(fleet) = g.fleets.iter().find(|f| &f.id == id).filter(|f| !f.secret) else {
+                continue;
+            };
+            let slot = per_place.entry(known.at.to_string()).or_default();
+            let angle = std::f64::consts::TAU * (*slot as f64) / 6.0 + 0.4;
+            *slot += 1;
+            let pos = MapPos::new(base.x + 7.0 * angle.cos(), base.y + 7.0 * angle.sin());
+            commands.spawn((
+                Name::new(fleet.name.clone()),
+                SCOPE,
+                Mesh3d(diamond.clone()),
+                MeshMaterial3d(materials.add(unlit(faction_color(fleet.faction.as_ref())))),
+                Transform::from_translation(world(pos) + Vec3::Y * 0.6)
+                    .with_rotation(Quat::from_rotation_y(std::f32::consts::FRAC_PI_4)),
+            ));
+            markers.push(FleetMarker {
+                name: fleet.name.clone(),
+                pos,
+                at: known.at.to_string(),
+                faction: fleet.faction.clone(),
+                as_of: known.as_of,
+            });
+        }
+    }
+    commands.insert_resource(FleetMarkers(markers));
+    commands.insert_resource(HoveredFleet::default());
     commands.insert_resource(MapEntries(entries));
 
     commands.spawn(view_banner(
@@ -309,8 +371,10 @@ fn hover(
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Camera, &GlobalTransform, &Transform), With<WorldCamera>>,
     entries: Res<MapEntries>,
+    markers: Res<FleetMarkers>,
     forced: Res<ForcedHover>,
     mut hovered: ResMut<HoveredEntry>,
+    mut hovered_fleet: ResMut<HoveredFleet>,
 ) {
     if forced.0.is_some() {
         return;
@@ -327,10 +391,22 @@ fn hover(
         let t = ray.intersect_plane(Vec3::ZERO, InfinitePlane3d::new(Vec3::Y))?;
         // Portée de survol proportionnelle à l'altitude : ≈ 12 pixels à l'écran.
         let reach = f64::from(transform.translation.y) * 0.025;
-        entry_at(&entries.0, map_pos(ray.get_point(t)), reach).cloned()
+        let at = map_pos(ray.get_point(t));
+        let fleet = markers
+            .0
+            .iter()
+            .map(|m| ((m.pos.x - at.x).hypot(m.pos.y - at.y), m))
+            .filter(|(d, _)| *d <= reach * 0.6)
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, m)| m.clone());
+        Some((entry_at(&entries.0, at, reach).cloned(), fleet))
     });
-    if hovered.0 != found {
-        hovered.0 = found;
+    let (entry, fleet) = found.unwrap_or((None, None));
+    if hovered.0 != entry {
+        hovered.0 = entry;
+    }
+    if hovered_fleet.0 != fleet {
+        hovered_fleet.0 = fleet;
     }
 }
 
@@ -338,10 +414,33 @@ fn show_tooltip(
     data: Res<Data>,
     texts: Res<Texts>,
     hovered: Res<HoveredEntry>,
+    hovered_fleet: Res<HoveredFleet>,
     window: Single<&Window, With<PrimaryWindow>>,
     mut tooltip: Single<(&mut Text, &mut Node, &mut Visibility), With<Tooltip>>,
 ) {
     let (text, node, visibility) = &mut *tooltip;
+    if let Some(fleet) = &hovered_fleet.0 {
+        let cursor = window.cursor_position().unwrap_or(window.size() / 2.0);
+        node.left = px(cursor.x + 16.0);
+        node.top = px(cursor.y + 12.0);
+        let mut lines = vec![fleet.name.clone(), texts.get("map.tip.kind.fleet")];
+        if let Some(faction) = fleet.faction.as_ref().and_then(|f| data.faction(f)) {
+            lines.push(texts.format("map.tip.controller", &[("faction", &faction.name)]));
+        }
+        lines.push(texts.format(
+            "map.tip.reported",
+            &[
+                ("date", &crate::clock::format_date(&texts, fleet.as_of)),
+                ("place", &crate::living::display_name(&data, &fleet.at)),
+            ],
+        ));
+        let wanted = lines.join("\n");
+        if text.0 != wanted {
+            text.0 = wanted;
+        }
+        **visibility = Visibility::Inherited;
+        return;
+    }
     let Some(entry) = &hovered.0 else {
         **visibility = Visibility::Hidden;
         return;

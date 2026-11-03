@@ -2,6 +2,13 @@
 
 > Une entrée courte par session (2 à 5 lignes) : ce qui a été fait, ce qui reste en suspens, les décisions prises. Le plus récent en haut.
 
+## 03/11/2026 — Poste Linux (CachyOS) : M4, le monde vivant
+
+- **Simulation** (`sh_sim::world`, P22, rails dans `canon/rails.ron`) : flottes du canon à leurs positions de 425at (patrouilles de l'Aube et de la 3e Flotte, errance de la Flotte Beta, réparations des flottes diminuées), économies et pénuries, convois (Cygnara nourrie par Ambroise), raids de la Ligue qui **épargnent l'Empire** (🔒, effet visible seulement), « Grande Faucheuse » sur les convois grothul, guerre Tosear–Ligue, révoltes de Primaterre et d'Ostrag, projets (L'Enclume accélère ; la Flotte d'Attaque reste secrète), Arène et campagne de l'UGL. Aucun événement pour l'Essaim, un vaisseau capitale ou une désassimilation : impossibles par construction.
+- **Tests** : déterminisme, deux ans en ≈ 0,01 s, aucun rail violé sur cinq graines, aucun secret public, plausibilité ; journal lisible `target/histoire_2ans.txt` (et `cargo run -p sh_sim --example histoire`). Piège corrigé : `fork_named` repart de la graine, d'où un sous-flux par domaine **et par jour**.
+- **Jeu** (`sh_game::living`) : la simulation suit l'horloge (et rattrape un voyage d'un coup), fil des nouvelles à l'écran, console des communications, terminal du marché du spatioport aux prix simulés, connaissance du joueur datée et flottes connues sur la carte. `SH_DAYS=N` pour les captures : `target/shots/m4-{nouvelles,carte-flottes}.png`.
+- Q12 ouverte (issues politiques : la simulation ne tranche rien qui touche un personnage nommé).
+
 ## 03/11/2026 — Poste Linux (CachyOS) : M3, carte galactique et voyages
 
 - **Planification** (`sh_sim::travel`, testée sur les vraies données) : Portails par le graphe des hubs (P19 : Hexis seul lien entre les blocs), hyperespace en ligne droite contournée autour des nébuleuses bloquantes, durées (P3), carburant et péage (P20) ; aucun plan vers un système secret.

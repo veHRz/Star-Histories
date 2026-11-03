@@ -9,6 +9,9 @@
    *Hypothèse : gardés en français, exactement comme dans le canon. Les données prévoient un champ de nom traduit facultatif, pour le jour où tu fournis les noms anglais.*
    *Même question pour les termes techniques du canon (« Portail », « carburant lourd »…). Hypothèse : traduits dans l'interface anglaise (« Portal hub »), puisque ce sont des noms communs ; les noms propres (« Hexis », « L'Enclume ») restent en français.*
 
+12. **Issues politiques dans la simulation.** Le monde vivant suit le calendrier du canon : l'Arène vers 426at, la fin du second mandat de Nyra Maren en 427at. Faut-il que la simulation **tranche** ces issues (réélection ou successeur, vainqueur de l'Arène), ou les garder ouvertes jusqu'à ta décision ?
+   *Hypothèse : la simulation annonce les échéances (« l'Arène se tient », « la campagne s'ouvre ») mais ne décide jamais d'une issue qui touche un personnage nommé ; tu écris l'issue quand tu veux, et elle devient un rail.*
+
 ## Tranchées
 
 1. **Départ de la v1.** Capitaine indépendant à Hexis, endetté auprès de la Banque (P1) : ça te va ?
