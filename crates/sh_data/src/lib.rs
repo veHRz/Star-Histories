@@ -18,6 +18,7 @@ use thiserror::Error;
 pub mod career;
 pub mod common;
 pub mod currencies;
+pub mod dialogue;
 pub mod factions;
 pub mod galaxy;
 pub mod lang;
@@ -35,6 +36,7 @@ pub mod validate;
 pub use career::{CareerRules, Ranks};
 pub use common::{Location, Place, Population, Status};
 pub use currencies::{CurrenciesFile, Currency};
+pub use dialogue::Dialogue;
 pub use factions::{Faction, FactionKind, FactionsFile};
 pub use galaxy::{
     Body, BodyKind, Fleet, Galaxy, MapFrame, OrbitOrder, Phenomenon, PortalHub, StarSystem,
@@ -81,6 +83,8 @@ pub mod paths {
     pub const SCENE_DIRS: [&str; 2] = ["canon/systems", "propositions/systems"];
     /// Dossiers scannés pour les départs de partie (`*.ron`).
     pub const START_DIRS: [&str; 1] = ["propositions/starts"];
+    /// Dossiers scannés pour les dialogues (`*.ron`).
+    pub const DIALOGUE_DIRS: [&str; 1] = ["propositions/dialogues"];
 }
 
 /// Toutes les données chargées au démarrage du jeu.
@@ -105,6 +109,7 @@ pub struct GameData {
     pub sectors: Vec<Sector>,
     pub scenes: Vec<SystemScene>,
     pub starts: Vec<Start>,
+    pub dialogues: Vec<Dialogue>,
 }
 
 #[derive(Debug, Error)]
@@ -167,6 +172,7 @@ impl GameData {
             sectors: read_dir_ron(data_dir, &paths::SECTOR_DIRS)?,
             scenes: read_dir_ron(data_dir, &paths::SCENE_DIRS)?,
             starts: read_dir_ron(data_dir, &paths::START_DIRS)?,
+            dialogues: read_dir_ron(data_dir, &paths::DIALOGUE_DIRS)?,
         })
     }
 

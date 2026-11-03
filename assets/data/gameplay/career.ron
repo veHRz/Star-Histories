@@ -32,6 +32,10 @@
         rep_success: 6,
         rep_failure: -10,
         offers: 5,
+        // Livraison en orbite : les remorqueurs d'Hexa-Corp viennent chercher la cargaison.
+        delivery_range: 30000.0,
+        tow_range: 3000.0,
+        wreck_distance: 12000.0,
     ),
     // Détourner une cargaison sous contrat : Hexa-Corp ne l'oublie pas.
     betrayal: (

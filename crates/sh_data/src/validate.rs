@@ -866,6 +866,36 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
         }
     }
 
+    // --- Dialogues ---------------------------------------------------------------------------
+    for id in duplicates(data.dialogues.iter().map(|d| d.id.as_str())) {
+        c.fail("dialogues", format!("identifiant en double : {id}"));
+    }
+    for dialogue in &data.dialogues {
+        let ctx = format!("dialogue {}", dialogue.id);
+        c.status(&ctx, &dialogue.status, None);
+        c.check(
+            data.sectors
+                .iter()
+                .any(|s| s.id.as_str() == dialogue.sector),
+            &ctx,
+            format!("secteur inconnu : {}", dialogue.sector),
+        );
+        c.check(!dialogue.entries.is_empty(), &ctx, "aucun point d'entrée");
+        for node in dialogue.missing_nodes() {
+            c.fail(&ctx, format!("nœud inconnu : {node}"));
+        }
+        for key in dialogue.lang_keys() {
+            c.check(data.lang.has(key), &ctx, format!("texte absent : {key}"));
+        }
+        for faction in dialogue.factions() {
+            c.check(
+                faction_known(faction),
+                &ctx,
+                format!("faction inconnue : {faction}"),
+            );
+        }
+    }
+
     // --- Départs de partie ------------------------------------------------------------------
     c.check(!data.starts.is_empty(), "départs", "aucun départ de partie");
     for start in &data.starts {

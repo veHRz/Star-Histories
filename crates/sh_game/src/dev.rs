@@ -299,6 +299,43 @@ enum Step {
     /// Vérifier qu'on est dans ce système et que la durée depuis la marque est dans
     /// [min, max] heures.
     Expect(&'static str, f64, f64),
+    /// Ouvrir le terminal (raccourci de l'autopilote : comme si l'on avait utilisé la console).
+    Open(Terminal),
+    /// Prendre l'option du terminal qui correspond au motif ([`choice_matches`]).
+    Choose(&'static str),
+    /// Touche d'amarrage aux commandes, une fois (livrer, accrocher une épave).
+    Hail,
+    /// Vérifier la fiche du capitaine.
+    Assert(
+        &'static str,
+        fn(&sh_sim::Captain, &sh_data::GameData) -> bool,
+    ),
+    /// Capture d'écran dans `target/shots/<nom>.png`, puis une seconde d'attente.
+    Shot(&'static str),
+    /// Attendre tant de secondes (chargement des modèles avant une capture).
+    Wait(f32),
+}
+
+/// Un écran du terminal à ouvrir.
+#[derive(Clone, Copy, Debug)]
+enum Terminal {
+    Dialogue(&'static str),
+    Market,
+    Sheet,
+    Journal,
+}
+
+/// Les étapes de terminal et de carrière : elles se jouent aux commandes, sans marcher.
+fn is_career_step(step: &Step) -> bool {
+    matches!(
+        step,
+        Step::Open(_)
+            | Step::Choose(_)
+            | Step::Hail
+            | Step::Assert(..)
+            | Step::Shot(_)
+            | Step::Wait(_)
+    )
 }
 
 const fn w(x: f32, y: f32, door: Option<&'static str>) -> Step {
@@ -348,6 +385,73 @@ const VOYAGE: &[Step] = &[
     Step::Expect("sys_hexis", 15.0 * 24.0, 35.0 * 24.0),
 ];
 
+/// `contract_loop` : contrat de transport Hexis → Cygnara, livraison, paiement, réputation,
+/// échéance de la Banque, puis trahison d'un second contrat et ses conséquences (critère de M5).
+const CONTRACT_LOOP: &[Step] = &[
+    Step::Wait(4.0),
+    Step::Open(Terminal::Dialogue("hexis_contract_office")),
+    Step::Shot("m5-bureau"),
+    Step::Choose("say:dlg.office.ask_work"),
+    Step::Choose("say:dlg.office.show_contracts"),
+    Step::Shot("m5-contrats"),
+    Step::Choose("accept:sys_cygnara"),
+    Step::Choose("close"),
+    Step::Assert("contrat pris", |c, _| {
+        c.contracts
+            .iter()
+            .any(|k| k.state == sh_sim::ContractState::Active && k.to.as_str() == "sys_cygnara")
+    }),
+    Step::OpenMap,
+    Step::Route("sys_cygnara"),
+    Step::Depart(sh_sim::travel::TravelMode::Portal),
+    Step::Hail,
+    Step::Assert("payé, réputation en hausse", |c, _| {
+        let id = |s: &str| sh_core::Id::new(s).ok();
+        c.contracts
+            .iter()
+            .any(|k| k.state == sh_sim::ContractState::Done)
+            && c.credits.cents > 300_000
+            && id("hc_logistique").is_some_and(|f| c.reputation(&f) > 0)
+    }),
+    Step::Open(Terminal::Journal),
+    Step::Shot("m5-journal"),
+    Step::Choose("close"),
+    Step::OpenMap,
+    Step::Route("sys_hexis"),
+    Step::Depart(sh_sim::travel::TravelMode::Portal),
+    Step::Open(Terminal::Dialogue("hexis_contract_office")),
+    Step::Choose("say:dlg.office.ask_bank"),
+    Step::Choose("say:dlg.office.pay"),
+    Step::Choose("close"),
+    Step::Assert("échéance payée", |c, _| {
+        c.loan
+            .as_ref()
+            .is_some_and(|l| l.balance.cents == 4_250_000)
+    }),
+    // La trahison : un second contrat, dont la cargaison est vendue au marché.
+    Step::Open(Terminal::Dialogue("hexis_contract_office")),
+    Step::Choose("say:dlg.office.ask_work"),
+    Step::Choose("say:dlg.office.show_contracts"),
+    Step::Choose("accept:any"),
+    Step::Choose("close"),
+    Step::Open(Terminal::Market),
+    Step::Choose("betray"),
+    Step::Shot("m5-trahison"),
+    Step::Choose("close"),
+    Step::Assert("trahison : exclu, traître, dette alourdie", |c, data| {
+        let hc = sh_core::Id::new("hexa_corp").ok();
+        hc.is_some_and(|f| c.refused_by(data, &f))
+            && c.traits.contains(sh_sim::career::NOTORIOUS_TRAITOR)
+            && c.loan.as_ref().is_some_and(|l| l.balance.cents > 4_250_000)
+    }),
+    Step::Open(Terminal::Dialogue("hexis_contract_office")),
+    Step::Shot("m5-porte-close"),
+    Step::Choose("close"),
+    Step::Open(Terminal::Sheet),
+    Step::Shot("m5-fiche"),
+    Step::Choose("close"),
+];
+
 /// Délai maximal d'une transition de vue (amarrage, départ) dans un scénario.
 const TRANSITION_SECONDS: f32 = 30.0;
 
@@ -375,6 +479,8 @@ struct Scenario {
     last_issue: f32,
     /// `fly_ship` : les phases de vol précèdent la marche.
     flight: Option<FlightCheck>,
+    /// La page du terminal au moment d'un choix (on attend qu'elle change).
+    page_seen: Option<crate::ui::terminal::Page>,
     index: usize,
     best_distance: f32,
     since_progress: f32,
@@ -397,13 +503,16 @@ impl Plugin for ScenarioPlugin {
             "fly_ship" => (FLY_SHIP_WALK, Some(FlightCheck::default())),
             "port_loop" => (PORT_LOOP, None),
             "voyage" => (VOYAGE, None),
+            "contract_loop" => (CONTRACT_LOOP, None),
             _ => (WALK_SHIP, None),
         };
         if !matches!(
             name.as_str(),
-            "walk_ship" | "fly_ship" | "port_loop" | "voyage"
+            "walk_ship" | "fly_ship" | "port_loop" | "voyage" | "contract_loop"
         ) {
-            error!("SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage)");
+            error!(
+                "SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage, contract_loop)"
+            );
             app.add_systems(Startup, |mut exit: MessageWriter<AppExit>| {
                 exit.write(AppExit::error());
             });
@@ -418,6 +527,7 @@ impl Plugin for ScenarioPlugin {
             mark: None,
             last_issue: 0.0,
             flight,
+            page_seen: None,
             index: 0,
             best_distance: f32::MAX,
             since_progress: 0.0,
@@ -482,6 +592,21 @@ fn run_scenario(
     *intent = crate::player::PlayerIntent::default();
     *pilot = crate::ship::PilotIntent::default();
     let current_view = *view.get();
+    if let Some(&step) = scenario.steps.get(scenario.index)
+        && is_career_step(&step)
+    {
+        scenario.step_time += time.delta_secs();
+        if scenario.step_time > TRANSITION_SECONDS {
+            error!(
+                "scénario {} : bloqué à l'étape {} ({step:?})",
+                scenario.name, scenario.index
+            );
+            exit.write(AppExit::error());
+            return;
+        }
+        commands.queue(move |world: &mut World| career_step(world, step));
+        return;
+    }
     // Étapes de la carte et des voyages : elles se jouent aussi sans joueur (vue Galaxie).
     if let Some(&step) = scenario.steps.get(scenario.index)
         && matches!(
@@ -625,7 +750,17 @@ fn run_scenario(
             }
             return;
         }
-        Step::OpenMap | Step::Route(_) | Step::Depart(_) | Step::Mark | Step::Expect(..) => return,
+        Step::OpenMap
+        | Step::Route(_)
+        | Step::Depart(_)
+        | Step::Mark
+        | Step::Expect(..)
+        | Step::Open(_)
+        | Step::Choose(_)
+        | Step::Hail
+        | Step::Assert(..)
+        | Step::Shot(_)
+        | Step::Wait(_) => return,
         Step::SitAtHelm | Step::StandUp | Step::DockOrDepart => {
             let done = match step {
                 Step::SitAtHelm => seated,
@@ -875,4 +1010,132 @@ fn voyage_step(
         _ => next(scenario),
     }
     Ok(())
+}
+
+/// Une option du terminal correspond-elle au motif ? `say:<clé>` (réplique), `accept:<lieu>`
+/// ou `accept:any`, `betray`, `close`.
+fn choice_matches(choice: &crate::ui::terminal::Choice, pattern: &str) -> bool {
+    use crate::ui::terminal::Action;
+    match (&choice.action, pattern.split_once(':')) {
+        (Action::Say { key, .. }, Some(("say", k))) => key == k,
+        (Action::Accept(c), Some(("accept", to))) => to == "any" || c.to.as_str() == to,
+        (Action::Betray(_), None) => pattern == "betray",
+        (action, None) if pattern == "close" => action.closes(),
+        _ => false,
+    }
+}
+
+/// Une étape de terminal ou de carrière, jouée avec le `World` (chaque frame jusqu'à la fin).
+fn career_step(world: &mut World, step: Step) {
+    use crate::ui::terminal::{OpenTerminal, Screen, Terminal as Term, TerminalChoice};
+    let next = |world: &mut World| {
+        let mut scenario = world.resource_mut::<Scenario>();
+        scenario.index += 1;
+        scenario.issued = None;
+        scenario.step_time = 0.0;
+        scenario.page_seen = None;
+    };
+    let fail = |world: &mut World, message: String| {
+        let name = world.resource::<Scenario>().name.clone();
+        error!("scénario {name} : {message}");
+        world.write_message(AppExit::error());
+    };
+    let issued = world.resource::<Scenario>().issued.is_some();
+    match step {
+        Step::Open(which) => {
+            let open = world.get_resource::<Term>().map(|t| t.page.is_some());
+            match (issued, open) {
+                (true, Some(true)) => next(world),
+                (false, None) => {
+                    let screen = match which {
+                        Terminal::Dialogue(id) => Screen::Dialogue {
+                            id: id.to_owned(),
+                            node: String::new(),
+                        },
+                        Terminal::Market => Screen::Market,
+                        Terminal::Sheet => Screen::Sheet,
+                        Terminal::Journal => Screen::Journal,
+                    };
+                    world.write_message(OpenTerminal(screen));
+                    world.resource_mut::<Scenario>().issued = Some(None);
+                }
+                _ => {}
+            }
+        }
+        Step::Choose(pattern) => {
+            let page = world.get_resource::<Term>().and_then(|t| t.page.clone());
+            if issued {
+                // Fait quand la page a changé (ou que le terminal s'est fermé).
+                let seen = world.resource::<Scenario>().page_seen.clone();
+                let closed = !world.contains_resource::<Term>();
+                if closed || (page.is_some() && page != seen) {
+                    next(world);
+                }
+                return;
+            }
+            let Some(page) = page else {
+                return;
+            };
+            match page
+                .choices
+                .iter()
+                .position(|c| c.enabled && choice_matches(c, pattern))
+            {
+                Some(index) => {
+                    info!("scénario : choix « {} »", page.choices[index].label);
+                    world.write_message(TerminalChoice(index));
+                    let mut scenario = world.resource_mut::<Scenario>();
+                    scenario.issued = Some(None);
+                    scenario.page_seen = Some(page);
+                }
+                None => {
+                    let labels: Vec<&str> = page.choices.iter().map(|c| c.label.as_str()).collect();
+                    fail(
+                        world,
+                        format!("aucune option « {pattern} » parmi {labels:?}"),
+                    );
+                }
+            }
+        }
+        Step::Wait(seconds) => {
+            if world.resource::<Scenario>().step_time > seconds {
+                next(world);
+            }
+        }
+        Step::Hail => {
+            crate::transition::request_dock(world);
+            next(world);
+        }
+        Step::Assert(what, check) => {
+            let data = world.resource::<crate::data::Data>().clone();
+            let ok = world
+                .get_resource::<crate::career::Career>()
+                .is_some_and(|c| check(&c.captain, &data));
+            if ok {
+                info!("scénario : vérifié — {what}");
+                next(world);
+            } else {
+                let sheet = world
+                    .get_resource::<crate::career::Career>()
+                    .map(|c| format!("{:?}", c.captain))
+                    .unwrap_or_default();
+                fail(
+                    world,
+                    format!("échec de la vérification « {what} » : {sheet}"),
+                );
+            }
+        }
+        Step::Shot(name) => {
+            if !issued {
+                let path = format!("target/shots/{name}.png");
+                world
+                    .spawn(Screenshot::primary_window())
+                    .observe(save_to_disk(path));
+                world.resource_mut::<Scenario>().issued = Some(None);
+            } else if world.resource::<Scenario>().step_time > 1.0 {
+                next(world);
+            }
+        }
+        _ => next(world),
+    }
 }

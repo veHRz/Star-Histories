@@ -66,5 +66,7 @@ step "scénario port_loop" \
 # Critère de M3 : Hexis → Cygnara par Portail, retour par l'hyperespace, durées vérifiées.
 step "scénario voyage" \
     run_game "ERROR|panicked|sc.{1,3}nario voyage : sys_|sc.{1,3}nario .*termin" SH_START=global:hexis SH_SCENARIO=voyage
+step "scénario contract_loop" \
+    run_game "ERROR|panicked|v.{1,3}rifi|sc.{1,3}nario .*termin" SH_START=global:hexis SH_SCENARIO=contract_loop
 
 echo "${green}Tout est vert.${reset}"

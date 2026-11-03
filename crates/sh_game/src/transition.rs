@@ -192,6 +192,10 @@ pub fn request_dock(world: &mut World) {
             let Some(ship) = world.get::<SpacePosition>(sector).map(|p| p.0) else {
                 return;
             };
+            // Livrer un contrat ou accrocher une épave passe avant l'amarrage.
+            if crate::career::deliver_or_tow(world, ship) {
+                return;
+            }
             let mut beacons = world.query::<(&DockBeacon, &SpacePosition)>();
             let nearest = beacons
                 .iter(world)

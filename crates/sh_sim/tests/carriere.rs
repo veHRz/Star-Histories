@@ -287,3 +287,28 @@ fn livrer_remplit_les_stocks_et_fait_baisser_le_prix() {
     });
     assert!(sim.price(&cygnara(), "food").expect("prix") > before);
 }
+
+#[test]
+fn le_guichetier_se_souvient_et_ferme_sa_porte_au_traitre() {
+    let data = donnees();
+    let sim = SimWorld::from_data(&data, Some(1));
+    let today = sim.date();
+    let office = data
+        .dialogues
+        .iter()
+        .find(|d| d.id == "hexis_contract_office")
+        .expect("dialogue");
+    let mut cap = Captain::from_start(&data, today);
+    assert_eq!(cap.dialogue_entry(&data, office, today), Some("first"));
+    cap.remember(&office.npc, "met");
+    assert_eq!(cap.dialogue_entry(&data, office, today), Some("again"));
+    let ct = contract_offers(&data, &sim, &hexis(), today)
+        .into_iter()
+        .next()
+        .expect("offre");
+    let id = ct.id.clone();
+    cap.accept(&data, ct).expect("accepté");
+    cap.betray(&data, &id, Credits::units(1000), today)
+        .expect("trahi");
+    assert_eq!(cap.dialogue_entry(&data, office, today), Some("closed"));
+}

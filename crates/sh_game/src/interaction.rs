@@ -18,6 +18,7 @@ use crate::sector::gltf::{Interactable, Socket};
 use crate::sector::{ActiveSector, Docked, Layer};
 use crate::state::ControlMode;
 use crate::ui::hud::{Notice, Prompt};
+use crate::ui::terminal::{OpenTerminal, Screen};
 
 pub struct InteractionPlugin;
 
@@ -265,13 +266,16 @@ fn perform(
     parents: Query<&ChildOf>,
     names: Query<&Name>,
     mut player: Single<(&GlobalTransform, &mut PlayerController), With<Player>>,
-    (data, living, location): (
+    (data, living, location, active, docked, mut terminals): (
         Res<crate::data::Data>,
         Option<(
             Res<crate::living::LivingWorld>,
             Res<crate::living::PlayerKnowledge>,
         )>,
         Option<Res<crate::voyage::Location>>,
+        Option<Res<ActiveSector>>,
+        Option<Res<Docked>>,
+        MessageWriter<OpenTerminal>,
     ),
 ) {
     let living = living.as_ref().map(|(w, k)| (&**w, &**k));
@@ -295,16 +299,33 @@ fn perform(
             }
         }
         Interactable::Console { label } => {
-            // Les communications donnent les nouvelles ; le terminal du marché, les prix du
-            // monde vivant ; les autres consoles, leur message.
+            // Une console qui ouvre un dialogue (bureau des contrats, taverne) ou le marché
+            // ouvre le terminal.
+            // À quai, le secteur chargé assemble le vaisseau et le quartier : le quartier compte.
+            let sector = docked
+                .as_ref()
+                .map(|d| d.district.as_str())
+                .or(active.as_ref().map(|a| a.sector.id.as_str()));
+            let dialogue = data
+                .dialogues
+                .iter()
+                .find(|d| &d.console == label && Some(d.sector.as_str()) == sector);
+            if let Some(d) = dialogue {
+                terminals.write(OpenTerminal(Screen::Dialogue {
+                    id: d.id.clone(),
+                    node: String::new(),
+                }));
+                return;
+            }
+            if label == "market" && location.is_some() {
+                terminals.write(OpenTerminal(Screen::Market));
+                return;
+            }
+            // Les communications donnent les nouvelles ; les autres consoles, leur message.
             let text = match (label.as_str(), &living) {
                 ("comms", Some((_, knowledge))) => {
                     crate::living::latest_news(&texts, &data, knowledge, 3)
                 }
-                ("market", Some((world, _))) => match location.as_ref() {
-                    Some(l) => crate::living::market_board(&texts, &data, world, &l.system),
-                    None => texts.get("console.market.message"),
-                },
                 _ => texts.get(&format!("console.{label}.message")),
             };
             notices.write(Notice(text));

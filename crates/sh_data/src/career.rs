@@ -62,6 +62,11 @@ pub struct ContractRules {
     pub rep_failure: i32,
     /// Nombre maximal d'offres affichées par bureau.
     pub offers: usize,
+    /// Livraison en orbite : portée autour d'un hub de Portails ou de chantiers (m).
+    pub delivery_range: f64,
+    /// Remorquage : portée pour accrocher l'épave (m), et sa distance aux chantiers (m).
+    pub tow_range: f64,
+    pub wreck_distance: f64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

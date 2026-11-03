@@ -1,0 +1,92 @@
+// Le bureau des contrats d'Hexa-Corp au spatioport d'Hexis : PROPOSITION P25.
+// Canon (§4.4) : la Logistique émet les contrats CT, CR, CRS ; la Banque (division Finance)
+// tient l'hypothèque (CH, saisie automatique) ; le Renseignement et la Flotte Beta traquent
+// les mauvais payeurs. Le guichetier est anonyme ; ses répliques sont proposées.
+(
+    id: "hexis_contract_office",
+    status: Proposition("P25"),
+    console: "contracts",
+    sector: "hexis_spaceport",
+    npc: "hexis_clerk",
+    name_key: "dlg.office.name",
+    faction: "hc_logistique",
+    entries: [
+        // Un traître n'est plus servi, quoi qu'il dise.
+        (when: [Expelled("hexa_corp")], node: "closed"),
+        (when: [NotKnows("met")], node: "first"),
+        (when: [Trait("word_kept")], node: "trusted"),
+        (node: "again"),
+    ],
+    nodes: {
+        "first": (
+            text: "dlg.office.first",
+            effects: [Remember("met")],
+            choices: [
+                (text: "dlg.office.ask_work", next: "work"),
+                (text: "dlg.office.ask_bank", when: [HasDebt], next: "bank"),
+                (text: "dlg.office.bye"),
+            ],
+        ),
+        "again": (
+            text: "dlg.office.again",
+            choices: [
+                (text: "dlg.office.ask_work", next: "work"),
+                (text: "dlg.office.ask_bank", when: [HasDebt], next: "bank"),
+                (text: "dlg.office.bye"),
+            ],
+        ),
+        "trusted": (
+            text: "dlg.office.trusted",
+            choices: [
+                (text: "dlg.office.ask_work", next: "work"),
+                (text: "dlg.office.ask_bank", when: [HasDebt], next: "bank"),
+                (text: "dlg.office.bye"),
+            ],
+        ),
+        "work": (
+            text: "dlg.office.work",
+            choices: [
+                (text: "dlg.office.show_contracts", effects: [Open(Contracts)]),
+                (text: "dlg.office.ask_rules", next: "rules"),
+                (text: "dlg.office.back", next: "again"),
+            ],
+        ),
+        "rules": (
+            text: "dlg.office.rules",
+            effects: [Remember("knows_rules")],
+            choices: [
+                (text: "dlg.office.show_contracts", effects: [Open(Contracts)]),
+                (text: "dlg.office.back", next: "again"),
+            ],
+        ),
+        "bank": (
+            text: "dlg.office.bank",
+            choices: [
+                (text: "dlg.office.pay", when: [HasDebt], effects: [PayInstallment], next: "paid"),
+                (text: "dlg.office.back", next: "again"),
+            ],
+        ),
+        "paid": (
+            text: "dlg.office.paid",
+            choices: [
+                (text: "dlg.office.back", next: "again"),
+                (text: "dlg.office.bye"),
+            ],
+        ),
+        "closed": (
+            text: "dlg.office.closed",
+            choices: [
+                (text: "dlg.office.ask_bank", when: [HasDebt], next: "bank_closed"),
+                (text: "dlg.office.bye"),
+            ],
+        ),
+        // La Banque, elle, encaisse toujours.
+        "bank_closed": (
+            text: "dlg.office.bank_closed",
+            choices: [
+                (text: "dlg.office.pay", when: [HasDebt], effects: [PayInstallment], next: "closed"),
+                (text: "dlg.office.bye"),
+            ],
+        ),
+    },
+)

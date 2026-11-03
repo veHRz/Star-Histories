@@ -7,6 +7,7 @@
 use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResolution};
 
+pub mod career;
 pub mod clock;
 pub mod data;
 pub mod dev;
@@ -63,6 +64,7 @@ impl Plugin for StarHistoriesPlugin {
             transition::TransitionPlugin,
             voyage::VoyagePlugin,
             living::LivingWorldPlugin,
+            career::CareerPlugin,
         ));
         #[cfg(feature = "dev")]
         app.add_plugins(dev_tools::DevToolsPlugin);

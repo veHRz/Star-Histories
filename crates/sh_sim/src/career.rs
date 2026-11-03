@@ -11,6 +11,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use sh_core::{Credits, Id, StellarDate, Wuro};
+use sh_data::dialogue::{Condition, Dialogue};
 use sh_data::{CareerRules, Faction, GameData, Place, Ranks};
 
 use crate::SimWorld;
@@ -309,7 +310,8 @@ impl Captain {
 
     /// Cargaison totale en soute (libre et sous contrat).
     pub fn cargo_load(&self) -> f64 {
-        self.cargo.values().sum::<f64>()
+        // `+ 0.0` : la somme d'un itérateur vide de f64 vaut −0, affiché « -0 ».
+        0.0 + self.cargo.values().sum::<f64>()
             + self
                 .contracts
                 .iter()
@@ -453,14 +455,15 @@ impl Captain {
                 id: NOTORIOUS_TRAITOR.to_owned(),
             });
         }
-        self.change_reputation(data, &issuer, rules.betrayal.reputation, &mut out);
-        // La trahison ferme l'organisation, quelle que soit la réputation qui reste.
+        // La trahison ferme l'organisation, quelle que soit la réputation qui reste (avant la
+        // perte de réputation, pour ne pas annoncer aussi un simple renvoi).
         if let Some(owner) = ladder_owner(&data.ranks, data, &issuer) {
             self.ranks.remove(&owner);
             if self.expelled.insert(owner.clone()) {
                 out.push(Outcome::Expelled { faction: owner });
             }
         }
+        self.change_reputation(data, &issuer, rules.betrayal.reputation, &mut out);
         self.remember("hexa_corp", "betrayed");
         Ok(out)
     }
@@ -624,6 +627,54 @@ impl Captain {
 
     pub fn knows(&self, npc: &str, fact: &str) -> bool {
         self.memory.get(npc).is_some_and(|m| m.contains(fact))
+    }
+
+    /// Une condition de dialogue tient-elle ? (`npc` : l'interlocuteur, pour sa mémoire.)
+    pub fn satisfies(
+        &self,
+        data: &GameData,
+        npc: &str,
+        condition: &Condition,
+        today: StellarDate,
+    ) -> bool {
+        match condition {
+            Condition::Knows(fact) => self.knows(npc, fact),
+            Condition::NotKnows(fact) => !self.knows(npc, fact),
+            Condition::Trait(t) => self.traits.contains(t),
+            Condition::NoTrait(t) => !self.traits.contains(t),
+            Condition::ReputationAtLeast(f, min) => self.reputation(f) >= *min,
+            Condition::ReputationBelow(f, max) => self.reputation(f) < *max,
+            Condition::Expelled(f) => self.refused_by(data, f),
+            Condition::NotExpelled(f) => !self.refused_by(data, f),
+            Condition::HasDebt => self.loan.is_some(),
+            Condition::InstallmentDue => self.loan.as_ref().is_some_and(|l| today >= l.next_due),
+        }
+    }
+
+    pub fn satisfies_all(
+        &self,
+        data: &GameData,
+        npc: &str,
+        conditions: &[Condition],
+        today: StellarDate,
+    ) -> bool {
+        conditions
+            .iter()
+            .all(|c| self.satisfies(data, npc, c, today))
+    }
+
+    /// Le nœud par lequel l'interlocuteur ouvre la conversation.
+    pub fn dialogue_entry<'a>(
+        &self,
+        data: &GameData,
+        dialogue: &'a Dialogue,
+        today: StellarDate,
+    ) -> Option<&'a str> {
+        dialogue
+            .entries
+            .iter()
+            .find(|e| self.satisfies_all(data, &dialogue.npc, &e.when, today))
+            .map(|e| e.node.as_str())
     }
 }
 

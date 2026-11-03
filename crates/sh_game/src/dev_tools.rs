@@ -19,7 +19,9 @@ pub struct DevToolsPlugin;
 
 impl Plugin for DevToolsPlugin {
     fn build(&self, app: &mut App) {
-        let capturing = std::env::var_os("SH_SCREENSHOT").is_some();
+        // Capture ou scénario (qui prend ses propres captures) : images sans compteur.
+        let capturing = std::env::var_os("SH_SCREENSHOT").is_some()
+            || std::env::var_os("SH_SCENARIO").is_some();
         let show_fps = std::env::var("SH_SHOW_FPS").is_ok_and(|v| v == "1") || !capturing;
         app.add_plugins((
             EguiPlugin::default(),

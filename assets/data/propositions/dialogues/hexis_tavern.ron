@@ -1,0 +1,45 @@
+// Le tavernier du spatioport d'Hexis : PROPOSITION P25. Il donne les nouvelles publiques et
+// se souvient des habitués ; il ne sait aucun secret.
+(
+    id: "hexis_tavern",
+    status: Proposition("P25"),
+    console: "bar",
+    sector: "hexis_spaceport",
+    npc: "hexis_barkeep",
+    name_key: "dlg.tavern.name",
+    entries: [
+        (when: [Trait("notorious_traitor")], node: "traitor"),
+        (when: [NotKnows("met")], node: "first"),
+        (node: "again"),
+    ],
+    nodes: {
+        "first": (
+            text: "dlg.tavern.first",
+            effects: [Remember("met")],
+            choices: [
+                (text: "dlg.tavern.ask_news", effects: [News], next: "news"),
+                (text: "dlg.tavern.bye"),
+            ],
+        ),
+        "again": (
+            text: "dlg.tavern.again",
+            choices: [
+                (text: "dlg.tavern.ask_news", effects: [News], next: "news"),
+                (text: "dlg.tavern.bye"),
+            ],
+        ),
+        "traitor": (
+            text: "dlg.tavern.traitor",
+            choices: [
+                (text: "dlg.tavern.ask_news", effects: [News], next: "news"),
+                (text: "dlg.tavern.bye"),
+            ],
+        ),
+        "news": (
+            text: "dlg.tavern.news",
+            choices: [
+                (text: "dlg.tavern.bye"),
+            ],
+        ),
+    },
+)

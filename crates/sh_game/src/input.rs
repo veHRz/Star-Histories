@@ -130,6 +130,16 @@ pub struct ToggleFlightAssist;
 #[action_output(bool)]
 pub struct LeaveSeat;
 
+// --- Fiche et journal (à pied et aux commandes) -------------------------------------------
+
+#[derive(InputAction)]
+#[action_output(bool)]
+pub struct OpenSheet;
+
+#[derive(InputAction)]
+#[action_output(bool)]
+pub struct OpenJournal;
+
 // --- Carte ---------------------------------------------------------------------------------
 
 /// Panoramique : x = est, y = nord.
@@ -195,6 +205,12 @@ fn spawn_contexts(mut commands: Commands) {
             Action::<ToggleMap>::new()
             Bindings [ Binding(KeyCode::KeyM) -- Binding(GamepadButton::Select) ]
             --
+            Action::<OpenSheet>::new()
+            Bindings [ Binding(KeyCode::KeyC) ]
+            --
+            Action::<OpenJournal>::new()
+            Bindings [ Binding(KeyCode::KeyJ) ]
+            --
             Action::<Pause>::new()
             Bindings [ Binding(KeyCode::Escape) -- Binding(GamepadButton::Start) ]
         ]
@@ -238,6 +254,12 @@ fn spawn_contexts(mut commands: Commands) {
             --
             Action::<ToggleMap>::new()
             Bindings [ Binding(KeyCode::KeyM) ]
+            --
+            Action::<OpenSheet>::new()
+            Bindings [ Binding(KeyCode::KeyC) ]
+            --
+            Action::<OpenJournal>::new()
+            Bindings [ Binding(KeyCode::KeyJ) ]
             --
             Action::<Pause>::new()
             Bindings [ Binding(KeyCode::Escape) -- Binding(GamepadButton::Start) ]

@@ -17,6 +17,7 @@ use bevy::world_serialization::WorldAssetRoot;
 use sh_core::{SimRng, SpacePos};
 use sh_data::{Galaxy, Place, PlacedKind, StructureKind, system_layout};
 
+use crate::career::CargoPoint;
 use crate::data::{Data, Texts};
 use crate::graphics::WorldCamera;
 use crate::sector::{ActiveSector, EnterSector};
@@ -260,6 +261,7 @@ fn spawn_global(
             .spawn((
                 Name::new(name.clone()),
                 SCOPE,
+                CargoPoint(st.kind),
                 SpacePosition(pos),
                 SpaceRotation(facing(facing_dir)),
                 WorldAssetRoot(

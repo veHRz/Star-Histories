@@ -10,6 +10,7 @@ use crate::data::assets_dir;
 pub mod flight_hud;
 pub mod hud;
 pub mod menu;
+pub mod terminal;
 pub mod theme;
 
 pub struct UiPlugin;
@@ -20,6 +21,7 @@ impl Plugin for UiPlugin {
             menu::MenuPlugin,
             hud::HudPlugin,
             flight_hud::FlightHudPlugin,
+            terminal::TerminalPlugin,
         ))
         .add_systems(Startup, (setup_fonts, spawn_ui_camera));
     }

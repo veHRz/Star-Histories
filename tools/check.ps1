@@ -95,4 +95,15 @@ Step "scénario voyage" {
     $global:LASTEXITCODE = $code
 }
 
+# Critère de M5 : contrat Hexis → Cygnara livré et payé, échéance, trahison et ses conséquences.
+Step "scénario contract_loop" {
+    $env:SH_START = "global:hexis"
+    $env:SH_SCENARIO = "contract_loop"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_START, Env:SH_SCENARIO
+    $log | Select-String -Pattern "ERROR|panicked|v.{1,3}rifi|sc.{1,3}nario .*termin" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
 Write-Host "Tout est vert." -ForegroundColor Green
