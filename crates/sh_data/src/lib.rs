@@ -1,0 +1,124 @@
+//! Données de Star Histories : schémas, chargement RON et validation.
+//!
+//! Sans Bevy. Le jeu (`sh_game`), la simulation (`sh_sim`) et les outils (`sh_import`) partagent
+//! ces schémas. Arborescence lue sous `assets/data/` :
+//!
+//! - `canon/` : données transcrites du canon, chaque entrée cite sa section (`source: "§3.3"`) ;
+//! - `propositions/` : données inventées (`status: Proposition("P12")`) ;
+//! - `gameplay/` : réglages et contenu générique ;
+//! - `lang/` : textes visibles du joueur.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use ron::extensions::Extensions;
+use serde::de::DeserializeOwned;
+use thiserror::Error;
+
+pub mod common;
+pub mod currencies;
+pub mod factions;
+pub mod galaxy;
+pub mod lang;
+pub mod settings;
+pub mod ships;
+pub mod validate;
+
+pub use common::{Location, Place, Population, Status};
+pub use currencies::{CurrenciesFile, Currency};
+pub use factions::{Faction, FactionKind, FactionsFile};
+pub use galaxy::{
+    Body, BodyKind, Fleet, Galaxy, MapFrame, OrbitOrder, Phenomenon, PortalHub, StarSystem,
+    Station, Zone,
+};
+pub use lang::Lang;
+pub use settings::{AntiAliasing, ClockSettings, GraphicsPreset, GraphicsPresets, PresetLevel};
+pub use ships::{Formation, FormationsFile, ShipClass, ShipClassesFile};
+pub use validate::{Issue, ValidationReport};
+
+/// Chemins relatifs des fichiers, sous le dossier de données.
+pub mod paths {
+    pub const GALAXY: &str = "canon/galaxy.ron";
+    pub const FACTIONS: &str = "canon/factions.ron";
+    pub const SHIP_CLASSES: &str = "canon/ship_classes.ron";
+    pub const FORMATIONS: &str = "canon/formations.ron";
+    pub const CURRENCIES: &str = "canon/currencies.ron";
+    pub const GRAPHICS: &str = "gameplay/graphics.ron";
+    pub const CLOCK: &str = "gameplay/clock.ron";
+    pub const LANG_EN: &str = "lang/en.ron";
+}
+
+/// Toutes les données chargées au démarrage du jeu.
+#[derive(Clone, Debug)]
+pub struct GameData {
+    pub galaxy: Galaxy,
+    pub factions: FactionsFile,
+    pub ship_classes: ShipClassesFile,
+    pub formations: FormationsFile,
+    pub currencies: CurrenciesFile,
+    pub graphics: GraphicsPresets,
+    pub clock: ClockSettings,
+    pub lang: Lang,
+}
+
+#[derive(Debug, Error)]
+pub enum DataError {
+    #[error("lecture de {path} impossible : {source}")]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("{path} : {source}")]
+    Parse {
+        path: PathBuf,
+        #[source]
+        source: Box<ron::error::SpannedError>,
+    },
+}
+
+/// Options RON communes : `Some(x)` peut s'écrire `x` dans les fichiers écrits à la main.
+pub fn ron_options() -> ron::Options {
+    ron::Options::default().with_default_extension(Extensions::IMPLICIT_SOME)
+}
+
+/// Lit et désérialise un fichier RON.
+pub fn read_ron<T: DeserializeOwned>(path: &Path) -> Result<T, DataError> {
+    let text = fs::read_to_string(path).map_err(|source| DataError::Io {
+        path: path.to_owned(),
+        source,
+    })?;
+    ron_options()
+        .from_str(&text)
+        .map_err(|source| DataError::Parse {
+            path: path.to_owned(),
+            source: Box::new(source),
+        })
+}
+
+impl GameData {
+    /// Charge toutes les données depuis `data_dir` (le dossier `assets/data`).
+    /// La validation est une étape séparée : [`GameData::validate`].
+    pub fn load(data_dir: &Path) -> Result<Self, DataError> {
+        let file = |rel: &str| data_dir.join(rel);
+        Ok(Self {
+            galaxy: read_ron(&file(paths::GALAXY))?,
+            factions: read_ron(&file(paths::FACTIONS))?,
+            ship_classes: read_ron(&file(paths::SHIP_CLASSES))?,
+            formations: read_ron(&file(paths::FORMATIONS))?,
+            currencies: read_ron(&file(paths::CURRENCIES))?,
+            graphics: read_ron(&file(paths::GRAPHICS))?,
+            clock: read_ron(&file(paths::CLOCK))?,
+            lang: read_ron(&file(paths::LANG_EN))?,
+        })
+    }
+
+    /// Vérifie la cohérence de l'ensemble (identifiants, références, cases, sources, secrets).
+    pub fn validate(&self) -> Result<(), ValidationReport> {
+        validate::validate(self)
+    }
+
+    pub fn faction(&self, id: &sh_core::Id<Faction>) -> Option<&Faction> {
+        self.factions.factions.iter().find(|f| &f.id == id)
+    }
+}

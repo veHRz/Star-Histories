@@ -1,0 +1,4 @@
+// Horloge du monde. ×30 hors voyages : décision de l'auteur (P4, docs/QUESTIONS.md Q2).
+(
+    time_scale: 30.0,
+)

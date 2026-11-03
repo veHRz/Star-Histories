@@ -1,0 +1,19 @@
+[package]
+name = "sh_core"
+description = "Types purs partagés de Star Histories (dates, grille, monnaies, identifiants, hasard déterministe). Sans Bevy."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+
+[dev-dependencies]
+ron.workspace = true

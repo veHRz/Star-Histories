@@ -1,0 +1,37 @@
+// Préréglages graphiques (AGENTS.md §10). « Moyen » est la cible de la machine de référence :
+// Intel UHD 770, 1080p, 60 i/s. Réglages techniques, pas des faits d'univers.
+(
+    low: (
+        render_scale: 0.75,
+        directional_shadows: true,
+        shadow_map_size: 1024,
+        shadow_cascades: 1,
+        shadow_max_distance: 30.0,
+        max_shadowed_point_lights: 0,
+        bloom: false,
+        anti_aliasing: Fxaa,
+        detail_distance: 60.0,
+    ),
+    medium: (
+        render_scale: 1.0,
+        directional_shadows: true,
+        shadow_map_size: 2048,
+        shadow_cascades: 2,
+        shadow_max_distance: 60.0,
+        max_shadowed_point_lights: 2,
+        bloom: true,
+        anti_aliasing: Fxaa,
+        detail_distance: 120.0,
+    ),
+    high: (
+        render_scale: 1.0,
+        directional_shadows: true,
+        shadow_map_size: 4096,
+        shadow_cascades: 4,
+        shadow_max_distance: 150.0,
+        max_shadowed_point_lights: 4,
+        bloom: true,
+        anti_aliasing: Smaa,
+        detail_distance: 250.0,
+    ),
+)

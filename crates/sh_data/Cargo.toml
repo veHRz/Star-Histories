@@ -1,0 +1,16 @@
+[package]
+name = "sh_data"
+description = "Schémas, chargement et validation des données de Star Histories (RON). Sans Bevy."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+sh_core.workspace = true
+serde.workspace = true
+ron.workspace = true
+thiserror.workspace = true

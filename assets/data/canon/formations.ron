@@ -1,0 +1,35 @@
+// Formations de flotte — transcription manuelle de l'export (§2.5).
+// L'exemple canon de l'escadrille (« l'EESS ») est omis : l'EESS est un secret d'univers (§10, n° 3).
+(
+    formations: [
+        (
+            id: "escadrille",
+            name: "Escadrille",
+            ships: (min: 2, max: 8),
+            composition_note: "Petite formation spécialisée.",
+            source: "§2.5",
+        ),
+        (
+            id: "flottille",
+            name: "Flottille",
+            ships: (min: 5, max: 20),
+            composition_note: "Corvettes et frégates, éventuellement un croiseur de tête.",
+            source: "§2.5",
+        ),
+        (
+            id: "escadre",
+            name: "Escadre",
+            ships: (min: 20, max: 50),
+            composition_note: "Frégates et croiseurs, transports militaires intégrés.",
+            source: "§2.5",
+        ),
+        (
+            id: "flotte",
+            name: "Flotte",
+            ships: (min: 50),
+            composition_note: "Toutes classes, cuirassé ou porte-vaisseaux au cœur, chaîne logistique complète.",
+            source: "§2.5",
+        ),
+    ],
+    counting_note: "Chasseurs et bombardiers n'entrent pas dans le décompte : ils sont rattachés aux porteurs et aux bases.",
+)

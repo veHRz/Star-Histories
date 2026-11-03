@@ -1,0 +1,37 @@
+// Monnaies — transcription manuelle de l'export (§2.8, glossaire §13).
+// Aucune valeur ni aucun taux ici : le canon n'en fixe pas (vide connu §11.1).
+(
+    currencies: [
+        (
+            id: "ecu",
+            name: "écu",
+            issuer: "nations_unies",
+            since: "600bt",
+            until: "110at",
+            in_circulation: false,
+            status_note: "Disparu (numismatique). Monnaie des Nations Unies de 600bt à 0at ; mort définitive après la Fronde de l'Écu (110at).",
+            source: "§2.8",
+        ),
+        (
+            id: "credit",
+            name: "crédit",
+            issuer: "empire",
+            since: "0at",
+            in_circulation: true,
+            status_note: "Ex-crédit impérial, créé à la fondation de l'Empire. Monnaie universelle de fait : UGL, Bordure, et encore massivement dans l'Empire, où il reste la monnaie du quotidien.",
+            source: "§2.8",
+        ),
+        (
+            id: "wuro",
+            name: "Wuro",
+            issuer: "empire",
+            // Le canon dit « ≈ 400at », depuis la Renaissance.
+            since: "400at",
+            in_circulation: true,
+            imposed_in: ["empire"],
+            banned_in: ["ugl"],
+            status_note: "Monnaie d'État de l'Empire ressuscité (armée, administration, fournisseurs). Le refuser dans l'Empire est un délit, sévère pour les gradés ; payer en Wuro marque comme impérial. Change officieux : le « taux d'Hexis ».",
+            source: "§2.8",
+        ),
+    ],
+)

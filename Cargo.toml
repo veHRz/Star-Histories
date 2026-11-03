@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/*"]
+members = ["crates/*", "tools/sh_import"]
 resolver = "3"
 
 [workspace.package]
@@ -9,8 +9,30 @@ rust-version = "1.97.1"
 publish = false
 
 [workspace.dependencies]
+# Moteur et écosystème Bevy (compatibilité 0.20 vérifiée, AGENTS.md §5.3).
 bevy = "0.20.1"
+bevy_enhanced_input = "0.27"
+bevy-inspector-egui = "0.38"
+# Crates pures.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ron = "0.12"
+thiserror = "2"
+rand = "0.10"
+rand_chacha = "0.10"
+# Crates du projet.
+sh_core = { path = "crates/sh_core" }
+sh_data = { path = "crates/sh_data" }
+sh_sim = { path = "crates/sh_sim" }
 sh_game = { path = "crates/sh_game" }
+
+# Les systèmes Bevy prennent naturellement beaucoup de paramètres et des types de requête longs.
+[workspace.lints.clippy]
+too_many_arguments = "allow"
+type_complexity = "allow"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
 
 [package]
 name = "star_histories"
@@ -19,14 +41,18 @@ edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 bevy.workspace = true
 sh_game.workspace = true
 
 [features]
-# Développement uniquement : liaison dynamique (recompilations rapides) + outils de debug Bevy.
+# Développement uniquement : liaison dynamique (recompilations rapides) + outils de debug Bevy
+# et du jeu (inspecteur, caméra libre, affichage des performances).
 # Lancer avec `cargo dev` (alias défini dans .cargo/config.toml). Jamais dans un build distribué.
-dev = ["bevy/dynamic_linking", "bevy/dev"]
+dev = ["bevy/dynamic_linking", "bevy/dev", "sh_game/dev"]
 
 # Le code du jeu reste rapide à compiler, les dépendances sont optimisées une fois pour toutes.
 [profile.dev]

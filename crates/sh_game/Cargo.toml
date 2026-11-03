@@ -1,9 +1,23 @@
 [package]
 name = "sh_game"
+description = "Plugins Bevy de Star Histories : états, vues, joueur, interface, outils de développement."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 bevy.workspace = true
+bevy_enhanced_input.workspace = true
+bevy-inspector-egui = { workspace = true, optional = true }
+sh_core.workspace = true
+sh_data.workspace = true
+sh_sim.workspace = true
+
+[features]
+# Outils de développement : inspecteur egui, caméra libre, affichage des performances.
+# Activée par `star_histories/dev` (alias `cargo dev`, `cargo lint`, `cargo t`).
+dev = ["dep:bevy-inspector-egui", "bevy/free_camera"]

@@ -1,0 +1,24 @@
+// Textes visibles du joueur, en anglais (décision de l'auteur, docs/QUESTIONS.md Q8).
+// Clés stables en snake_case pointé ; paramètres nommés entre accolades ({place}).
+// Les noms propres du canon ne se traduisent pas et ne figurent pas ici (ils viennent des données).
+(
+    code: "en",
+    strings: {
+        "app.title": "Star Histories",
+        "date.format": "Day {day}, {year}",
+        "loading.title": "Loading",
+        "menu.tagline": "Astréa, 425at",
+        "menu.new_game": "New Game",
+        "menu.continue": "Continue",
+        "menu.options": "Options",
+        "menu.options.empty": "Nothing to set yet.",
+        "menu.back": "Back",
+        "menu.quit": "Quit",
+        "view.galaxy.title": "Galaxy map (test view)",
+        "view.galaxy.hint": "WASD / arrows: pan   ·   Wheel, R/F: zoom   ·   Esc: main menu",
+        "view.global.title": "Global view (test): {place}",
+        "view.global.hint": "WASD, Space/Ctrl: thrust   ·   Mouse: steer   ·   Q/E: roll   ·   Esc: main menu",
+        "view.sector.title": "Sector view (test room)",
+        "view.sector.hint": "WASD: move   ·   Mouse: look   ·   Shift: run   ·   Esc: main menu",
+    },
+)
