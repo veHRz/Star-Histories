@@ -11,7 +11,7 @@
 - **Le jeu** : *Star Histories*, RPG solo **space opera** en 3D, **caméra à la première personne**. Le joueur vit dans la galaxie d'**Astréa** en **425at**, en pleine « Fausse Paix armée ». Il monte en grade, change de gameplay (à pied, pilote, capitaine, marchand, espion…), rejoint des groupes, s'allie, **trahit**. **Le monde évolue tout seul**, et le joueur pèse lourd sur ce qui s'y passe.
 - **L'auteur** (veHRz) écrit l'univers (le « canon »). **Toi, tu construis le jeu.** Tu ne réécris pas l'univers.
 - **La pile** : Rust **1.99.1**, **Bevy 0.20.1**, physique **avian3d 0.8**, modèles 3D faits dans **Blender 5.2.3 LTS** piloté par **MCP for Blender**.
-- **La machine de référence** est la machine de développement : i5-12500, 32 Go de RAM, **GPU intégré Intel UHD 770**. Le jeu doit y tenir **60 i/s en 1080p en qualité « Moyenne »** (30 i/s minimum en toutes circonstances). C'est une contrainte de conception, pas un détail de fin de projet.
+- **La machine de référence** est le poste de développement Windows (il y en a aussi un sous Linux, §3.1) : i5-12500, 32 Go de RAM, **GPU intégré Intel UHD 770**. Le jeu doit y tenir **60 i/s en 1080p en qualité « Moyenne »** (30 i/s minimum en toutes circonstances). C'est une contrainte de conception, pas un détail de fin de projet.
 - **Le plan** : `docs/ROADMAP.md`, jalons M0 → M7, à suivre dans l'ordre. La conception du jeu est dans `docs/GDD.md`.
 
 ---
@@ -23,7 +23,7 @@
 3. **Les secrets 🔒 ne sont jamais montrés au joueur** (dialogue, codex, UI, journal, infobulle, nouvelles) sans décision écrite de l'auteur. Ils **pilotent** la simulation (la Ligue épargne les convois impériaux, la Fédération arme en silence…) : le joueur peut observer les effets, jamais lire l'explication. Une donnée secrète porte `secret: true` et l'UI la filtre.
 4. **Les mystères non tranchés restent ouverts** (origine de l'Essaim : définitivement inconnue ; « moyens flous » de Sarkis ; cache des Golden Sword…). Le jeu ne les résout pas.
 5. **`_context/futur.md` n'est pas dans le plan.** N'implémente rien de ce fichier sans demande de l'auteur. Mais l'architecture ne doit jamais l'empêcher (débuts multiples, factions jouables, rôles variés).
-6. **Ne te fie pas à ta mémoire de Bevy.** Bevy 0.20 a changé beaucoup d'API depuis ce que tu as appris (voir §4). Avant d'utiliser une API, vérifie-la dans `.reference/bevy-0.20.1/` (exemples et sources) ou dans le code des crates sous `%USERPROFILE%\.cargo\registry\src\`. Pareil pour toute crate tierce.
+6. **Ne te fie pas à ta mémoire de Bevy.** Bevy 0.20 a changé beaucoup d'API depuis ce que tu as appris (voir §4). Avant d'utiliser une API, vérifie-la dans `.reference/bevy-0.20.1/` (exemples et sources) ou dans le code des crates sous `%USERPROFILE%\.cargo\registry\src\` (Linux : `~/.cargo/registry/src/`). Pareil pour toute crate tierce.
 7. **Toujours vert.** Avant chaque commit : `cargo fmt`, `cargo lint`, `cargo t` passent, et le jeu démarre sans panique (autopilote, §3.3).
 8. **Vérifie ce que tu vois.** Tout changement visible est contrôlé par une capture d'écran de l'autopilote que tu ouvres et regardes. « Ça compile » ne veut pas dire « ça marche ».
 9. **Données hors du code.** Lore, textes visibles du joueur, statistiques, listes canon : dans `assets/data/` (RON), jamais en dur dans le Rust.
@@ -58,6 +58,8 @@
 
 ### 3.1 Ce qui est installé (vérifié le 03/11/2026)
 
+**Deux postes alternent** sur `main` (procédure dans `docs/reprise-autre-pc.md`) : le poste **Windows** (machine de référence, détaillé ci-dessous) et un poste **Linux** (§3.1 bis). Un seul travaille à la fois : `git pull` en arrivant, tout commité et poussé en partant. Note le poste dans chaque entrée de `docs/JOURNAL.md`. Regarde sur quel système tu tournes avant de choisir une commande.
+
 | Outil | Version | Emplacement / remarque |
 |---|---|---|
 | Windows 11 Éducation | 26200 | Compte de domaine **non administrateur** : toute installation qui exige l'admin passe par l'auteur |
@@ -73,6 +75,20 @@
 
 - **Pas de Python système** (seulement l'alias du Microsoft Store, inutilisable). Pour un script Python : le Python de Blender (`blender --background --python script.py`) ou `uv run --python 3.11 script.py`.
 - **Shells** : PowerShell 5.1 (pas de `&&` : utilise `;` ou `if ($?) { }`) et Git Bash. Si `cargo` est introuvable dans un shell, ajoute `$env:USERPROFILE\.cargo\bin` au `PATH`.
+
+### 3.1 bis Le poste Linux
+
+| Outil | Version | Emplacement / remarque |
+|---|---|---|
+| CachyOS (Arch) | noyau 7.3, Wayland | i9-9900K, 32 Go, **Radeon RX 9070 XT** : bien plus puissant que l'UHD 770, ses mesures de performance **ne valent pas** pour la machine de référence (§10) |
+| Rust (rustup, paquet `rustup`) | 1.99.1, cible `x86_64-unknown-linux-gnu` | Épinglé par `rust-toolchain.toml` ; `rust-lld` y est déjà le linker par défaut |
+| Blender | 5.2.3 LTS (paquet `blender`) | `/usr/bin/blender` ; données dans `/usr/share/blender/5.2` |
+| Addon MCP for Blender | addon 1.8 | `~/.config/blender/5.2/scripts/addons/blender_mcp.py`, activé |
+| uv / uvx, Git LFS | paquets `uv`, `git-lfs` | LFS configuré **localement** au dépôt (`git lfs install --local`) |
+
+- **Installation et remise à niveau** : `tools/setup-linux.sh` (rejouable ; demande sudo seulement s'il manque des paquets).
+- **Shells** : fish pour l'auteur ; l'outil Bash de Claude Code est un shell POSIX. Le dépôt est cloné en SSH : si `git push` échoue (`Permission denied (publickey)`), la clé n'est pas chargée dans l'agent SSH, c'est à l'auteur de le faire (`ssh-add`).
+- Python : `python3` système présent, mais pour les scripts du dépôt utilise comme sous Windows le Python de Blender ou `uv run --python 3.11`.
 
 ### 3.2 Commandes
 
@@ -100,12 +116,18 @@ Le jeu lit des variables d'environnement (`crates/sh_game/src/dev.rs`) :
 | `SH_SHOW_FPS=1` | Garde l'affichage FPS pendant une capture (masqué par défaut pour des images propres ; feature `dev`) |
 | `SH_GPU_CLUSTERING=1` | Réactive le clustering GPU des lumières (cassé sur UHD 770, voir §4) |
 
-À la sortie, le jeu journalise toujours le **temps de frame moyen et maximal** et le nombre de frames au-dessus de 33 ms (hors chargement). `tools/check.ps1` lance un test de fumée de chaque point d'entrée.
+À la sortie, le jeu journalise toujours le **temps de frame moyen et maximal** et le nombre de frames au-dessus de 33 ms (hors chargement). `tools/check.ps1` (Windows) et `tools/check.sh` (Linux) lancent un test de fumée de chaque point d'entrée ; ces deux scripts font la même chose, modifie-les **ensemble**.
 
 Exemple (PowerShell) :
 
 ```powershell
 $env:SH_SCREENSHOT = "target/shots/m1-couloir.png"; cargo dev; Remove-Item Env:SH_SCREENSHOT
+```
+
+Exemple (Linux) :
+
+```bash
+SH_SCREENSHOT=target/shots/m1-couloir.png cargo dev
 ```
 
 Puis ouvre l'image avec ton outil de lecture de fichiers et **regarde-la**. Range les captures dans `target/shots/` (non versionné). Étends l'autopilote dès qu'un test manuel revient souvent (scénarios scriptés, entrées simulées, mesures de temps de frame).
@@ -164,7 +186,8 @@ tools/
   sh_import/               CLI : _context/*.json → assets/data/canon/*.ron (reproductible)
   blender/                 scripts bpy versionnés qui génèrent chaque asset (voir §9)
   fonts/                   conversion de la police Inter (fournie avec Blender) en TTF
-  check.ps1                vérification complète : fmt --check, lint, tests, import à jour, fumée de chaque SH_START
+  check.ps1 / check.sh     vérification complète (Windows / Linux) : fmt --check, lint, tests, import à jour, fumée de chaque SH_START
+  setup-linux.sh           installation d'un poste Linux (paquets, LFS, sources de Bevy, addon MCP)
 assets/
   data/canon/              données transcrites du canon (chaque entrée cite sa section source)
   data/propositions/       données inventées, status: Proposition
@@ -289,7 +312,7 @@ L'auteur a imaginé quatre vues pour répartir la charge. Le principe est conser
 ### 9.1 Fonctionnement du MCP
 
 - Le serveur MCP (`.mcp.json`, entrée `blender`) est lancé par Claude Code ; il parle à l'addon dans Blender sur `localhost:9876`. **Blender doit être ouvert avec son interface** (l'addon ne démarre pas son serveur en `--background`) ; il démarre seul à l'ouverture de Blender.
-- Lancer Blender : `Start-Process "$env:LOCALAPPDATA\Programs\Blender Foundation\Blender 5.2\blender.exe"`, puis vérifie avec l'outil MCP `get_addon_status`.
+- Lancer Blender : sous Windows `Start-Process "$env:LOCALAPPDATA\Programs\Blender Foundation\Blender 5.2\blender.exe"`, sous Linux `setsid blender >/dev/null 2>&1 &` ; puis vérifie avec l'outil MCP `get_addon_status`.
 - Outils : `execute_blender_code` (Python bpy dans le Blender ouvert), `look` (voir le résultat : viewport, caméra, multi-angles, rendu), `get_scene_info`, `search_assets` / `import_asset` (Poly Haven, Sketchfab, Poly Pizza), `generate_3d` (services payants).
 - **Sauvegarde le `.blend` avant tout script risqué.** Si le MCP n'est pas disponible dans ta session, tu peux exécuter tes scripts en batch : `blender --background --python tools/blender/<…>.py -- <args>` (pas de `look` dans ce cas : fais un rendu dans un PNG et ouvre-le).
 
@@ -327,6 +350,7 @@ L'auteur a imaginé quatre vues pour répartir la charge. Le principe est conser
 
 - Préréglages **Bas / Moyen / Haut** et échelle de rendu dès M0–M1 ; options de rendu coûteuses (raytracing Solari, géométrie virtuelle) : non.
 - Mesure en **release** (`cargo build --release`) avec `FrameTimeDiagnosticsPlugin` ; l'autopilote doit pouvoir journaliser le temps de frame moyen et le pire d'un scénario. Une régression de performance est un bug.
+- **Seules les mesures faites sur la machine de référence (poste Windows, UHD 770) comptent.** Sur le poste Linux, implémente et vérifie visuellement les optimisations, mais laisse les critères de performance ouverts et note dans `docs/JOURNAL.md` ce qui reste à mesurer sous Windows. Les chiffres du poste Linux peuvent servir à comparer deux versions entre elles, jamais à valider un budget.
 
 ---
 
@@ -360,7 +384,7 @@ Détails dans `docs/GDD.md`. Les piliers :
 ### 12.2 Git
 
 - Branche `main`. Commits **en français**, format `type(portée): résumé` (`feat`, `fix`, `refactor`, `perf`, `assets`, `data`, `docs`, `test`, `chore`), une tâche par commit.
-- **Push à la fin de chaque jalon** (et quand l'auteur le demande). Le dépôt est **public** : ne versionne jamais de clé d'API, d'identifiant ni de fichier personnel.
+- **Push à la fin de chaque jalon**, quand l'auteur le demande, **et avant que l'auteur change de poste** (§3.1) : en fin de session, ne laisse rien de non poussé sans le lui dire. Le dépôt est **public** : ne versionne jamais de clé d'API, d'identifiant ni de fichier personnel.
 - Binaires (`.blend`, `.glb`, textures, audio, polices) via **Git LFS** (`.gitattributes`) ; surveille le quota LFS du compte GitHub. Jamais de `target/`, de `.reference/`, de `*.blend1`.
 
 ### 12.3 Code
