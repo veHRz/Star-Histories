@@ -1,0 +1,23 @@
+# Build Rust
+/target/
+
+# Clone de référence de Bevy (lecture seule, régénérable)
+/.reference/
+
+# Sauvegardes automatiques de Blender
+*.blend1
+*.blend2
+*.blend@
+
+# Sauvegardes et réglages locaux du jeu
+/saves/
+/settings.local.ron
+
+# Réglages personnels de Claude Code
+/.claude/settings.local.json
+
+# Système
+Thumbs.db
+desktop.ini
+.DS_Store
+*.log

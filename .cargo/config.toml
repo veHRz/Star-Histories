@@ -1,0 +1,13 @@
+# Linker LLD fourni avec Rust : liaisons nettement plus rapides que link.exe (recommandation Bevy).
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld.exe"
+rustdocflags = ["-Clinker=rust-lld.exe"]
+
+[alias]
+# `cargo dev` : lance le jeu en mode développement (liaison dynamique + outils Bevy).
+dev = "run --features dev"
+# Toujours activer `star_histories/dev` : sans lui, Cargo recompile tout Bevy avec un autre jeu de features.
+# `cargo lint` : ce que tout changement doit passer avant un commit.
+lint = "clippy --workspace --all-targets --features star_histories/dev -- -D warnings"
+# `cargo t` : tous les tests du workspace.
+t = "test --workspace --features star_histories/dev"

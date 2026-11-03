@@ -1,0 +1,40 @@
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+publish = false
+
+[workspace.dependencies]
+bevy = "0.20.1"
+sh_game = { path = "crates/sh_game" }
+
+[package]
+name = "star_histories"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+bevy.workspace = true
+sh_game.workspace = true
+
+[features]
+# Développement uniquement : liaison dynamique (recompilations rapides) + outils de debug Bevy.
+# Lancer avec `cargo dev` (alias défini dans .cargo/config.toml). Jamais dans un build distribué.
+dev = ["bevy/dynamic_linking", "bevy/dev"]
+
+# Le code du jeu reste rapide à compiler, les dépendances sont optimisées une fois pour toutes.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
