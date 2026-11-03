@@ -124,6 +124,7 @@ Le jeu lit des variables d'environnement (`crates/sh_game/src/dev.rs`) :
 | `SH_ROUTE=<système>`, `SH_HOVER=<système>` | Vue Galaxie : itinéraire posé depuis la position du vaisseau, survol simulé (captures du panneau et de l'infobulle) |
 | `SH_SCENARIO=voyage` | Avec `SH_START=global:hexis` : Hexis → Cygnara par Portail, retour par hyperespace, durées vérifiées (critère de M3) |
 | `SH_SCENARIO=port_loop` | Avec `SH_START=sector:hexis_spaceport` : quai → cockpit → départ → vol → amarrage → quai (critère de M2) |
+| `SH_SCENARIO=contract_loop` | Avec `SH_START=global:hexis` : contrat de transport Hexis → Cygnara, livraison, paiement, réputation, échéance de la Banque, trahison d'un second contrat et ses conséquences, captures `target/shots/m5-*.png` (critère de M5) |
 | `SH_SCENARIO=fly_ship` | Avec `SH_START=global:hexis` : vol aux commandes (assisté, croisière, lacet, découplé), puis marche du cockpit au couloir en plein vol |
 
 À la sortie, le jeu journalise toujours le **temps de frame moyen et maximal** et le nombre de frames au-dessus de 33 ms (hors chargement). `tools/check.ps1` (Windows) et `tools/check.sh` (Linux) lancent un test de fumée de chaque point d'entrée ; ces deux scripts font la même chose, modifie-les **ensemble**.
@@ -203,13 +204,13 @@ assets/
   data/canon/              données transcrites du canon (chaque entrée cite sa section source)
   data/propositions/       données inventées, status: Proposition
   data/gameplay/           réglages et contenu générique (équilibrage, préréglages graphiques, horloge…)
-  data/lang/               textes visibles du joueur, une langue par fichier (en.ron)
+  data/lang/               textes visibles du joueur, une langue par fichier (fr.ron, la langue du jeu ; en.ron, mêmes clés)
   models/ textures/ audio/ fonts/ shaders/ ui/
 art/                       sources .blend (LFS), même arborescence que assets/models
 docs/                      conception, feuille de route, registres
 ```
 
-État après M1 : tout ce qui précède existe (`tools/blender/`, `art/` et `assets/models/` depuis M1 ; lightmaps dans `assets/textures/lightmaps/`). Modules de `sh_game` : `state` (états), `loading`, `data`, `clock` (horloge du monde), `ui` (thème, menu, HUD, bandeau de pilotage), `input` (contextes), `views` (Galaxie : carte ; Globale : système à l'échelle, ciel, astres, cache procédural ; Sectorielle de test), `space` (origine flottante, référentiel du vaisseau), `sector` (secteurs, streaming, portes, glTF), `player` (à pied), `interaction`, `ship` (pilotage), `transition` (amarrage, départ, voyage), `voyage` (carte, itinéraires), `living` (pont avec `sh_sim` : nouvelles, marchés, connaissance du joueur), `graphics`, `dev` (autopilote, scénarios), `dev_tools` (feature `dev`). `sh_sim` : `world` (monde vivant), `events`, `travel`.
+État après M1 : tout ce qui précède existe (`tools/blender/`, `art/` et `assets/models/` depuis M1 ; lightmaps dans `assets/textures/lightmaps/`). Modules de `sh_game` : `state` (états), `loading`, `data`, `clock` (horloge du monde), `ui` (thème, menu, HUD, bandeau de pilotage), `input` (contextes), `views` (Galaxie : carte ; Globale : système à l'échelle, ciel, astres, cache procédural ; Sectorielle de test), `space` (origine flottante, référentiel du vaisseau), `sector` (secteurs, streaming, portes, glTF), `player` (à pied), `interaction`, `ship` (pilotage), `transition` (amarrage, départ, voyage), `voyage` (carte, itinéraires), `living` (pont avec `sh_sim` : nouvelles, marchés, connaissance du joueur), `career` (fiche du capitaine, échéances, livraison en orbite, épaves), `ui::terminal` (dialogues, contrats, marché, fiche, journal), `graphics`, `dev` (autopilote, scénarios), `dev_tools` (feature `dev`). `sh_sim` : `world` (monde vivant, `SimCommand`), `events`, `travel`, `career` (capitaine, contrats, réputations, grades, dette). `sh_data` : `dialogue` (dialogues en données).
 
 ### 5.2 Règles de dépendance
 
@@ -295,7 +296,7 @@ L'auteur a imaginé quatre vues pour répartir la charge. Le principe est conser
 - **« Rails souples » du canon** (`assets/data/canon/rails.ron`) : sans intervention du joueur, la simulation suit à peu près les trajectoires connues (la Flotte d'Attaque fédérale reste cachée et n'agit pas avant ≈ 430at, Le Berceau avance…). Le joueur peut les dévier ; la simulation seule, non.
 - **Interdits durs en v1** : l'Essaim ne se manifeste pas (aucun événement, aucune attaque) ; aucun secret n'est révélé publiquement ; aucun vaisseau capitale n'apparaît ; aucune désassimilation ne réussit.
 - **Connaissance du joueur** (`PlayerKnowledge`) : faits, positions de flottes, prix et entrées de codex **connus du joueur**. La carte galactique a un brouillard d'information. Les secrets n'entrent jamais dans cette base en v1.
-- **Temps** : horloge de jeu (date en `at`, jour de l'année). Année de 365 jours, affichage « Day N, 425at ». Rythme du temps dans les vues Locale, Sectorielle et Globale : **×30**, réglable dans les données (validé par l'auteur, P4) ; les voyages hyperspatiaux font passer des jours, simulés à vitesse accélérée.
+- **Temps** : horloge de jeu (date en `at`, jour de l'année). Année de 365 jours, affichage « Jour N, 425at ». Rythme du temps dans les vues Locale, Sectorielle et Globale : **×30**, réglable dans les données (validé par l'auteur, P4) ; les voyages hyperspatiaux font passer des jours, simulés à vitesse accélérée.
 - **Budget** : un pas journalier < 2 ms ; une année entière en headless < 1 s. Si c'est plus lourd, exécution sur `AsyncComputeTaskPool`.
 
 ---
@@ -306,7 +307,7 @@ L'auteur a imaginé quatre vues pour répartir la charge. Le principe est conser
 
 - Format **RON**, schémas dans `sh_data`, validation au chargement **et** dans un test (`cargo t` échoue si une donnée est incohérente).
 - **Identifiants** : ASCII en `snake_case`, stables (`concordia`, `vorrh_ii`, `nsu_liberte`). **Noms propres du canon** : exacts, en français, avec accents (ils ne se traduisent pas, voir `docs/QUESTIONS.md` Q11).
-- **Langue du jeu : l'anglais** (décision de l'auteur, Q8). Tout texte d'interface passe par une clé de `assets/data/lang/en.ron` ; jamais de chaîne visible en dur dans le Rust.
+- **Langue du jeu : le français** (décision de l'auteur, Q11, qui remplace Q8). Tout texte d'interface passe par une clé de `assets/data/lang/fr.ron` ; jamais de chaîne visible en dur dans le Rust. `en.ron` est tenu avec **les mêmes clés** (un test le vérifie) : toute nouvelle clé s'écrit dans les deux fichiers. Les nombres passent par `Lang::number` (espace fine des milliers, virgule décimale).
 - Chaque entrée canon porte `source: "§3.3"` (section de l'export) ; chaque entrée inventée porte `status: Proposition` et figure dans `docs/propositions.md` ; chaque fait secret porte `secret: true`.
 - Les textes visibles du joueur vivent dans les données (prêts pour une traduction future), jamais dans le code.
 
@@ -400,7 +401,7 @@ Détails dans `docs/GDD.md`. Les piliers :
 
 ### 12.3 Code
 
-- Identifiants Rust en **anglais** (conventions de l'écosystème) ; commentaires, docs, messages de commit et journaux en **français** ; **textes visibles du joueur en anglais**, dans les fichiers de langue (§8.1). Les noms propres du canon restent en français partout, y compris dans les données et l'interface.
+- Identifiants Rust en **anglais** (conventions de l'écosystème) ; commentaires, docs, messages de commit et journaux en **français** ; **textes visibles du joueur en français** (et leur traduction anglaise), dans les fichiers de langue (§8.1). Les noms propres du canon restent en français partout, y compris dans les données et l'interface.
 - Pas de `unwrap()` / `expect()` dans les systèmes de jeu (sauf invariant de démarrage documenté) : systèmes qui renvoient `Result`, erreurs typées (`thiserror`) dans les crates pures.
 - Pas de `unsafe`. Pas d'état global mutable hors `Resource`. Constantes d'équilibrage dans les données, pas dans le code.
 - Commente le **pourquoi**, pas le quoi. Doc `//!` en tête de chaque module de domaine.
