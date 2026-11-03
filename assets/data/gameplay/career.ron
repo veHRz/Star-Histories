@@ -1,0 +1,49 @@
+// Règles du cœur RPG : PROPOSITION P23 (docs/propositions.md). Le cadre est canon (§4.4 :
+// contrats CT, CR, CRS de la division Logistique ; la Banque de la division Finance, ses
+// saisies automatiques ; la Flotte Beta et les mauvais payeurs) ; les chiffres sont proposés.
+(
+    status: Proposition("P23"),
+    // GDD §3.2 : progression par l'usage, sans classes.
+    skills: ["shooting", "melee", "piloting", "navigation", "engineering", "medicine", "commerce", "negotiation", "intimidation", "stealth", "hacking", "command"],
+    xp_per_level: 100.0,
+    // GDD §5.1 : de −100 à +100.
+    reputation_tiers: [
+        (min: -100, key: "rep.sworn_enemy"),
+        (min: -60, key: "rep.hostile"),
+        (min: -20, key: "rep.wary"),
+        (min: -5, key: "rep.neutral"),
+        (min: 20, key: "rep.liked"),
+        (min: 50, key: "rep.ally"),
+        (min: 85, key: "rep.hero"),
+    ],
+    parent_share: 0.5,
+    // Le taux d'Hexis n'est pas chiffré par le canon (§11.1) : 1 Wuro = 2,5 crédits.
+    credits_per_wuro: 2.5,
+    cargo_capacity: 400.0,
+    market_spread: 0.05,
+    contracts: (
+        issuer: "hc_logistique",
+        value_share: 0.35,
+        per_day: 120,
+        resupply_factor: 1.8,
+        towing_reward: 2200,
+        deadline_factor: 3.0,
+        deadline_margin_days: 2.0,
+        rep_success: 6,
+        rep_failure: -10,
+        offers: 5,
+    ),
+    // Détourner une cargaison sous contrat : Hexa-Corp ne l'oublie pas.
+    betrayal: (
+        reputation: -55,
+        indemnity_factor: 2.0,
+    ),
+    bank: (
+        lender: "hc_finance",
+        installment: 2500,
+        every_days: 30,
+        late_penalty: 400,
+        seize_after_missed: 3,
+    ),
+    word_kept_after: 3,
+)

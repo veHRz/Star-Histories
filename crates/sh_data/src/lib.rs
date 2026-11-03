@@ -15,6 +15,7 @@ use ron::extensions::Extensions;
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 
+pub mod career;
 pub mod common;
 pub mod currencies;
 pub mod factions;
@@ -31,6 +32,7 @@ pub mod start;
 pub mod travel;
 pub mod validate;
 
+pub use career::{CareerRules, Ranks};
 pub use common::{Location, Place, Population, Status};
 pub use currencies::{CurrenciesFile, Currency};
 pub use factions::{Faction, FactionKind, FactionsFile};
@@ -68,6 +70,8 @@ pub mod paths {
     pub const FLIGHT: &str = "gameplay/flight.ron";
     pub const TRAVEL: &str = "gameplay/travel.ron";
     pub const SIM: &str = "gameplay/sim.ron";
+    pub const CAREER: &str = "gameplay/career.ron";
+    pub const RANKS: &str = "propositions/ranks.ron";
     pub const RAILS: &str = "canon/rails.ron";
     pub const PORTAL_LINKS: &str = "propositions/portal_links.ron";
     pub const LANG_EN: &str = "lang/en.ron";
@@ -93,6 +97,8 @@ pub struct GameData {
     pub flight: FlightSettings,
     pub travel: TravelSettings,
     pub sim: SimSettings,
+    pub career: CareerRules,
+    pub ranks: Ranks,
     pub rails: Rails,
     pub portal_links: PortalLinks,
     pub lang: Lang,
@@ -153,6 +159,8 @@ impl GameData {
             flight: read_ron(&file(paths::FLIGHT))?,
             travel: read_ron(&file(paths::TRAVEL))?,
             sim: read_ron(&file(paths::SIM))?,
+            career: read_ron(&file(paths::CAREER))?,
+            ranks: read_ron(&file(paths::RANKS))?,
             rails: read_ron(&file(paths::RAILS))?,
             portal_links: read_ron(&file(paths::PORTAL_LINKS))?,
             lang: read_ron(&file(paths::LANG_EN))?,

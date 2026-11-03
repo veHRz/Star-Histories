@@ -7,4 +7,11 @@
     ship: "player_ship",
     aboard_spawn: "cockpit",
     seat_role: "pilot",
+    // De quoi faire le plein, pas davantage ; le vaisseau est hypothéqué (P1, chiffres P23).
+    credits: 3000,
+    debt: 45000,
+    reputations: {
+        "hexa_corp": 0,
+        "hc_finance": -5,
+    },
 )

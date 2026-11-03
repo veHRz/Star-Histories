@@ -5953,6 +5953,7 @@ version = "0.1.0"
 dependencies = [
  "sh_core",
  "sh_data",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

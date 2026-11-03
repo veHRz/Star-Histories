@@ -38,6 +38,23 @@ pub struct SystemState {
     pub shortages: BTreeSet<String>,
 }
 
+/// Une action du joueur, transmise à la simulation.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SimCommand {
+    /// Marchandise livrée (contrat, vente au marché).
+    Deliver {
+        at: Id<Place>,
+        commodity: String,
+        amount: f64,
+    },
+    /// Marchandise retirée (achat au marché, cargaison d'un contrat chargée).
+    Take {
+        at: Id<Place>,
+        commodity: String,
+        amount: f64,
+    },
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Mission {
     Station,
@@ -325,6 +342,35 @@ impl SimWorld {
         let stock = sys.stock.get(commodity).copied().unwrap_or(0.0);
         let ratio = (daily * TARGET_DAYS / stock.max(1.0)).sqrt();
         Some(base * ratio.clamp(0.4, 4.0))
+    }
+
+    /// Applique une action du joueur (AGENTS.md §7.2) : ce qu'il livre ou achète change les
+    /// stocks, donc les prix et les pénuries des jours suivants.
+    pub fn apply(&mut self, command: &SimCommand) {
+        match command {
+            SimCommand::Deliver {
+                at,
+                commodity,
+                amount,
+            } => {
+                if let Some(sys) = self.systems.get_mut(at) {
+                    *sys.stock.entry(commodity.clone()).or_default() += amount.max(0.0);
+                }
+            }
+            SimCommand::Take {
+                at,
+                commodity,
+                amount,
+            } => {
+                if let Some(stock) = self
+                    .systems
+                    .get_mut(at)
+                    .and_then(|s| s.stock.get_mut(commodity))
+                {
+                    *stock = (*stock - amount.max(0.0)).max(0.0);
+                }
+            }
+        }
     }
 
     fn emit(&mut self, kind: EventKind, public: bool) {

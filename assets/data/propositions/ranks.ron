@@ -1,0 +1,37 @@
+// Échelles de grades : PROPOSITION P24. Le canon ne définit que les grades supérieurs
+// (Amiral, sous-amiral, contre-amiral, Grand Amiral, §2.5) ; les échelles inférieures sont
+// provisoires, comme convenu avec l'auteur (docs/QUESTIONS.md, Q4). Titres : clés de langue.
+(
+    status: Proposition("P24"),
+    ladders: {
+        // Hexa-Corp promeut par les contrats rentables (GDD §5.1).
+        "hexa_corp": [
+            (key: "rank.hexa_corp.0", min_reputation: -5, min_contracts: 0),
+            (key: "rank.hexa_corp.1", min_reputation: 15, min_contracts: 3),
+            (key: "rank.hexa_corp.2", min_reputation: 35, min_contracts: 8),
+            (key: "rank.hexa_corp.3", min_reputation: 60, min_contracts: 20),
+        ],
+        // L'Empire, par le mérite prouvé.
+        "empire": [
+            (key: "rank.empire.0", min_reputation: 10, min_contracts: 0),
+            (key: "rank.empire.1", min_reputation: 30, min_contracts: 0),
+            (key: "rank.empire.2", min_reputation: 55, min_contracts: 0),
+        ],
+        // L'UGL, par le service et la confiance politique.
+        "ugl": [
+            (key: "rank.ugl.0", min_reputation: 10, min_contracts: 0),
+            (key: "rank.ugl.1", min_reputation: 30, min_contracts: 0),
+            (key: "rank.ugl.2", min_reputation: 55, min_contracts: 0),
+        ],
+        // La Ligue, par le butin et la peur.
+        "ligue_des_pirates": [
+            (key: "rank.ligue.0", min_reputation: 10, min_contracts: 0),
+            (key: "rank.ligue.1", min_reputation: 40, min_contracts: 0),
+        ],
+        // Tosear, par les dettes honorées.
+        "syndicat_tosear": [
+            (key: "rank.tosear.0", min_reputation: 10, min_contracts: 0),
+            (key: "rank.tosear.1", min_reputation: 40, min_contracts: 0),
+        ],
+    },
+)

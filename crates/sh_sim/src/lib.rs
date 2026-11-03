@@ -4,14 +4,18 @@
 //! économies, stabilité, projets) et avance d'un jour à la fois ; il produit des [`SimEvent`],
 //! publics (nouvelles, connaissance du joueur) ou secrets (ils pilotent sans être montrés).
 //! Les rails du canon (`canon/rails.ron`) tiennent la trajectoire connue ; les interdits durs
-//! n'ont pas d'événement. [`travel`] chiffre les voyages.
+//! n'ont pas d'événement. [`travel`] chiffre les voyages ; [`career`] tient le capitaine du joueur.
 
+pub mod career;
 pub mod events;
 pub mod travel;
 pub mod world;
 
+pub use career::{
+    Captain, CareerError, Contract, ContractKind, ContractState, Loan, Outcome, contract_offers,
+};
 pub use events::{EventKind, SimEvent};
-pub use world::{FleetState, Mission, SimWorld};
+pub use world::{FleetState, Mission, SimCommand, SimWorld};
 
 #[cfg(test)]
 mod tests {

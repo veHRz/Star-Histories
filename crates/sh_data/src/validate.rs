@@ -823,6 +823,49 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
         );
     }
 
+    // --- Cœur RPG ------------------------------------------------------------------------------
+    let career = &data.career;
+    c.status("career.ron", &career.status, None);
+    c.check(
+        faction_known(&career.contracts.issuer) && faction_known(&career.bank.lender),
+        "career.ron",
+        "émetteur des contrats ou prêteur inconnu",
+    );
+    c.check(
+        career
+            .reputation_tiers
+            .windows(2)
+            .all(|w| w[0].min < w[1].min)
+            && career
+                .reputation_tiers
+                .iter()
+                .all(|t| data.lang.has(&t.key)),
+        "career.ron",
+        "paliers de réputation non croissants ou sans texte",
+    );
+    for skill in &career.skills {
+        c.check(
+            data.lang.has(&format!("skill.{skill}")),
+            "career.ron",
+            format!("compétence sans texte : skill.{skill}"),
+        );
+    }
+    c.status("ranks.ron", &data.ranks.status, None);
+    for (faction, ladder) in &data.ranks.ladders {
+        c.check(
+            faction_known(faction),
+            "ranks.ron",
+            format!("faction inconnue : {faction}"),
+        );
+        for rank in ladder {
+            c.check(
+                data.lang.has(&rank.key),
+                "ranks.ron",
+                format!("grade sans texte : {}", rank.key),
+            );
+        }
+    }
+
     // --- Départs de partie ------------------------------------------------------------------
     c.check(!data.starts.is_empty(), "départs", "aucun départ de partie");
     for start in &data.starts {

@@ -12,3 +12,4 @@ workspace = true
 [dependencies]
 sh_core.workspace = true
 sh_data.workspace = true
+thiserror.workspace = true

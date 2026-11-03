@@ -21,4 +21,13 @@ pub struct Start {
     /// Siège où le joueur commence, par son rôle (`pilot`), ou debout si absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seat_role: Option<String>,
+    /// Argent de départ, en crédits.
+    #[serde(default)]
+    pub credits: i64,
+    /// Dette envers la Banque (capital restant dû), en crédits.
+    #[serde(default)]
+    pub debt: i64,
+    /// Réputations de départ.
+    #[serde(default)]
+    pub reputations: std::collections::BTreeMap<Id<crate::factions::Faction>, i32>,
 }
