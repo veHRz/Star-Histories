@@ -120,6 +120,7 @@ Le jeu lit des variables d'environnement (`crates/sh_game/src/dev.rs`) :
 | `SH_LOOK=x,y,z` | Direction initiale de la caméra en vue Globale (captures du ciel, des astres) |
 | `SH_ARRIVAL=<objet>,<distance>` | Vue Globale : arrivée près d'un autre objet (station, structure, astre), à cette distance en mètres |
 | `SH_SCENARIO=walk_ship` | Parcours scripté du vaisseau du joueur (sas → cockpit), avec mesure du temps de frame |
+| `SH_DAYS=N` | La partie commence N jours après le jour 1 de 425at ; le monde vivant rattrape (captures des nouvelles, des flottes connues) |
 | `SH_ROUTE=<système>`, `SH_HOVER=<système>` | Vue Galaxie : itinéraire posé depuis la position du vaisseau, survol simulé (captures du panneau et de l'infobulle) |
 | `SH_SCENARIO=voyage` | Avec `SH_START=global:hexis` : Hexis → Cygnara par Portail, retour par hyperespace, durées vérifiées (critère de M3) |
 | `SH_SCENARIO=port_loop` | Avec `SH_START=sector:hexis_spaceport` : quai → cockpit → départ → vol → amarrage → quai (critère de M2) |
@@ -208,7 +209,7 @@ art/                       sources .blend (LFS), même arborescence que assets/m
 docs/                      conception, feuille de route, registres
 ```
 
-État après M1 : tout ce qui précède existe (`tools/blender/`, `art/` et `assets/models/` depuis M1 ; lightmaps dans `assets/textures/lightmaps/`). Modules de `sh_game` : `state` (états), `loading` (démarrage, chargement asynchrone et validation), `data` (ressources de données et textes), `ui` (thème, menu), `input` (contextes), `views` (Galaxie de test ; Globale : système à l'échelle, ciel, astres ; Sectorielle de test), `graphics` (préréglages, échelle de rendu), `dev` (autopilote), `dev_tools` (feature `dev`).
+État après M1 : tout ce qui précède existe (`tools/blender/`, `art/` et `assets/models/` depuis M1 ; lightmaps dans `assets/textures/lightmaps/`). Modules de `sh_game` : `state` (états), `loading`, `data`, `clock` (horloge du monde), `ui` (thème, menu, HUD, bandeau de pilotage), `input` (contextes), `views` (Galaxie : carte ; Globale : système à l'échelle, ciel, astres, cache procédural ; Sectorielle de test), `space` (origine flottante, référentiel du vaisseau), `sector` (secteurs, streaming, portes, glTF), `player` (à pied), `interaction`, `ship` (pilotage), `transition` (amarrage, départ, voyage), `voyage` (carte, itinéraires), `living` (pont avec `sh_sim` : nouvelles, marchés, connaissance du joueur), `graphics`, `dev` (autopilote, scénarios), `dev_tools` (feature `dev`). `sh_sim` : `world` (monde vivant), `events`, `travel`.
 
 ### 5.2 Règles de dépendance
 
