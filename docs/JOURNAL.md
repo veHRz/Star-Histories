@@ -2,6 +2,12 @@
 
 > Une entrée courte par session (2 à 5 lignes) : ce qui a été fait, ce qui reste en suspens, les décisions prises. Le plus récent en haut.
 
+## 03/11/2026 — Poste Linux (CachyOS), en alternance avec Windows
+
+- Second poste : CachyOS, i9-9900K, Radeon RX 9070 XT. Il alterne avec le poste Windows (machine de référence) ; ses mesures de performance ne valent pas pour l'UHD 770 (AGENTS.md §3.1 bis et §10).
+- Scripts multiplateformes : `tools/check.sh` (pendant de `check.ps1`), `tools/setup-linux.sh` (paquets, LFS local, sources de Bevy, addon MCP), recherche de Blender multiplateforme dans `tools/fonts/convert_inter.py`, commandes Linux dans les README. Procédure et prompts de `docs/reprise-autre-pc.md` réécrits pour l'alternance des deux postes.
+- **Bug trouvé grâce au second poste** : à ≈ 230 i/s, le scénario `walk_ship` bloquait au pied de l'escalier du cockpit. Sur un nez de marche, la normale du contact de la capsule dépend de son débord, donc de la durée de la frame (39° à 35 i/s, 71° à 230 i/s, limite 46°). `player::walkable_contact` lit alors la normale de la face elle-même. `tools/check.sh` vert ; à revérifier sous Windows avec `check.ps1`.
+
 ## 03/11/2026 — M1 À pied (vaisseau du joueur)
 
 - Pipeline Blender versionné (`tools/blender/`) : bibliothèque commune, kit d'intérieur paramétrique (P13), vaisseau du joueur en 8 cellules (P12) avec descripteur de secteur généré. Conventions `_col`, `LIGHT_`, `INTERACT_`, `SOCKET_` relues par le jeu.
