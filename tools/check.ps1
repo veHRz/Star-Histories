@@ -57,7 +57,7 @@ Step "scénario walk_ship" {
     $env:SH_SCENARIO = "walk_ship"
     $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
     $code = $LASTEXITCODE
-    Remove-Item Env:SH_START, Env:SH_SCENARIO
+    Remove-Item Env:SH_START, Env:SH_SCENARIO, Env:SH_RAID -ErrorAction SilentlyContinue
     $log | Select-String -Pattern "ERROR|panicked|sc.{1,3}nario" | ForEach-Object { "   $_" }
     $global:LASTEXITCODE = $code
 }
@@ -68,7 +68,7 @@ Step "scénario fly_ship" {
     $env:SH_SCENARIO = "fly_ship"
     $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
     $code = $LASTEXITCODE
-    Remove-Item Env:SH_START, Env:SH_SCENARIO
+    Remove-Item Env:SH_START, Env:SH_SCENARIO, Env:SH_RAID -ErrorAction SilentlyContinue
     $log | Select-String -Pattern "ERROR|panicked|sc.{1,3}nario" | ForEach-Object { "   $_" }
     $global:LASTEXITCODE = $code
 }
@@ -79,7 +79,7 @@ Step "scénario port_loop" {
     $env:SH_SCENARIO = "port_loop"
     $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
     $code = $LASTEXITCODE
-    Remove-Item Env:SH_START, Env:SH_SCENARIO
+    Remove-Item Env:SH_START, Env:SH_SCENARIO, Env:SH_RAID -ErrorAction SilentlyContinue
     $log | Select-String -Pattern "ERROR|panicked|sc.{1,3}nario .*termin" | ForEach-Object { "   $_" }
     $global:LASTEXITCODE = $code
 }
@@ -88,9 +88,10 @@ Step "scénario port_loop" {
 Step "scénario voyage" {
     $env:SH_START = "global:hexis"
     $env:SH_SCENARIO = "voyage"
+    $env:SH_RAID = "0"
     $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
     $code = $LASTEXITCODE
-    Remove-Item Env:SH_START, Env:SH_SCENARIO
+    Remove-Item Env:SH_START, Env:SH_SCENARIO, Env:SH_RAID -ErrorAction SilentlyContinue
     $log | Select-String -Pattern "ERROR|panicked|sc.{1,3}nario voyage : sys_|sc.{1,3}nario .*termin" | ForEach-Object { "   $_" }
     $global:LASTEXITCODE = $code
 }
@@ -99,10 +100,70 @@ Step "scénario voyage" {
 Step "scénario contract_loop" {
     $env:SH_START = "global:hexis"
     $env:SH_SCENARIO = "contract_loop"
+    $env:SH_RAID = "0"
     $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
     $code = $LASTEXITCODE
-    Remove-Item Env:SH_START, Env:SH_SCENARIO
+    Remove-Item Env:SH_START, Env:SH_SCENARIO, Env:SH_RAID -ErrorAction SilentlyContinue
     $log | Select-String -Pattern "ERROR|panicked|v.{1,3}rifi|sc.{1,3}nario .*termin" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
+# Critères de M6 : un raid gagné (puis dégâts gardés et réparés à Hexis), fui, perdu.
+Step "scénario raid_win" {
+    $env:SH_START = "global:cygnara"
+    $env:SH_SCENARIO = "raid_win"
+    $env:SH_RAID = "1"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_START, Env:SH_SCENARIO, Env:SH_RAID -ErrorAction SilentlyContinue
+    $log | Select-String -Pattern "ERROR|panicked|raid fini|v.{1,3}rifi|sc.{1,3}nario .*termin" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
+Step "scénario raid_flee" {
+    $env:SH_START = "global:cygnara"
+    $env:SH_SCENARIO = "raid_flee"
+    $env:SH_RAID = "1"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_START, Env:SH_SCENARIO, Env:SH_RAID -ErrorAction SilentlyContinue
+    $log | Select-String -Pattern "ERROR|panicked|raid fini" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
+Step "scénario raid_lose" {
+    $env:SH_START = "global:cygnara"
+    $env:SH_SCENARIO = "raid_lose"
+    $env:SH_RAID = "alone"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_START, Env:SH_SCENARIO, Env:SH_RAID -ErrorAction SilentlyContinue
+    $log | Select-String -Pattern "ERROR|panicked|raid fini" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
+# Critère de M6 à pied : un abordage repoussé, un abordage perdu.
+Step "scénario firefight" {
+    $env:SH_START = "sector:player_ship"
+    $env:SH_SPAWN = "soute"
+    $env:SH_BOARDING = "2"
+    $env:SH_SCENARIO = "firefight"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_START, Env:SH_SPAWN, Env:SH_BOARDING, Env:SH_SCENARIO -ErrorAction SilentlyContinue
+    $log | Select-String -Pattern "ERROR|panicked|combat . pied" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
+Step "scénario firefight_lose" {
+    $env:SH_START = "sector:player_ship"
+    $env:SH_SPAWN = "soute"
+    $env:SH_BOARDING = "3"
+    $env:SH_SCENARIO = "firefight_lose"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_START, Env:SH_SPAWN, Env:SH_BOARDING, Env:SH_SCENARIO -ErrorAction SilentlyContinue
+    $log | Select-String -Pattern "ERROR|panicked|combat . pied" | ForEach-Object { "   $_" }
     $global:LASTEXITCODE = $code
 }
 

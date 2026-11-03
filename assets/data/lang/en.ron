@@ -44,8 +44,13 @@
         "repair.title": "Orbital shipyards — repairs",
         "repair.body": "{yard}: ship condition {integrity}%. Full overhaul (armor, structure, core): {cost}.
 Account: {credits}",
+        "repair.partial": "Repair what you can pay for ({paid} of {cost})",
         "repair.do": "Repair the ship ({cost})",
         "repair.done": "Ship fully repaired: {cost} paid.",
+        "combat.boarding": "Boarders! Pirates in the aft corridor.",
+        "combat.foot.dead": "You are down.",
+        "combat.foot.hud": "Health {health}   ·   {weapon} {mag} / {reserve}",
+        "combat.foot.hud_reload": "Health {health}   ·   {weapon}: reloading…",
         "app.title": "Star Histories",
         "date.format": "Day {day}, {year}",
         "loading.title": "Loading",

@@ -65,8 +65,19 @@ step "scénario port_loop" \
 
 # Critère de M3 : Hexis → Cygnara par Portail, retour par l'hyperespace, durées vérifiées.
 step "scénario voyage" \
-    run_game "ERROR|panicked|sc.{1,3}nario voyage : sys_|sc.{1,3}nario .*termin" SH_START=global:hexis SH_SCENARIO=voyage
+    run_game "ERROR|panicked|sc.{1,3}nario voyage : sys_|sc.{1,3}nario .*termin" SH_START=global:hexis SH_SCENARIO=voyage SH_RAID=0
 step "scénario contract_loop" \
-    run_game "ERROR|panicked|v.{1,3}rifi|sc.{1,3}nario .*termin" SH_START=global:hexis SH_SCENARIO=contract_loop
+    run_game "ERROR|panicked|v.{1,3}rifi|sc.{1,3}nario .*termin" SH_START=global:hexis SH_SCENARIO=contract_loop SH_RAID=0
+# Critères de M6 : un raid gagné (puis dégâts gardés et réparés à Hexis), fui, perdu.
+step "scénario raid_win" \
+    run_game "ERROR|panicked|raid fini|v.{1,3}rifi|sc.{1,3}nario .*termin" SH_START=global:cygnara SH_SCENARIO=raid_win SH_RAID=1
+step "scénario raid_flee" \
+    run_game "ERROR|panicked|raid fini" SH_START=global:cygnara SH_SCENARIO=raid_flee SH_RAID=1
+step "scénario raid_lose" \
+    run_game "ERROR|panicked|raid fini" SH_START=global:cygnara SH_SCENARIO=raid_lose SH_RAID=alone
+step "scénario firefight" \
+    run_game "ERROR|panicked|combat . pied" SH_START=sector:player_ship SH_SPAWN=soute SH_BOARDING=2 SH_SCENARIO=firefight
+step "scénario firefight_lose" \
+    run_game "ERROR|panicked|combat . pied" SH_START=sector:player_ship SH_SPAWN=soute SH_BOARDING=3 SH_SCENARIO=firefight_lose
 
 echo "${green}Tout est vert.${reset}"

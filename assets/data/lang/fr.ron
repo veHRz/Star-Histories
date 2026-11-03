@@ -45,8 +45,13 @@
         "repair.title": "Chantiers orbitaux — réparations",
         "repair.body": "{yard} : état du vaisseau {integrity} %. Remise à neuf (blindage, structure, cœur) : {cost}.
 Compte : {credits}",
+        "repair.partial": "Réparer ce que vous pouvez payer ({paid} sur {cost})",
         "repair.do": "Faire réparer ({cost})",
         "repair.done": "Vaisseau remis à neuf : {cost} payés.",
+        "combat.boarding": "Abordage ! Des pirates sont dans le couloir arrière.",
+        "combat.foot.dead": "Vous êtes tombé.",
+        "combat.foot.hud": "Santé {health}   ·   {weapon} {mag} / {reserve}",
+        "combat.foot.hud_reload": "Santé {health}   ·   {weapon} : rechargement…",
         "app.title": "Star Histories",
         "date.format": "Jour {day}, {year}",
         "loading.title": "Chargement",

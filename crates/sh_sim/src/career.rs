@@ -635,21 +635,25 @@ impl Captain {
         out
     }
 
-    /// Fait réparer le vaisseau au chantier : tout remis à neuf, au prix des dégâts.
+    /// Fait réparer le vaisseau au chantier, au prix des dégâts ; si le compte n'y suffit
+    /// pas, le chantier répare au prorata de ce qui est payé (tout le compte).
     pub fn repair_ship(&mut self, data: &GameData) -> Result<Credits, CareerError> {
         let hull = self.hull.as_mut().ok_or(CareerError::NothingToRepair)?;
         let cost = hull.repair_cost(&data.combat.repair);
         if cost.cents <= 0 {
             return Err(CareerError::NothingToRepair);
         }
-        let left = self
-            .credits
-            .checked_sub(cost)
-            .filter(|c| !c.is_negative())
-            .ok_or(CareerError::NotEnoughCredits)?;
-        self.credits = left;
-        hull.repair();
-        Ok(cost)
+        if self.credits.cents <= 0 {
+            return Err(CareerError::NotEnoughCredits);
+        }
+        let paid = if self.credits.cents < cost.cents {
+            self.credits
+        } else {
+            cost
+        };
+        hull.repair_fraction(paid.cents as f64 / cost.cents as f64);
+        self.credits -= paid;
+        Ok(paid)
     }
 
     pub fn remember(&mut self, npc: &str, fact: &str) {

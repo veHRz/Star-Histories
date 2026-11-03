@@ -317,6 +317,9 @@ enum Step {
     /// Jouer le raid en cours (combattre, fuir, rester passif) jusqu'à l'issue attendue, en
     /// au plus tant de secondes ; capture facultative après quelques secondes de combat.
     Raid(RaidPlay, RaidEnd, f32, Option<(&'static str, f32)>),
+    /// Combattre à pied (ou rester passif) jusqu'à ce que les hostiles tombent (`true`) ou que
+    /// le joueur tombe (`false`), en au plus tant de secondes ; capture facultative.
+    Firefight(bool, bool, f32, Option<(&'static str, f32)>),
     /// Placer le vaisseau, à l'arrêt, à 1 km d'une cible (`wreck` : l'épave d'un remorquage ;
     /// `shipyard` : les chantiers du système). Raccourci de l'autopilote : le vol est testé
     /// par `fly_ship`.
@@ -522,8 +525,9 @@ const RAID_WIN: &[Step] = &[
     Step::Shot("m6-chantier"),
     Step::Choose("repair"),
     Step::Choose("close"),
-    Step::Assert("réparé, et payé", |c, _| {
-        c.hull.as_ref().is_some_and(|h| h.integrity() >= 1.0) && c.credits.cents < 300_000
+    Step::Assert("réparé autant que payé", |c, _| {
+        c.credits.cents < 300_000
+            && (c.credits.cents == 0 || c.hull.as_ref().is_some_and(|h| h.integrity() >= 1.0))
     }),
 ];
 
@@ -544,6 +548,23 @@ const RAID_LOSE: &[Step] = &[
     ),
     Step::Wait(1.5),
     Step::Shot("m6-mort"),
+];
+
+/// `firefight` (avec `SH_START=sector:player_ship SH_SPAWN=soute SH_BOARDING=3`) : un abordage
+/// repoussé dans la soute (critère de M6, à pied).
+const FIREFIGHT: &[Step] = &[
+    Step::Wait(2.0),
+    Step::Firefight(true, true, 150.0, Some(("m6-abordage", 1.2))),
+    Step::Wait(1.0),
+    Step::Shot("m6-abordage-fin"),
+];
+
+/// `firefight_lose` (mêmes variables) : passif, le joueur tombe.
+const FIREFIGHT_LOSE: &[Step] = &[
+    Step::Wait(2.0),
+    Step::Firefight(false, false, 150.0, None),
+    Step::Wait(1.0),
+    Step::Shot("m6-abordage-mort"),
 ];
 
 /// Délai maximal d'une transition de vue (amarrage, départ) dans un scénario.
@@ -603,6 +624,8 @@ impl Plugin for ScenarioPlugin {
             "raid_win" => (RAID_WIN, None),
             "raid_flee" => (RAID_FLEE, None),
             "raid_lose" => (RAID_LOSE, None),
+            "firefight" => (FIREFIGHT, None),
+            "firefight_lose" => (FIREFIGHT_LOSE, None),
             _ => (WALK_SHIP, None),
         };
         if !matches!(
@@ -615,9 +638,11 @@ impl Plugin for ScenarioPlugin {
                 | "raid_win"
                 | "raid_flee"
                 | "raid_lose"
+                | "firefight"
+                | "firefight_lose"
         ) {
             error!(
-                "SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage, contract_loop, raid_win, raid_flee, raid_lose)"
+                "SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage, contract_loop, raid_win, raid_flee, raid_lose, firefight, firefight_lose)"
             );
             app.add_systems(Startup, |mut exit: MessageWriter<AppExit>| {
                 exit.write(AppExit::error());
@@ -724,6 +749,32 @@ fn run_scenario(
             return;
         }
         commands.queue(move |world: &mut World| raid_step(world, step));
+        return;
+    }
+    if let Some(&step) = scenario.steps.get(scenario.index)
+        && let Step::Firefight(_, _, max, shot) = step
+    {
+        scenario.step_time += time.delta_secs();
+        // Mesures hors capture d'écran (elle coûte à elle seule des dizaines de ms).
+        let capturing = shot.is_some_and(|(_, at)| (scenario.step_time - at).abs() < 0.3);
+        let ms = real.delta_secs_f64() * 1000.0;
+        if !capturing {
+            scenario.frames += 1;
+            scenario.total_ms += ms;
+            scenario.worst_ms = scenario.worst_ms.max(ms);
+            if ms > 33.0 {
+                scenario.over_33ms += 1;
+            }
+        }
+        if scenario.step_time > max {
+            error!(
+                "scénario {} : le combat n'a pas fini en {max} s",
+                scenario.name
+            );
+            exit.write(AppExit::error());
+            return;
+        }
+        commands.queue(move |world: &mut World| firefight_step(world, step));
         return;
     }
     if let Some(&step) = scenario.steps.get(scenario.index)
@@ -896,7 +947,8 @@ fn run_scenario(
         | Step::Shot(_)
         | Step::Wait(_)
         | Step::JumpNear(_)
-        | Step::Raid(..) => return,
+        | Step::Raid(..)
+        | Step::Firefight(..) => return,
         Step::SitAtHelm | Step::StandUp | Step::DockOrDepart => {
             let done = match step {
                 Step::SitAtHelm => seated,
@@ -1474,4 +1526,118 @@ fn raid_step(world: &mut World, step: Step) {
     }
     *world.resource_mut::<crate::ship::PilotIntent>() = intent;
     *world.resource_mut::<FireIntent>() = fire;
+}
+
+/// Une étape de combat à pied, jouée avec le `World` à chaque frame : l'autopilote vise le
+/// pirate visible le plus proche et tire (ou ne fait rien) ; fin quand un camp est tombé.
+fn firefight_step(world: &mut World, step: Step) {
+    use crate::combat::foot::{FighterAi, FootFireIntent, PlayerArms};
+    let Step::Firefight(fight, expect_win, _, shot) = step else {
+        return;
+    };
+    let elapsed = world.resource::<Scenario>().step_time;
+    if let Some((name, at)) = shot
+        && elapsed >= at
+        && world.resource::<Scenario>().issued.is_none()
+    {
+        world
+            .spawn(Screenshot::primary_window())
+            .observe(save_to_disk(format!("target/shots/{name}.png")));
+        world.resource_mut::<Scenario>().issued = Some(None);
+    }
+    let mut q = world.query::<(&crate::combat::foot::Fighter, &Transform, &FighterAi)>();
+    let fighters: Vec<(Vec3, bool, bool)> = q
+        .iter(world)
+        .map(|(f, t, ai)| (t.translation, f.alive(), ai.crouched))
+        .collect();
+    if fighters.is_empty() {
+        return;
+    }
+    let health = world.get_resource::<PlayerArms>().map_or(0.0, |a| a.health);
+    let alive = fighters.iter().filter(|f| f.1).count();
+    let name = world.resource::<Scenario>().name.clone();
+    if alive == 0 || health <= 0.0 {
+        let won = alive == 0;
+        if won == expect_win {
+            let s = world.resource::<Scenario>();
+            info!(
+                "scénario {name} : combat à pied fini ({}, santé {health:.0}, {} hostile(s) debout) après {elapsed:.0} s ; temps de frame moyen {:.2} ms, pire {:.2} ms, {} frame(s) > 33 ms",
+                if won { "gagné" } else { "perdu" },
+                alive,
+                s.total_ms / f64::from(s.frames.max(1)),
+                s.worst_ms,
+                s.over_33ms
+            );
+            let mut scenario = world.resource_mut::<Scenario>();
+            scenario.index += 1;
+            scenario.issued = None;
+            scenario.step_time = 0.0;
+        } else {
+            error!(
+                "scénario {name} : combat à pied {} contre toute attente",
+                if won { "gagné" } else { "perdu" }
+            );
+            world.write_message(AppExit::error());
+        }
+        return;
+    }
+    if !fight {
+        return;
+    }
+    let mut pq = world.query_filtered::<(&GlobalTransform, &crate::player::PlayerController), With<crate::player::Player>>();
+    let Ok((pt, controller)) = pq.single(world) else {
+        return;
+    };
+    let eye = pt.translation() + Vec3::Y * controller.eye_height();
+    let (yaw, pitch) = (controller.yaw, controller.pitch);
+    // La cible : le pirate debout le plus proche dont on voit le torse.
+    let mut spatial = bevy::ecs::system::SystemState::<avian3d::prelude::SpatialQuery>::new(world);
+    let spatial = spatial.get(world);
+    let Ok(spatial) = spatial else {
+        return;
+    };
+    let target = fighters
+        .iter()
+        .filter(|f| f.1)
+        .map(|f| f.0 + Vec3::Y * if f.2 { 0.8 } else { 1.3 })
+        .filter(|c| {
+            let d = *c - eye;
+            Dir3::new(d).ok().is_none_or(|dir| {
+                spatial
+                    .cast_ray(
+                        eye,
+                        dir,
+                        d.length(),
+                        true,
+                        &avian3d::prelude::SpatialQueryFilter::from_mask([
+                            crate::sector::Layer::Static,
+                            crate::sector::Layer::Door,
+                        ]),
+                    )
+                    .is_none()
+            })
+        })
+        .min_by(|a, b| a.distance(eye).total_cmp(&b.distance(eye)));
+    let mut intent = crate::player::PlayerIntent::default();
+    let mut fire = FootFireIntent::default();
+    if let Some(c) = target {
+        let d = (c - eye).normalize_or(Vec3::NEG_Z);
+        let want_yaw = (-d.x).atan2(-d.z);
+        let want_pitch = d.y.clamp(-1.0, 1.0).asin();
+        let wrap = |a: f32| {
+            (a + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI
+        };
+        let dy = wrap(yaw - want_yaw);
+        let dp = pitch - want_pitch;
+        // Une main humaine : 2,5 rad/s au plus, et on ne tire qu'une fois la mire posée.
+        let max = 2.5 * world.resource::<Time>().delta_secs();
+        intent.look = Vec2::new(dy.clamp(-max, max), dp.clamp(-max, max));
+        fire.fire = dy.abs() < 0.03 && dp.abs() < 0.03;
+        // On se baisse pour recharger.
+        intent.crouch = world
+            .get_resource::<PlayerArms>()
+            .is_some_and(|a| a.reload > 0.0 || a.mag == 0);
+    }
+    *world.resource_mut::<crate::player::PlayerIntent>() = intent;
+    *world.resource_mut::<FootFireIntent>() = fire;
 }

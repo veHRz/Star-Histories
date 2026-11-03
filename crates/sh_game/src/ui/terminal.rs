@@ -547,13 +547,25 @@ fn repair_page(ctx: &Ctx) -> Page {
         ],
     );
     let damaged = cost.cents > 0;
+    // Le compte n'y suffit pas : le chantier répare au prorata de ce qui est payé.
+    let label = if ctx.cap.credits.cents >= cost.cents {
+        t.format("repair.do", &[("cost", &money(t, cost))])
+    } else {
+        t.format(
+            "repair.partial",
+            &[
+                ("paid", &money(t, ctx.cap.credits)),
+                ("cost", &money(t, cost)),
+            ],
+        )
+    };
     Page {
         title: t.get("repair.title"),
         body,
         choices: vec![Choice {
-            label: t.format("repair.do", &[("cost", &money(t, cost))]),
+            label,
             action: Action::Repair,
-            enabled: damaged && ctx.cap.credits.cents >= cost.cents,
+            enabled: damaged && ctx.cap.credits.cents > 0,
         }],
     }
 }

@@ -539,6 +539,7 @@ fn tick_death(
             world.remove_resource::<Location>();
             world.remove_resource::<crate::voyage::ShipFuel>();
             world.remove_resource::<crate::voyage::ResumeFlight>();
+            world.remove_resource::<foot::PlayerArms>();
             world.insert_resource(MissionLog::default());
             world.insert_resource(crate::interaction::Inventory::default());
         });

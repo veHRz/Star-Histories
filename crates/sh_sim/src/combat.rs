@@ -178,11 +178,17 @@ impl Hull {
     }
 
     pub fn repair(&mut self) {
+        self.repair_fraction(1.0);
+    }
+
+    /// Répare une part `f` (0 à 1) de chaque dégât : ce qu'un budget limité permet.
+    pub fn repair_fraction(&mut self, f: f64) {
+        let f = f.clamp(0.0, 1.0);
         for s in self.sections.values_mut() {
-            s.armor = s.max_armor;
-            s.structure = s.max_structure;
+            s.armor += (s.max_armor - s.armor) * f;
+            s.structure += (s.max_structure - s.structure) * f;
         }
-        self.core = self.max_core;
+        self.core += (self.max_core - self.core) * f;
     }
 }
 
@@ -390,6 +396,9 @@ mod tests {
         };
         // 60 de structure, 6 de blindage, 15 de cœur : 81 points.
         assert_eq!(h.repair_cost(&rules), Credits::units(162));
+        let mut half = h.clone();
+        half.repair_fraction(0.5);
+        assert!((half.damage_points() - 40.5).abs() < 1e-9);
         h.repair();
         assert_eq!(h, coque());
         assert_eq!(h.integrity(), 1.0);

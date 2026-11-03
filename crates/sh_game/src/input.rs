@@ -147,6 +147,15 @@ pub struct FireMissile;
 #[action_output(bool)]
 pub struct Countermeasure;
 
+/// Arme portative (à pied).
+#[derive(InputAction)]
+#[action_output(bool)]
+pub struct FireWeapon;
+
+#[derive(InputAction)]
+#[action_output(bool)]
+pub struct Reload;
+
 // --- Fiche et journal (à pied et aux commandes) -------------------------------------------
 
 #[derive(InputAction)]
@@ -218,6 +227,12 @@ fn spawn_contexts(mut commands: Commands) {
             --
             Action::<Interact>::new()
             Bindings [ Binding(KeyCode::KeyE) -- Binding(GamepadButton::West) ]
+            --
+            Action::<FireWeapon>::new()
+            Bindings [ Binding(MouseButton::Left) -- Binding(GamepadButton::RightTrigger2) ]
+            --
+            Action::<Reload>::new()
+            Bindings [ Binding(KeyCode::KeyR) ]
             --
             Action::<ToggleMap>::new()
             Bindings [ Binding(KeyCode::KeyM) -- Binding(GamepadButton::Select) ]
