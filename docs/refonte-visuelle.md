@@ -154,3 +154,41 @@ et sautable à tout moment ; son avancement est sauvegardé (`SaveFile`, `#[serd
   coupe dans les options ; un scénario de l'autopilote le joue en entier.
 - `tools/check.ps1` vert ; `tools/perf.ps1` en Bas 1080p sur l'UHD 770 : ≥ 60 i/s, aucune
   régression des pics.
+
+## 9. Avancement (à tenir à jour par l'orchestrateur)
+
+**04/11/2026, poste Windows — lot 0 livré, point de contrôle avec l'auteur à faire.**
+
+- **Préparation faite** : `tools/check.ps1` vert avant M8 ; captures de l'avant prises sous Windows
+  (`target/shots/m8-avant-*.png`, non versionnées) avec `tools/captures.ps1` / `captures.sh`
+  (15 vues fixes). Sur un autre poste, **refaire l'avant d'abord** (`tools/captures.sh m8-avant`)
+  : le lot 0 ne change aucune scène existante, la comparaison se fera sur le même GPU.
+- **Décisions techniques** (côté jeu, `crates/sh_game/src/materials.rs`) : glTF séparé, images
+  citées par chemin vers `assets/textures/materials/` (une seule copie en mémoire vidéo) ;
+  bibliothèque préchargée pendant l'écran de chargement, espace de couleur par suffixe, mipmaps
+  calculées sur un fil de calcul puis un seul envoi au GPU, répétition, anisotrope par préréglage
+  (`anisotropy` : 1 / 4 / 8 dans `gameplay/graphics.ron`, appliqué au lancement). Écartés : la
+  génération de mipmaps sur GPU de Bevy (pas de formats sRGB) et KTX2 (outil à installer).
+- **Lot 0 (artiste)** : 15 matériaux procéduraux écrits en numpy dans le Python de Blender (pas en
+  nœuds : raccords parfaits par construction, déterministes, ≈ 2 min pour tout régénérer), 50 PNG
+  (35 en 1024², 15 en 512², 27,8 Mo) ; fonctions `textured_material`, `uv_box`, `uv_trim`,
+  `export_gltf` dans `common.py` ; tables `TRIMS`, `TINTS`, `MATERIALS` dans
+  `materials/library.py` ; salle témoin (`SH_START=sector:salle_temoin`, apparitions `entree` et
+  `atelier` ; 2 556 et 5 768 triangles). Vérifiée en jeu : `target/shots/m8-temoin-{entree,atelier}.png`
+  (Moyen, 115–140 i/s sur ce poste). Rendus de l'artiste : `target/art-previews/lot0/` (non
+  versionnés, à régénérer : `planche.py -- --details`, `salle_temoin.py -- --previews`).
+- **Choix de l'artiste à connaître** : métal des ORM plafonné à 0,55 et 70 % de l'occlusion recopiée
+  dans la couleur (en Bas et Moyen, une cellule à lightmap n'éclaire que le diffus) ; matériaux
+  texturés en simple face ; plafonniers `sh_light*` remplacés par leurs lampes au bake
+  (`lightmap.py` corrigé), bandeaux `sh_band_*` cuits.
+- **Pour le brief du lot A** : décaler les UV par travée (`uv_box(offset=…)`), sinon avec une tuile
+  de 2 m et une nervure tous les 2 m chaque travée est identique ; garder la porte aux dimensions
+  du kit (le panneau actuel, plat, est à refaire).
+- **Points ouverts** : la bibliothèque complète pèse ≈ 207 Mio en mémoire vidéo (RGBA8 + mipmaps) :
+  à mesurer sur l'UHD 770 ; si c'est trop, KTX2 / BC7 (≈ 4 fois moins, outil à installer : demander
+  à l'auteur) ou chargement à la demande. Après le lot 0, seuls `cargo t` et un démarrage de la
+  salle témoin ont été refaits (demande de l'auteur) : relancer `tools/check.sh` en entier au début
+  de la session suivante.
+- **Suite** : captures complètes de la salle témoin (Moyen et Bas), les montrer à l'auteur, attendre
+  son accord sur la direction et sa réponse sur le lot U ; puis vague A, D, E, F, T, puis B et C
+  (§4, §7). Mesures de performance finales sur le poste Windows, en Bas (Q15).

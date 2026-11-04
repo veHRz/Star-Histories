@@ -2,6 +2,13 @@
 
 > Une entrée courte par session (2 à 5 lignes) : ce qui a été fait, ce qui reste en suspens, les décisions prises. Le plus récent en haut.
 
+## 04/11/2026 — Poste Windows : M8, lot 0 (orchestrateur et sous-agent artiste)
+
+- **Lot 0 livré** par le sous-agent `artiste-blender` (≈ 1 h 30) : 15 matériaux « futur usé » procéduraux (numpy, raccords parfaits, déterministes), 50 PNG, trim sheet, fonctions `textured_material` / `uv_box` / `uv_trim` / `export_gltf`, salle témoin `sector:salle_temoin` (coursive froide à pans coupés, atelier ambré, lightmaps à 128 échantillons). Côté jeu (`materials.rs`) : glTF séparé à textures partagées, préchargement, mipmaps sur un fil de calcul, répétition, anisotrope par préréglage. Vérifié en jeu : `target/shots/m8-temoin-{entree,atelier}.png` (Moyen, 115–140 i/s ici). Détails et points ouverts (≈ 207 Mio de textures en mémoire vidéo) : `docs/refonte-visuelle.md` §9.
+- **Décision de l'auteur (Q15)** : la machine de référence est faible, la cible de performance passe de Moyen à **Bas** (≥ 60 i/s en 1080p) ; `perf.ps1` / `perf.sh` mesurent en Bas par défaut.
+- Avant M8 : `tools/check.ps1` vert, captures de l'avant à points de vue fixes (`tools/captures.ps1`, nouveau ; non versionnées). Après le lot 0, à la demande de l'auteur, seuls `cargo t` et un démarrage de la salle témoin ont été refaits : **relancer `tools/check.sh` en entier** sur le poste Linux.
+- **Reste** (poste Linux) : refaire l'avant, captures complètes de la salle témoin, point de contrôle avec l'auteur (direction, lot U), puis les vagues A, D, E, F, T et B, C. Mesures de performance finales sous Windows, en Bas.
+
 ## 04/11/2026 — Poste Windows : préparation de M8
 
 - L'auteur a testé la tranche de M7 : elle tourne, mais elle est « moche » (murs plats, aucun détail) et il manque un vrai tutoriel. Décision (Q14) : refonte visuelle futuriste, « futur usé » inspiré de Star Wars sans emprunt, et tutoriel guidé désactivable. Direction sonore P27 validée « pour un début ».

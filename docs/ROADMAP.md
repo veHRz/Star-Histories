@@ -3,7 +3,7 @@
 > Suis les jalons **dans l'ordre**. Coche chaque tâche (`[x]`) dans le commit qui la termine. Un jalon est fini quand **tous ses critères « Fini quand »** sont vérifiés (tests, autopilote, captures regardées). Push à la fin de chaque jalon.
 > Tu peux découper une tâche, en ajouter, en réordonner à l'intérieur d'un jalon : note-le dans `docs/JOURNAL.md`. Changer l'ordre des jalons ou leur périmètre : demande à l'auteur.
 
-État (04/11/2026, soir) : **M0 à M7 terminés** sur le poste Windows (critères vérifiés par l'autopilote, `tools/check.ps1` vert, Moyen à ≈ 60–83 i/s en 1080p sur l'UHD 770). L'auteur a testé la tranche : elle fonctionne, mais le visuel ne suffit pas. **Prochain jalon : M8, refonte visuelle et tutoriel** (plan détaillé : `docs/refonte-visuelle.md`).
+État (04/11/2026, soir) : **M0 à M7 terminés** sur le poste Windows (critères vérifiés par l'autopilote, `tools/check.ps1` vert, Moyen à ≈ 60–83 i/s en 1080p sur l'UHD 770). L'auteur a testé la tranche : elle fonctionne, mais le visuel ne suffit pas. **M8 en cours, refonte visuelle et tutoriel** (plan détaillé : `docs/refonte-visuelle.md`, avancement au §9) : lot 0 livré, point de contrôle avec l'auteur à faire avant les vagues suivantes. Cible de performance abaissée à ≥ 60 i/s en **Bas** (Q15).
 
 ---
 
@@ -143,7 +143,7 @@ Testée par l'auteur le 04/11/2026 : jouable de bout en bout (un bug du menu de 
 
 But : un jeu beau et compréhensible dès la première minute, sans rien perdre en performances. Décision de l'auteur (Q14) : direction futuriste inspirée de Star Wars, sans emprunt. Plan, lots, règles et méthode (orchestrateur + sous-agents) : `docs/refonte-visuelle.md`.
 
-- [ ] Lot 0 : bibliothèque de matériaux « futur usé » (textures cuites dans Blender, trim sheets) ; textures partagées et mipmaps côté Bevy ; **point de contrôle avec l'auteur** sur captures.
+- [ ] Lot 0 : bibliothèque de matériaux « futur usé » (textures cuites dans Blender, trim sheets) ; textures partagées et mipmaps côté Bevy ; **point de contrôle avec l'auteur** sur captures. *Livré le 04/11/2026 (poste Windows) : l'artiste a fini (15 matériaux, trim sheet, salle témoin `sector:salle_temoin`), le côté Bevy est fait et la salle s'affiche en jeu. Reste : captures complètes de la salle témoin, accord de l'auteur sur la direction, réponse sur le lot U ; puis la suite des vagues (`docs/refonte-visuelle.md` §9).*
 - [ ] Lot A : kit d'intérieur refait (même API).
 - [ ] Lots B et C : vaisseau du joueur et spatioport d'Hexis réassemblés et habillés, lightmaps recuites.
 - [ ] Lots D et E : corvettes, cargo, L'Enclume, hub de Portails, chantiers.
