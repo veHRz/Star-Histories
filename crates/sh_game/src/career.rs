@@ -380,7 +380,7 @@ fn spawn_wrecks(
                 SpaceRotation(Quat::from_euler(EulerRot::YXZ, 0.7, 0.4, 1.1)),
                 WorldAssetRoot(
                     asset_server
-                        .load(GltfAssetLabel::Scene(0).from_asset("models/space/freighter.glb")),
+                        .load(GltfAssetLabel::Scene(0).from_asset("models/space/freighter.gltf")),
                 ),
             ))
             .id();

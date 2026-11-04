@@ -15,7 +15,7 @@
             around: "hexis",
             altitude_radii: 1.5,
             angle_deg: 50.7,
-            model: "models/space/shipyard.glb",
+            model: "models/space/shipyard.gltf",
         ),
         // Le hub de Portails, un peu à l'écart (≈ 120 km) : trafic dense entre lui et les cales.
         (
@@ -25,16 +25,16 @@
             around: "hexis",
             altitude_radii: 1.5,
             angle_deg: 54.5,
-            model: "models/space/portal_hub.glb",
+            model: "models/space/portal_hub.gltf",
         ),
     ],
     station_models: {
-        "l_enclume": "models/space/l_enclume.glb",
+        "l_enclume": "models/space/l_enclume.gltf",
     },
     // Cargos qui font la navette entre le hub, les chantiers et L'Enclume.
     traffic: (
         ships: 24,
-        model: "models/space/freighter.glb",
+        model: "models/space/freighter.gltf",
         speed: 900.0,
     ),
     // Le spatioport d'Hexis (P7) : sa balise d'approche en orbite basse, sous L'Enclume.

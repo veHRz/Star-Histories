@@ -14,7 +14,7 @@
         "player_ship": (
             name_key: "hull.player_ship",
             // Le joueur est à bord : sa coque extérieure ne se dessine pas en combat.
-            model: "models/space/freighter.glb",
+            model: "models/space/freighter.gltf",
             radius: 9.0,
             length: 42.0,
             max_speed: 320.0,

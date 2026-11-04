@@ -14,7 +14,7 @@
             around: "cygnara",
             altitude_radii: 1.5,
             angle_deg: 20.0,
-        model: "models/space/portal_hub.glb",
+        model: "models/space/portal_hub.gltf",
         ),
         (
             id: "cygnara_shipyards",
@@ -23,16 +23,16 @@
             around: "cygnara",
             altitude_radii: 1.5,
             angle_deg: 24.0,
-            model: "models/space/shipyard.glb",
+            model: "models/space/shipyard.gltf",
         ),
     ],
     // Le Berceau, chantier de croiseurs inachevé : le modèle de L'Enclume en attendant le sien.
     station_models: {
-        "le_berceau": "models/space/l_enclume.glb",
+        "le_berceau": "models/space/l_enclume.gltf",
     },
     traffic: (
         ships: 20,
-        model: "models/space/freighter.glb",
+        model: "models/space/freighter.gltf",
         speed: 900.0,
     ),
     arrival: (
