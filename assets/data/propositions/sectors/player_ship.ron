@@ -6,7 +6,7 @@
     kind: Ship,
     name_key: "sector.player_ship",
     status: Proposition("P12"),
-    door_model: "models/kit/ship_interior/door_sliding.glb",
+    door_model: "models/kit/ship_interior/door_sliding.gltf",
     cells: [
         (
             id: "machines",

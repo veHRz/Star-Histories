@@ -6,7 +6,7 @@
     kind: District,
     name_key: "sector.hexis_spaceport",
     status: Proposition("P7"),
-    door_model: "models/kit/ship_interior/door_sliding.glb",
+    door_model: "models/kit/ship_interior/door_sliding.gltf",
     cells: [
         (
             id: "passerelle",

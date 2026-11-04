@@ -6,7 +6,7 @@ Un petit secteur de deux cellules, construit avec la bibliothèque de matériaux
     coursive (2,4 × 8 m, 2,6 m) : section à pans coupés, nervures tous les 2 m, bandeaux
         lumineux froids dans les angles, caillebotis éclairé par-dessous, gaines au plafond ;
     porte (ouverture kit.DOOR_W × kit.DOOR_H, cadre épais à pans coupés ; le jeu y pose
-        models/kit/ship_interior/door_sliding.glb) ;
+        models/kit/ship_interior/door_sliding.gltf) ;
     atelier (6 × 8 m, 3,2 m) : lumière sodium, poutres et colonnes apparentes, tuyaux, gaine,
         console inclinée (boutons, écrans), caisses, casier, pompe, trappe et bandes de danger,
         gyrophare rouge.
@@ -570,7 +570,7 @@ def write_descriptor(lightmaps: dict) -> None:
         "kind": "Ship",
         "name_key": f"sector.{SECTOR}",
         "status": 'Proposition("P13")',
-        "door_model": "models/kit/ship_interior/door_sliding.glb",
+        "door_model": "models/kit/ship_interior/door_sliding.gltf",
         "models": MODELS,
     }
     text = st.sector_ron(meta, CELLS, PORTALS, SPAWNS, lightmaps)
