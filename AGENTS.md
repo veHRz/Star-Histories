@@ -11,7 +11,7 @@
 - **Le jeu** : *Star Histories*, RPG solo **space opera** en 3D, **caméra à la première personne**. Le joueur vit dans la galaxie d'**Astréa** en **425at**, en pleine « Fausse Paix armée ». Il monte en grade, change de gameplay (à pied, pilote, capitaine, marchand, espion…), rejoint des groupes, s'allie, **trahit**. **Le monde évolue tout seul**, et le joueur pèse lourd sur ce qui s'y passe.
 - **L'auteur** (veHRz) écrit l'univers (le « canon »). **Toi, tu construis le jeu.** Tu ne réécris pas l'univers.
 - **La pile** : Rust **1.99.1**, **Bevy 0.20.1**, physique **avian3d 0.8**, modèles 3D faits dans **Blender 5.2.3 LTS** piloté par **MCP for Blender**.
-- **La machine de référence** est le poste de développement Windows (il y en a aussi un sous Linux, §3.1) : i5-12500, 32 Go de RAM, **GPU intégré Intel UHD 770**. Le jeu doit y tenir **60 i/s en 1080p en qualité « Moyenne »** (30 i/s minimum en toutes circonstances). C'est une contrainte de conception, pas un détail de fin de projet.
+- **La machine de référence** est le poste de développement Windows (il y en a aussi un sous Linux, §3.1) : i5-12500, 32 Go de RAM, **GPU intégré Intel UHD 770**. Le jeu doit y tenir **60 i/s en 1080p en qualité « Basse »** (30 i/s minimum en toutes circonstances ; décision de l'auteur du 04/11/2026, Q15 : cette machine est faible, la cible était « Moyenne » jusqu'à M7). C'est une contrainte de conception, pas un détail de fin de projet.
 - **Le plan** : `docs/ROADMAP.md`, jalons M0 → M8, à suivre dans l'ordre (M8, la refonte visuelle et le tutoriel : `docs/refonte-visuelle.md`). La conception du jeu est dans `docs/GDD.md`.
 
 ---
@@ -145,7 +145,7 @@ Le jeu lit des variables d'environnement (`crates/sh_game/src/dev.rs`) :
 | `SH_SCENARIO=firefight` / `firefight_lose` | Avec `SH_START=sector:player_ship SH_SPAWN=soute SH_BOARDING=2` (ou `3`) : abordage repoussé à pied ; défaite passive |
 | `SH_SCENARIO=fly_ship` | Avec `SH_START=global:hexis` : vol aux commandes (assisté, croisière, lacet, découplé), puis marche du cockpit au couloir en plein vol |
 
-À la sortie, le jeu journalise toujours le **temps de frame moyen et maximal** et le nombre de frames au-dessus de 33 ms (hors chargement). `tools/check.ps1` (Windows) et `tools/check.sh` (Linux) lancent un test de fumée de chaque point d'entrée ; ces deux scripts font la même chose, modifie-les **ensemble**. Les **mesures de performance** passent par `tools/perf.ps1` / `tools/perf.sh` (même règle) : build release, puis chaque scénario qui porte un critère de performance (`walk_ship` avec et sans lightmaps, `fly_ship`, `port_loop`, `raid_win`, `firefight`, `firefight_lose`), résumé dans `target/perf/` (exemple : `powershell -ExecutionPolicy Bypass -File tools/perf.ps1 -Preset medium -Window fullscreen`). Le jeu occupe l'écran pendant les mesures : préviens l'auteur.
+À la sortie, le jeu journalise toujours le **temps de frame moyen et maximal** et le nombre de frames au-dessus de 33 ms (hors chargement). `tools/check.ps1` (Windows) et `tools/check.sh` (Linux) lancent un test de fumée de chaque point d'entrée ; ces deux scripts font la même chose, modifie-les **ensemble**. Les **mesures de performance** passent par `tools/perf.ps1` / `tools/perf.sh` (même règle) : build release, puis chaque scénario qui porte un critère de performance (`walk_ship` avec et sans lightmaps, `fly_ship`, `port_loop`, `raid_win`, `firefight`, `firefight_lose`), résumé dans `target/perf/` (exemple : `powershell -ExecutionPolicy Bypass -File tools/perf.ps1 -Preset low -Window fullscreen`, le préréglage de la cible ; `-Preset medium` pour comparer). Le jeu occupe l'écran pendant les mesures : préviens l'auteur.
 
 Exemple (PowerShell) :
 
@@ -373,7 +373,9 @@ L'auteur a imaginé quatre vues pour répartir la charge. Le principe est conser
 
 ---
 
-## 10. Budgets de performance (UHD 770, 1080p, préréglage « Moyen »)
+## 10. Budgets de performance (UHD 770, 1080p, préréglage « Bas »)
+
+La cible est le préréglage **Bas** depuis le 04/11/2026 (décision de l'auteur, Q15 : la machine de référence est faible) ; de M1 à M7 c'était « Moyen », qui reste mesuré pour comparer (`tools/perf.ps1 -Preset medium`). Moyen et Haut sont pour les machines plus puissantes.
 
 | Poste | Budget |
 |---|---|
@@ -381,8 +383,8 @@ L'auteur a imaginé quatre vues pour répartir la charge. Le principe est conser
 | Triangles visibles | ≤ 1,5 M |
 | Objets dessinés | ≤ 1 000 (fusionne, instancie, utilise `VisibilityRange`) |
 | Ombres | 1 lumière directionnelle (2–3 cascades) + ≤ 2 lumières ponctuelles ombrées à la fois |
-| Post-traitement | Bloom et tonemapping oui ; SSAO, SSR, volumétrique désactivés en « Moyen » |
-| Anticrénelage | FXAA ou SMAA, pas de MSAA en « Moyen » |
+| Post-traitement | Tonemapping oui ; bloom selon le préréglage (coupé en Bas) ; SSAO, SSR, volumétrique désactivés en Bas et en Moyen |
+| Anticrénelage | FXAA ou SMAA, pas de MSAA en Bas ni en Moyen |
 | Mémoire vidéo (partagée) | ≤ 1,5 Go par secteur chargé |
 | Physique | Colliders simples (boîtes, capsules, convexes) ; physique active seulement dans les cellules Locales |
 

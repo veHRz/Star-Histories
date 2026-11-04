@@ -150,9 +150,9 @@ But : un jeu beau et compréhensible dès la première minute, sans rien perdre 
 - [ ] Lot F : abordeur pirate (et armes portatives).
 - [ ] Lot T : tutoriel guidé des premières minutes, désactivable dans les options, joué en entier par un scénario d'autopilote.
 - [ ] Lot U (si l'auteur le veut) : interface dans la même direction.
-- [ ] Intégration et tests par l'orchestrateur à chaque vague : `tools/check.ps1`, captures avant / après, `tools/perf.ps1` (≥ 60 i/s en Moyen sur UHD 770).
+- [ ] Intégration et tests par l'orchestrateur à chaque vague : `tools/check.ps1`, captures avant / après, `tools/perf.ps1` (≥ 60 i/s en Bas sur UHD 770 : cible abaissée de Moyen à Bas par l'auteur, Q15).
 
-**Fini quand** : l'auteur valide le nouveau visuel en jeu ; le tutoriel mène une nouvelle partie jusqu'à la première livraison et la sauvegarde ; `tools/check.ps1` vert ; ≥ 60 i/s en Moyen sur la machine de référence.
+**Fini quand** : l'auteur valide le nouveau visuel en jeu ; le tutoriel mène une nouvelle partie jusqu'à la première livraison et la sauvegarde ; `tools/check.ps1` vert ; ≥ 60 i/s en Bas sur la machine de référence.
 
 ---
 

@@ -1,12 +1,12 @@
 ﻿# Mesures de performance (AGENTS.md §10) : les scénarios de l'autopilote en release, au préréglage
 # et à la taille de fenêtre choisis. Seules les mesures du poste Windows (UHD 770) valent pour les
 # budgets ; ailleurs, elles servent à comparer deux versions entre elles.
-#   powershell -ExecutionPolicy Bypass -File tools/perf.ps1 [-Preset medium] [-Window fullscreen] [-Only raid_win,firefight]
+#   powershell -ExecutionPolicy Bypass -File tools/perf.ps1 [-Preset low] [-Window fullscreen] [-Only raid_win,firefight]
 # -Window : `fullscreen` (plein écran sans bordure, 1080p sur la machine de référence) ou `<L>x<H>`.
 # Résumé dans target/perf/<date>-<préréglage>-<fenêtre>.txt. Pendant de tools/perf.sh : modifier les deux ensemble.
 
 param(
-    [string]$Preset = "medium",
+    [string]$Preset = "low",
     [string]$Window = "fullscreen",
     [string[]]$Only = @()
 )

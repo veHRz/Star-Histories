@@ -2,7 +2,7 @@
 # Mesures de performance (AGENTS.md §10) : les scénarios de l'autopilote en release, au préréglage
 # et à la taille de fenêtre choisis. Seules les mesures du poste Windows (UHD 770) valent pour les
 # budgets ; ici, elles servent à comparer deux versions entre elles.
-#   tools/perf.sh [préréglage=medium] [fenêtre=fullscreen] [scénarios séparés par des virgules]
+#   tools/perf.sh [préréglage=low] [fenêtre=fullscreen] [scénarios séparés par des virgules]
 # Fenêtre : `fullscreen` (plein écran sans bordure) ou `<L>x<H>`.
 # Résumé dans target/perf/<date>-<préréglage>-<fenêtre>.txt. Pendant de tools/perf.ps1 : modifier les deux ensemble.
 
@@ -13,7 +13,7 @@ if ! command -v cargo >/dev/null 2>&1; then
     export PATH="$HOME/.cargo/bin:$PATH"
 fi
 
-preset=${1:-medium}
+preset=${1:-low}
 window=${2:-fullscreen}
 only=${3:-}
 

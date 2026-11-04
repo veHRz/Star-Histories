@@ -45,3 +45,6 @@
 
 14. **Direction artistique après M7.** La tranche est jouable : la direction « réaliste stylisé, géométrie simple » suffit-elle ?
    → **« Il est moche. Pas vraiment moche, mais les murs sont plats, il n'y a aucun détail ; il faudrait un vrai tuto qui explique le jeu et guide les premières minutes (désactivable dans les options). La prochaine partie : la refonte totale du visuel pour un style futuriste (inspiré de Star Wars). »** (04/11/2026) — remplace la direction validée en Q5 ; intégré comme jalon M8 (`docs/refonte-visuelle.md`). La direction sonore (P27) est validée « pour un début ».
+
+15. **Préréglage de la cible de performance.** (Remarque de l'auteur pendant M8, sans question préalable.)
+   → **« Cette machine, qui est la machine de référence (pour l'instant), est très faible niveau puissance : les tests de performance à atteindre doivent passer de moyen à bas en qualité graphique. »** (04/11/2026) — le critère devient ≥ 60 i/s en 1080p au préréglage **Bas** sur l'UHD 770 (30 i/s minimum partout) ; `tools/perf.ps1` / `perf.sh` mesurent en Bas par défaut ; AGENTS.md §0 et §10, `docs/refonte-visuelle.md`, feuille de route à jour. Hypothèse réversible : le préréglage proposé par défaut au joueur reste Moyen.

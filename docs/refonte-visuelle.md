@@ -41,7 +41,8 @@ de la trilogie d'origine, jamais ses designs.
 
 ## 3. Contraintes techniques (non négociables)
 
-- **Performances** : la machine de référence (UHD 770) doit garder **≥ 60 i/s en Moyen, 1080p**
+- **Performances** : la machine de référence (UHD 770) doit garder **≥ 60 i/s en Bas, 1080p**
+  (cible abaissée de Moyen à Bas par l'auteur le 04/11/2026, Q15 : la machine est faible)
   (`tools/perf.ps1`, poste Windows seulement ; mesures de fin de M7 dans `docs/JOURNAL.md` :
   12 à 16,5 ms selon la scène). Budgets d'AGENTS.md §10 : ≤ 1,5 M triangles visibles, ≤ 1 000
   objets dessinés, ≤ 1,5 Go de mémoire vidéo par secteur. Fusion par matériau
@@ -140,7 +141,7 @@ et sautable à tout moment ; son avancement est sauvegardé (`SaveFile`, `#[serd
 4. **Paralléliser** les vagues (§4). Pendant qu'elles tournent, préparer l'intégration côté Bevy.
 5. **Intégrer et tester, seul, à la fin de chaque vague** : relancer les exports si besoin,
    `cargo fmt`, `cargo lint`, `cargo t`, `tools/check.ps1`, captures regardées (les mêmes
-   points de vue qu'avant pour comparer), `tools/perf.ps1 -Preset medium -Window fullscreen`.
+   points de vue qu'avant pour comparer), `tools/perf.ps1 -Preset low -Window fullscreen` (et `-Preset medium` pour comparer à M7).
    Corriger (ou renvoyer au sous-agent avec un retour précis), puis **un commit par lot**.
 6. **Fin de M8** : feuille de route cochée, journal, registres, AGENTS.md à jour (dans un commit
    dédié), push, bilan à l'auteur avec les captures avant / après.
@@ -151,5 +152,5 @@ et sautable à tout moment ; son avancement est sauvegardé (`SaveFile`, `#[serd
   nouvelle direction ; l'auteur les a vus en jeu et les valide.
 - Le tutoriel mène une nouvelle partie jusqu'à la première livraison et la sauvegarde ; il se
   coupe dans les options ; un scénario de l'autopilote le joue en entier.
-- `tools/check.ps1` vert ; `tools/perf.ps1` en Moyen 1080p sur l'UHD 770 : ≥ 60 i/s, aucune
+- `tools/check.ps1` vert ; `tools/perf.ps1` en Bas 1080p sur l'UHD 770 : ≥ 60 i/s, aucune
   régression des pics.
