@@ -17,11 +17,17 @@ pub struct OptionsUiPlugin;
 
 impl Plugin for OptionsUiPlugin {
     fn build(&self, app: &mut App) {
+        // Une condition par système, évaluée juste avant lui (posée sur le groupe chaîné, elle
+        // ne le serait qu'une fois, et `escape` ferme l'écran entre deux systèmes). Le rendu
+        // tourne aussi écran fermé : il efface ce qui en reste.
         app.add_observer(on_activate).add_systems(
             Update,
-            (capture_key, escape, render)
-                .chain()
-                .run_if(resource_exists::<OptionsScreen>),
+            (
+                capture_key.run_if(resource_exists::<OptionsScreen>),
+                escape.run_if(resource_exists::<OptionsScreen>),
+                render.run_if(resource_exists::<Texts>),
+            )
+                .chain(),
         );
     }
 }
@@ -120,9 +126,12 @@ fn on_activate(
 /// La touche pressée devient celle de l'action en attente (Échap annule, dans `escape`).
 fn capture_key(
     mut reader: MessageReader<KeyboardInput>,
-    mut screen: ResMut<OptionsScreen>,
+    screen: Option<ResMut<OptionsScreen>>,
     mut settings: ResMut<UserSettings>,
 ) {
+    let Some(mut screen) = screen else {
+        return;
+    };
     let Some(default) = screen.waiting else {
         reader.clear();
         return;
@@ -142,8 +151,11 @@ fn capture_key(
 fn escape(
     mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
-    mut screen: ResMut<OptionsScreen>,
+    screen: Option<ResMut<OptionsScreen>>,
 ) {
+    let Some(mut screen) = screen else {
+        return;
+    };
     if keys.just_pressed(KeyCode::Escape) {
         if screen.waiting.is_some() {
             screen.waiting = None;
@@ -165,10 +177,18 @@ fn render(
     texts: Res<Texts>,
     fonts: Res<UiFonts>,
     settings: Res<UserSettings>,
-    screen: Res<OptionsScreen>,
+    screen: Option<Res<OptionsScreen>>,
     roots: Query<Entity, With<OptionsUi>>,
     mut drawn: Local<bool>,
 ) {
+    // Écran fermé (Échap, Retour, autre chemin) : ce qui reste affiché part ici.
+    let Some(screen) = screen else {
+        for root in &roots {
+            commands.entity(root).despawn();
+        }
+        *drawn = false;
+        return;
+    };
     if *drawn && !screen.is_changed() && !settings.is_changed() && !texts.is_changed() {
         return;
     }
@@ -447,4 +467,19 @@ fn small_button(
         BackgroundColor(theme::BUTTON),
         children![(Text::new(label), fonts.body(17.0), TextColor(theme::TEXT))],
     )
+}
+
+/// Le bouton « Retour » de l'écran des options (scénarios de l'autopilote).
+pub fn find_back_button(world: &mut World) -> Option<Entity> {
+    let mut buttons = world.query::<(Entity, &OptionsAction)>();
+    buttons
+        .iter(world)
+        .find(|(_, action)| **action == OptionsAction::Back)
+        .map(|(entity, _)| entity)
+}
+
+/// L'écran des options est-il affiché ?
+pub fn is_shown(world: &mut World) -> bool {
+    let mut screens = world.query_filtered::<(), With<OptionsUi>>();
+    screens.iter(world).next().is_some()
 }

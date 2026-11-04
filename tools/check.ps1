@@ -62,6 +62,17 @@ Step "scénario menu_return" {
     $global:LASTEXITCODE = $code
 }
 
+# Menu de pause et options, au vrai clavier (Échap) et aux vrais boutons : ni plantage ni écran fantôme.
+Step "scénario pause_escape" {
+    $env:SH_START = "new"
+    $env:SH_SCENARIO = "pause_escape"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_START, Env:SH_SCENARIO -ErrorAction SilentlyContinue
+    $log | Select-String -Pattern "ERROR|panicked|pause_escape" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
 # Sauvegarde puis chargement, en vol et à quai : argent, date, vue et pose du vaisseau retrouvés.
 foreach ($start in @("new", "sector:hexis_spaceport")) {
     Step "scénario save_load ($start)" {

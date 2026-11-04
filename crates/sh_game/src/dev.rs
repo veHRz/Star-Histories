@@ -834,6 +834,11 @@ impl Plugin for ScenarioPlugin {
                 .add_systems(Update, save_load);
             return;
         }
+        if name == "pause_escape" {
+            app.init_resource::<PauseCheck>()
+                .add_systems(PreUpdate, pause_escape);
+            return;
+        }
         let (steps, flight) = match name.as_str() {
             "walk_ship" => (WALK_SHIP, None),
             "fly_ship" => (FLY_SHIP_WALK, Some(FlightCheck::default())),
@@ -861,7 +866,7 @@ impl Plugin for ScenarioPlugin {
                 | "firefight_lose"
         ) {
             error!(
-                "SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage, contract_loop, raid_win, raid_flee, raid_lose, firefight, firefight_lose, menu_return)"
+                "SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage, contract_loop, raid_win, raid_flee, raid_lose, firefight, firefight_lose, menu_return, save_load, pause_escape)"
             );
             app.add_systems(Startup, |mut exit: MessageWriter<AppExit>| {
                 exit.write(AppExit::error());
@@ -960,6 +965,140 @@ fn menu_return(
         }
         _ => {}
     }
+}
+
+/// `pause_escape` : le menu de pause et les options, au vrai clavier et aux vrais boutons.
+#[derive(Resource, Default)]
+struct PauseCheck {
+    step: usize,
+    since: f32,
+    total: f32,
+    /// Échap enfoncé au frame précédent : le relâcher maintenant.
+    releasing: bool,
+}
+
+/// Envoie un appui ou un relâchement d'Échap, comme le clavier (contextes d'entrée compris).
+fn escape_key(world: &mut World, pressed: bool) {
+    use bevy::input::ButtonState;
+    use bevy::input::keyboard::{Key, KeyboardInput};
+    let mut windows = world.query_filtered::<Entity, With<bevy::window::PrimaryWindow>>();
+    let Ok(window) = windows.single(world) else {
+        return;
+    };
+    world.write_message(KeyboardInput {
+        key_code: KeyCode::Escape,
+        logical_key: Key::Escape,
+        state: if pressed {
+            ButtonState::Pressed
+        } else {
+            ButtonState::Released
+        },
+        text: None,
+        repeat: false,
+        window,
+    });
+}
+
+fn press_button(world: &mut World, button: Option<Entity>) -> bool {
+    match button {
+        Some(entity) => {
+            world.trigger(bevy::ui_widgets::Activate { entity });
+            true
+        }
+        None => false,
+    }
+}
+
+/// `pause_escape` (avec `SH_START=new`) : Échap ouvre la pause ; « Reprendre » et Échap la
+/// ferment, écran compris ; Échap dans les options ne ferme que les options ; « Retour » aussi.
+/// Le double Échap plantait (une condition de groupe évaluée une fois, la pause retirée entre
+/// deux systèmes) et l'écran restait affiché après « Reprendre ».
+fn pause_escape(world: &mut World) {
+    use crate::ui::{options, pause};
+    let dt = world.resource::<Time<Real>>().delta_secs();
+    let ready = world.contains_resource::<crate::career::Career>()
+        && world.contains_resource::<crate::sector::ActiveSector>();
+    let mut check = world.resource_mut::<PauseCheck>();
+    check.since += dt;
+    check.total += dt;
+    if check.releasing {
+        check.releasing = false;
+        escape_key(world, false);
+        return;
+    }
+    let (step, since, total) = (check.step, check.since, check.total);
+    if total > 90.0 {
+        error!("scénario pause_escape : bloqué à l'étape {step}");
+        world.write_message(AppExit::error());
+        return;
+    }
+    let wait = if step == 0 { 3.0 } else { 0.5 };
+    if !ready || since < wait {
+        return;
+    }
+    let paused = world.contains_resource::<pause::Paused>();
+    let pause_shown = pause::is_shown(world);
+    let options_open = world.contains_resource::<options::OptionsScreen>();
+    let options_shown = options::is_shown(world);
+    // Ce qu'on attend avant l'étape, puis l'action de l'étape.
+    let (expected, action): (bool, &str) = match step {
+        0 => (!paused, "escape"),
+        1 => (paused && pause_shown, "resume"),
+        2 => (!paused && !pause_shown, "escape"),
+        3 => (paused && pause_shown, "escape"),
+        4 => (!paused && !pause_shown, "escape"),
+        5 => (paused, "options"),
+        6 => (options_open && options_shown, "escape"),
+        7 => (
+            !options_open && !options_shown && paused && pause_shown,
+            "options",
+        ),
+        8 => (options_open && options_shown, "back"),
+        9 => (!options_open && !options_shown && paused, "escape"),
+        10 => (!paused && !pause_shown, "done"),
+        _ => return,
+    };
+    if !expected {
+        error!(
+            "scénario pause_escape : état inattendu à l'étape {step} (pause {paused}, écran {pause_shown}, options {options_open}, écran des options {options_shown})"
+        );
+        world.write_message(AppExit::error());
+        return;
+    }
+    let done = match action {
+        "escape" => {
+            escape_key(world, true);
+            world.resource_mut::<PauseCheck>().releasing = true;
+            true
+        }
+        "resume" => {
+            let button = pause::find_button(world, false);
+            press_button(world, button)
+        }
+        "options" => {
+            let button = pause::find_button(world, true);
+            press_button(world, button)
+        }
+        "back" => {
+            let button = options::find_back_button(world);
+            press_button(world, button)
+        }
+        _ => {
+            info!(
+                "scénario pause_escape terminé : pause, reprise, Échap et options sans écran fantôme"
+            );
+            world.write_message(AppExit::Success);
+            true
+        }
+    };
+    if !done {
+        error!("scénario pause_escape : bouton introuvable à l'étape {step}");
+        world.write_message(AppExit::error());
+        return;
+    }
+    let mut check = world.resource_mut::<PauseCheck>();
+    check.step += 1;
+    check.since = 0.0;
 }
 
 /// `save_load` : ce qui a été sauvegardé revient au chargement.

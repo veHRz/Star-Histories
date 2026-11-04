@@ -26,14 +26,18 @@ impl Plugin for PausePlugin {
     fn build(&self, app: &mut App) {
         app.add_observer(on_pause)
             .add_observer(on_activate)
+            // Une condition par système, évaluée juste avant lui : posée sur le groupe chaîné,
+            // elle ne le serait qu'une fois, et la fermeture (Échap) retire la pause entre
+            // les deux systèmes.
             .add_systems(
                 Update,
                 (
-                    close_on_escape.run_if(not(resource_exists::<OptionsScreen>)),
-                    render,
+                    close_on_escape
+                        .run_if(resource_exists::<Paused>)
+                        .run_if(not(resource_exists::<OptionsScreen>)),
+                    render.run_if(resource_exists::<Paused>),
                 )
-                    .chain()
-                    .run_if(resource_exists::<Paused>),
+                    .chain(),
             )
             .add_systems(OnExit(AppState::InGame), leave);
     }
@@ -121,6 +125,12 @@ fn resume(world: &mut World) {
     let Some(paused) = world.remove_resource::<Paused>() else {
         return;
     };
+    // L'écran de pause part avec elle (il n'est redessiné que pendant la pause).
+    let mut screens = world.query_filtered::<Entity, With<PauseUi>>();
+    let screens: Vec<Entity> = screens.iter(world).collect();
+    for entity in screens {
+        world.entity_mut(entity).despawn();
+    }
     world.resource_mut::<Time<Virtual>>().unpause();
     world
         .resource_mut::<NextState<ControlMode>>()
@@ -137,8 +147,11 @@ fn resume(world: &mut World) {
 fn close_on_escape(
     mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
-    mut paused: ResMut<Paused>,
+    paused: Option<ResMut<Paused>>,
 ) {
+    let Some(mut paused) = paused else {
+        return;
+    };
     if !keys.pressed(KeyCode::Escape) && !paused.armed {
         paused.armed = true;
         return;
@@ -193,9 +206,12 @@ fn render(
     data: Res<Data>,
     fonts: Res<UiFonts>,
     mode: Res<GameMode>,
-    mut paused: ResMut<Paused>,
+    paused: Option<ResMut<Paused>>,
     roots: Query<Entity, With<PauseUi>>,
 ) {
+    let Some(mut paused) = paused else {
+        return;
+    };
     if paused.drawn == Some(paused.screen) {
         return;
     }
@@ -283,4 +299,24 @@ fn render(
 fn leave(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
     commands.remove_resource::<Paused>();
     time.unpause();
+}
+
+/// Le bouton « Reprendre » ou « Options » du menu de pause (scénarios de l'autopilote).
+pub fn find_button(world: &mut World, options: bool) -> Option<Entity> {
+    let wanted = if options {
+        PauseAction::Options
+    } else {
+        PauseAction::Resume
+    };
+    let mut buttons = world.query::<(Entity, &PauseAction)>();
+    buttons
+        .iter(world)
+        .find(|(_, action)| **action == wanted)
+        .map(|(entity, _)| entity)
+}
+
+/// L'écran de pause est-il affiché ?
+pub fn is_shown(world: &mut World) -> bool {
+    let mut screens = world.query_filtered::<(), With<PauseUi>>();
+    screens.iter(world).next().is_some()
 }

@@ -55,6 +55,10 @@ step "fumée sector:player_ship sans lightmaps" \
 step "scénario menu_return" \
     run_game "ERROR|panicked|menu_return" SH_START=new SH_SCENARIO=menu_return
 
+# Menu de pause et options, au vrai clavier (Échap) et aux vrais boutons : ni plantage ni écran fantôme.
+step "scénario pause_escape" \
+    run_game "ERROR|panicked|pause_escape" SH_START=new SH_SCENARIO=pause_escape
+
 # Sauvegarde puis chargement, en vol et à quai : argent, date, vue et pose du vaisseau retrouvés.
 for start in new sector:hexis_spaceport; do
     step "scénario save_load (${start})" \
