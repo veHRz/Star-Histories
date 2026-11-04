@@ -2,6 +2,24 @@
 
 > Une entrée courte par session (2 à 5 lignes) : ce qui a été fait, ce qui reste en suspens, les décisions prises. Le plus récent en haut.
 
+## 04/11/2026 — Poste Windows : vérification de M6, mesures de performance (M1, M2, M6)
+
+- **Vérification** : `tools/check.ps1` vert sous Windows (fmt, lint, tests, fumée, tous les scénarios dont `raid_win`, `raid_flee`, `raid_lose`, `firefight`, `firefight_lose`) ; `walk_ship` monte bien l'escalier à ≈ 45 i/s. Captures `target/shots/m6-*.png` regardées : correctes. Défauts mineurs déjà connus : étiquettes qui se chevauchent (« HexisApproche du spatioport d'Hexis », hub de Cygnara sous une corvette).
+- **Bride trouvée** : Bevy limite à 60 Hz une fenêtre sans focus (`WinitSettings::game`), le cas des fenêtres lancées par l'autopilote. Les frames rapides comptaient ≈ 16,7 ms (le « calé sur 60 Hz » noté sous Linux). L'autopilote passe en `WinitSettings::continuous()`. Nouveaux outils : `SH_WINDOW=<L>x<H>|fullscreen` et `tools/perf.ps1` / `perf.sh` (scénarios des critères en release, résumé dans `target/perf/`).
+- **Mesures** (UHD 770, pilote 31.0.101.4953, Vulkan, release, moyenne / pire pendant le scénario) :
+
+  | Scénario | Moyen 1080p | Bas 1080p | Moyen 1600×900 |
+  |---|---|---|---|
+  | `walk_ship` | 31,8 ms (31 i/s) / 144 | 18,2 / 92 | 22,8 / 81 |
+  | `walk_ship` sans lightmaps | 38,6 (26 i/s) / 130 | 19,9 / 117 | 27,0 / 80 |
+  | `fly_ship` (marche en vol) | 36,2 (28 i/s) / 77 | 20,4 / 45 | 25,2 / 59 |
+  | `port_loop` | 30,3 (33 i/s) / 114 | 24,7 / 122 | 21,3 / 78 |
+  | `raid_win`, combat à 10 coques | 34,5 (29 i/s) / 73 | 19,9 / 52 | 24,9 / 52 |
+  | `firefight` (2 abordeurs) | 33,7 (30 i/s) / 69 | 20,9 / 95 | 24,1 / 51 |
+  | `firefight_lose` (3) | 30,1 (33 i/s) / 51 | 17,8 / 37 | 21,5 / 43 |
+
+- **Critères de performance de M1, M2 et M6 non tenus** : ≈ 30 i/s en Moyen 1080p, à peine 50–55 i/s en Bas, et des frames > 33 ms en continu. **Le GPU est la limite** : en Bas dans une fenêtre de 640×360, 3,2 ms (`walk_ship`) et 3,9 ms (`fly_ship`), donc le CPU (logique, physique, IA, simulation) coûte ≈ 3–4 ms. Le combat ne pèse presque rien (raid ≈ vol seul). Les lightmaps gagnent 18 % (38,6 → 31,8 ms) ; en 1600×900, `walk_ship` passe de 25,0 ms (M1, avant lightmaps) à 22,8 ms. Pics de 70 à 145 ms aux transitions de cellules et aux arrivées. Prochaine étape, en tête de M7 : mesurer le temps GPU de chaque passe (ombres, bloom, HDR, anticrénelage, ciel) avant de toucher aux préréglages.
+
 ## 04/11/2026 — Poste Linux (CachyOS) : Q13 et M6, le combat
 
 - **Q13 intégrée** (AZERTY) : les aides citent des jetons de touche (`[KeyE]`) remplacés par l'étiquette de la disposition (`gameplay/keyboard.ron`), corrigée à chaque appui par le vrai caractère. Liaisons physiques inchangées jusqu'au remappage (M7) : la carte est sur « , » en AZERTY.
