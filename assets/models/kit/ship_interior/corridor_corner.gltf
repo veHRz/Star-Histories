@@ -33,7 +33,7 @@
 	"nodes":[
 		{
 			"mesh":0,
-			"name":"cc_ceiling_col",
+			"name":"cc_ceiling3_col",
 			"translation":[
 				0,
 				2.700000047683716,
@@ -42,7 +42,7 @@
 		},
 		{
 			"mesh":1,
-			"name":"cc_floor_col",
+			"name":"cc_floor1_col",
 			"translation":[
 				0,
 				-0.10000000149011612,
@@ -51,7 +51,7 @@
 		},
 		{
 			"mesh":2,
-			"name":"cc_jamb_col",
+			"name":"cc_jamb20_col",
 			"translation":[
 				1.1200000047683716,
 				1.2000000476837158,
@@ -60,7 +60,7 @@
 		},
 		{
 			"mesh":3,
-			"name":"cc_jamb_col.001",
+			"name":"cc_jamb24_col",
 			"translation":[
 				1.1200000047683716,
 				1.2000000476837158,
@@ -69,7 +69,7 @@
 		},
 		{
 			"mesh":4,
-			"name":"cc_kerb_W_col",
+			"name":"cc_kerb_W46_col",
 			"translation":[
 				-1.125,
 				0.20999999344348907,
@@ -78,7 +78,7 @@
 		},
 		{
 			"mesh":5,
-			"name":"cc_wall_E0_col",
+			"name":"cc_wall_E012_col",
 			"translation":[
 				1.2999999523162842,
 				1.2999999523162842,
@@ -87,7 +87,7 @@
 		},
 		{
 			"mesh":6,
-			"name":"cc_wall_E1_col",
+			"name":"cc_wall_E114_col",
 			"translation":[
 				1.2999999523162842,
 				2.5,
@@ -96,7 +96,7 @@
 		},
 		{
 			"mesh":7,
-			"name":"cc_wall_E2_col",
+			"name":"cc_wall_E217_col",
 			"translation":[
 				1.2999999523162842,
 				1.2999999523162842,
@@ -105,7 +105,7 @@
 		},
 		{
 			"mesh":8,
-			"name":"cc_wall_N0_col",
+			"name":"cc_wall_N06_col",
 			"translation":[
 				0,
 				1.2999999523162842,
@@ -114,7 +114,7 @@
 		},
 		{
 			"mesh":9,
-			"name":"cc_wall_S0_col",
+			"name":"cc_wall_S09_col",
 			"translation":[
 				0,
 				1.2999999523162842,
@@ -123,7 +123,7 @@
 		},
 		{
 			"mesh":10,
-			"name":"cc_wall_W0_col",
+			"name":"cc_wall_W033_col",
 			"translation":[
 				-1.2999999523162842,
 				1.2999999523162842,
@@ -323,7 +323,7 @@
 	],
 	"meshes":[
 		{
-			"name":"cc_ceiling_col",
+			"name":"cc_ceiling3_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -335,7 +335,7 @@
 			]
 		},
 		{
-			"name":"cc_floor_col",
+			"name":"cc_floor1_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -347,7 +347,7 @@
 			]
 		},
 		{
-			"name":"cc_jamb_col",
+			"name":"cc_jamb20_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -359,7 +359,7 @@
 			]
 		},
 		{
-			"name":"cc_jamb_col.001",
+			"name":"cc_jamb24_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -371,7 +371,7 @@
 			]
 		},
 		{
-			"name":"cc_kerb_W_col",
+			"name":"cc_kerb_W46_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -383,7 +383,7 @@
 			]
 		},
 		{
-			"name":"cc_wall_E0_col",
+			"name":"cc_wall_E012_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -395,7 +395,7 @@
 			]
 		},
 		{
-			"name":"cc_wall_E1_col",
+			"name":"cc_wall_E114_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -407,7 +407,7 @@
 			]
 		},
 		{
-			"name":"cc_wall_E2_col",
+			"name":"cc_wall_E217_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -419,7 +419,7 @@
 			]
 		},
 		{
-			"name":"cc_wall_N0_col",
+			"name":"cc_wall_N06_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -431,7 +431,7 @@
 			]
 		},
 		{
-			"name":"cc_wall_S0_col",
+			"name":"cc_wall_S09_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -443,7 +443,7 @@
 			]
 		},
 		{
-			"name":"cc_wall_W0_col",
+			"name":"cc_wall_W033_col",
 			"primitives":[
 				{
 					"attributes":{

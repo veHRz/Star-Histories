@@ -97,7 +97,7 @@
 		},
 		{
 			"mesh":6,
-			"name":"cs_ceiling_col",
+			"name":"cs_ceiling7_col",
 			"translation":[
 				0,
 				2.700000047683716,
@@ -106,7 +106,7 @@
 		},
 		{
 			"mesh":7,
-			"name":"cs_floor_col",
+			"name":"cs_floor1_col",
 			"translation":[
 				0,
 				-0.10000000149011612,
@@ -115,7 +115,7 @@
 		},
 		{
 			"mesh":8,
-			"name":"cs_kerb_E_col",
+			"name":"cs_kerb_E29_col",
 			"translation":[
 				1.125,
 				0.20999999344348907,
@@ -124,7 +124,7 @@
 		},
 		{
 			"mesh":9,
-			"name":"cs_kerb_W_col",
+			"name":"cs_kerb_W47_col",
 			"translation":[
 				-1.125,
 				0.20999999344348907,
@@ -133,7 +133,7 @@
 		},
 		{
 			"mesh":10,
-			"name":"cs_wall_E0_col",
+			"name":"cs_wall_E016_col",
 			"translation":[
 				1.2999999523162842,
 				1.2999999523162842,
@@ -142,7 +142,7 @@
 		},
 		{
 			"mesh":11,
-			"name":"cs_wall_N0_col",
+			"name":"cs_wall_N010_col",
 			"translation":[
 				0,
 				1.2999999523162842,
@@ -151,7 +151,7 @@
 		},
 		{
 			"mesh":12,
-			"name":"cs_wall_S0_col",
+			"name":"cs_wall_S013_col",
 			"translation":[
 				0,
 				1.2999999523162842,
@@ -160,7 +160,7 @@
 		},
 		{
 			"mesh":13,
-			"name":"cs_wall_W0_col",
+			"name":"cs_wall_W034_col",
 			"translation":[
 				-1.2999999523162842,
 				1.2999999523162842,
@@ -422,7 +422,7 @@
 			]
 		},
 		{
-			"name":"cs_ceiling_col",
+			"name":"cs_ceiling7_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -434,7 +434,7 @@
 			]
 		},
 		{
-			"name":"cs_floor_col",
+			"name":"cs_floor1_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -446,7 +446,7 @@
 			]
 		},
 		{
-			"name":"cs_kerb_E_col",
+			"name":"cs_kerb_E29_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -458,7 +458,7 @@
 			]
 		},
 		{
-			"name":"cs_kerb_W_col",
+			"name":"cs_kerb_W47_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -470,7 +470,7 @@
 			]
 		},
 		{
-			"name":"cs_wall_E0_col",
+			"name":"cs_wall_E016_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -482,7 +482,7 @@
 			]
 		},
 		{
-			"name":"cs_wall_N0_col",
+			"name":"cs_wall_N010_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -494,7 +494,7 @@
 			]
 		},
 		{
-			"name":"cs_wall_S0_col",
+			"name":"cs_wall_S013_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -506,7 +506,7 @@
 			]
 		},
 		{
-			"name":"cs_wall_W0_col",
+			"name":"cs_wall_W034_col",
 			"primitives":[
 				{
 					"attributes":{

@@ -77,7 +77,7 @@
 		},
 		{
 			"mesh":4,
-			"name":"ct_ceiling_col",
+			"name":"ct_ceiling3_col",
 			"translation":[
 				0,
 				2.700000047683716,
@@ -86,7 +86,7 @@
 		},
 		{
 			"mesh":5,
-			"name":"ct_floor_col",
+			"name":"ct_floor1_col",
 			"translation":[
 				0,
 				-0.10000000149011612,
@@ -95,7 +95,7 @@
 		},
 		{
 			"mesh":6,
-			"name":"ct_jamb_col",
+			"name":"ct_jamb20_col",
 			"translation":[
 				1.1200000047683716,
 				1.2000000476837158,
@@ -104,7 +104,7 @@
 		},
 		{
 			"mesh":7,
-			"name":"ct_jamb_col.001",
+			"name":"ct_jamb24_col",
 			"translation":[
 				1.1200000047683716,
 				1.2000000476837158,
@@ -113,7 +113,7 @@
 		},
 		{
 			"mesh":8,
-			"name":"ct_jamb_col.002",
+			"name":"ct_jamb41_col",
 			"translation":[
 				-1.1200000047683716,
 				1.2000000476837158,
@@ -122,7 +122,7 @@
 		},
 		{
 			"mesh":9,
-			"name":"ct_jamb_col.003",
+			"name":"ct_jamb45_col",
 			"translation":[
 				-1.1200000047683716,
 				1.2000000476837158,
@@ -131,7 +131,7 @@
 		},
 		{
 			"mesh":10,
-			"name":"ct_wall_E0_col",
+			"name":"ct_wall_E012_col",
 			"translation":[
 				1.2999999523162842,
 				1.2999999523162842,
@@ -140,7 +140,7 @@
 		},
 		{
 			"mesh":11,
-			"name":"ct_wall_E1_col",
+			"name":"ct_wall_E114_col",
 			"translation":[
 				1.2999999523162842,
 				2.5,
@@ -149,7 +149,7 @@
 		},
 		{
 			"mesh":12,
-			"name":"ct_wall_E2_col",
+			"name":"ct_wall_E217_col",
 			"translation":[
 				1.2999999523162842,
 				1.2999999523162842,
@@ -158,7 +158,7 @@
 		},
 		{
 			"mesh":13,
-			"name":"ct_wall_N0_col",
+			"name":"ct_wall_N06_col",
 			"translation":[
 				0,
 				1.2999999523162842,
@@ -167,7 +167,7 @@
 		},
 		{
 			"mesh":14,
-			"name":"ct_wall_S0_col",
+			"name":"ct_wall_S09_col",
 			"translation":[
 				0,
 				1.2999999523162842,
@@ -176,7 +176,7 @@
 		},
 		{
 			"mesh":15,
-			"name":"ct_wall_W0_col",
+			"name":"ct_wall_W033_col",
 			"translation":[
 				-1.2999999523162842,
 				1.2999999523162842,
@@ -185,7 +185,7 @@
 		},
 		{
 			"mesh":16,
-			"name":"ct_wall_W1_col",
+			"name":"ct_wall_W135_col",
 			"translation":[
 				-1.2999999523162842,
 				2.5,
@@ -194,7 +194,7 @@
 		},
 		{
 			"mesh":17,
-			"name":"ct_wall_W2_col",
+			"name":"ct_wall_W238_col",
 			"translation":[
 				-1.2999999523162842,
 				1.2999999523162842,
@@ -363,7 +363,7 @@
 			]
 		},
 		{
-			"name":"ct_ceiling_col",
+			"name":"ct_ceiling3_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -375,7 +375,7 @@
 			]
 		},
 		{
-			"name":"ct_floor_col",
+			"name":"ct_floor1_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -387,7 +387,7 @@
 			]
 		},
 		{
-			"name":"ct_jamb_col",
+			"name":"ct_jamb20_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -399,7 +399,7 @@
 			]
 		},
 		{
-			"name":"ct_jamb_col.001",
+			"name":"ct_jamb24_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -411,7 +411,7 @@
 			]
 		},
 		{
-			"name":"ct_jamb_col.002",
+			"name":"ct_jamb41_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -423,7 +423,7 @@
 			]
 		},
 		{
-			"name":"ct_jamb_col.003",
+			"name":"ct_jamb45_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -435,7 +435,7 @@
 			]
 		},
 		{
-			"name":"ct_wall_E0_col",
+			"name":"ct_wall_E012_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -447,7 +447,7 @@
 			]
 		},
 		{
-			"name":"ct_wall_E1_col",
+			"name":"ct_wall_E114_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -459,7 +459,7 @@
 			]
 		},
 		{
-			"name":"ct_wall_E2_col",
+			"name":"ct_wall_E217_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -471,7 +471,7 @@
 			]
 		},
 		{
-			"name":"ct_wall_N0_col",
+			"name":"ct_wall_N06_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -483,7 +483,7 @@
 			]
 		},
 		{
-			"name":"ct_wall_S0_col",
+			"name":"ct_wall_S09_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -495,7 +495,7 @@
 			]
 		},
 		{
-			"name":"ct_wall_W0_col",
+			"name":"ct_wall_W033_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -507,7 +507,7 @@
 			]
 		},
 		{
-			"name":"ct_wall_W1_col",
+			"name":"ct_wall_W135_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -519,7 +519,7 @@
 			]
 		},
 		{
-			"name":"ct_wall_W2_col",
+			"name":"ct_wall_W238_col",
 			"primitives":[
 				{
 					"attributes":{

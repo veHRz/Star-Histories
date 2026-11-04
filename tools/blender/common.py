@@ -589,6 +589,13 @@ def export_gltf(rel_path: str, objects: list[bpy.types.Object]) -> Path:
     path = ROOT / rel_path
     if path.suffix != ".gltf":
         raise ValueError(f"export_gltf attend un chemin en .gltf : {rel_path}")
+    # Un collider renommé par Blender (`…_col.001`, nom pris deux fois) ne finit plus par `_col` :
+    # le jeu le dessinerait comme un pavé sans matériau, et sans collision.
+    import re
+
+    renamed = sorted(o.name for o in objects if re.search(r"_col\.\d+$", o.name))
+    if renamed:
+        raise ValueError(f"export_gltf : colliders au nom en double ({len(renamed)}) : {renamed[:8]}")
     path.parent.mkdir(parents=True, exist_ok=True)
     before = set(path.parent.iterdir())
     bpy.ops.object.select_all(action="DESELECT")

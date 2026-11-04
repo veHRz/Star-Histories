@@ -134,7 +134,7 @@
 		},
 		{
 			"mesh":8,
-			"name":"rs_ceiling_col",
+			"name":"rs_ceiling3_col",
 			"translation":[
 				0,
 				4.599999904632568,
@@ -143,7 +143,7 @@
 		},
 		{
 			"mesh":9,
-			"name":"rs_floor_col",
+			"name":"rs_floor1_col",
 			"translation":[
 				0,
 				-0.10000000149011612,
@@ -152,7 +152,7 @@
 		},
 		{
 			"mesh":10,
-			"name":"rs_jamb_col",
+			"name":"rs_jamb25_col",
 			"translation":[
 				-0.8199999928474426,
 				1.100000023841858,
@@ -161,7 +161,7 @@
 		},
 		{
 			"mesh":11,
-			"name":"rs_jamb_col.001",
+			"name":"rs_jamb29_col",
 			"translation":[
 				0.8199999928474426,
 				1.100000023841858,
@@ -170,7 +170,7 @@
 		},
 		{
 			"mesh":12,
-			"name":"rs_pilaster_col",
+			"name":"rs_pilaster16_col",
 			"translation":[
 				0,
 				2.25,
@@ -179,7 +179,7 @@
 		},
 		{
 			"mesh":13,
-			"name":"rs_pilaster_col.001",
+			"name":"rs_pilaster60_col",
 			"translation":[
 				3.9100000858306885,
 				2.25,
@@ -188,7 +188,7 @@
 		},
 		{
 			"mesh":14,
-			"name":"rs_pilaster_col.002",
+			"name":"rs_pilaster75_col",
 			"translation":[
 				-3.9100000858306885,
 				2.25,
@@ -197,7 +197,7 @@
 		},
 		{
 			"mesh":15,
-			"name":"rs_wall_E0_col",
+			"name":"rs_wall_E046_col",
 			"translation":[
 				4.099999904632568,
 				2.25,
@@ -206,7 +206,7 @@
 		},
 		{
 			"mesh":16,
-			"name":"rs_wall_N0_col",
+			"name":"rs_wall_N06_col",
 			"translation":[
 				0,
 				2.25,
@@ -215,7 +215,7 @@
 		},
 		{
 			"mesh":17,
-			"name":"rs_wall_S0_col",
+			"name":"rs_wall_S017_col",
 			"translation":[
 				-2.450000047683716,
 				2.25,
@@ -224,7 +224,7 @@
 		},
 		{
 			"mesh":18,
-			"name":"rs_wall_S1_col",
+			"name":"rs_wall_S119_col",
 			"translation":[
 				0,
 				3.3499999046325684,
@@ -233,7 +233,7 @@
 		},
 		{
 			"mesh":19,
-			"name":"rs_wall_S2_col",
+			"name":"rs_wall_S222_col",
 			"translation":[
 				2.450000047683716,
 				2.25,
@@ -242,7 +242,7 @@
 		},
 		{
 			"mesh":20,
-			"name":"rs_wall_W0_col",
+			"name":"rs_wall_W061_col",
 			"translation":[
 				-4.099999904632568,
 				2.25,
@@ -599,7 +599,7 @@
 			]
 		},
 		{
-			"name":"rs_ceiling_col",
+			"name":"rs_ceiling3_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -611,7 +611,7 @@
 			]
 		},
 		{
-			"name":"rs_floor_col",
+			"name":"rs_floor1_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -623,7 +623,7 @@
 			]
 		},
 		{
-			"name":"rs_jamb_col",
+			"name":"rs_jamb25_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -635,7 +635,7 @@
 			]
 		},
 		{
-			"name":"rs_jamb_col.001",
+			"name":"rs_jamb29_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -647,7 +647,7 @@
 			]
 		},
 		{
-			"name":"rs_pilaster_col",
+			"name":"rs_pilaster16_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -659,7 +659,7 @@
 			]
 		},
 		{
-			"name":"rs_pilaster_col.001",
+			"name":"rs_pilaster60_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -671,7 +671,7 @@
 			]
 		},
 		{
-			"name":"rs_pilaster_col.002",
+			"name":"rs_pilaster75_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -683,7 +683,7 @@
 			]
 		},
 		{
-			"name":"rs_wall_E0_col",
+			"name":"rs_wall_E046_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -695,7 +695,7 @@
 			]
 		},
 		{
-			"name":"rs_wall_N0_col",
+			"name":"rs_wall_N06_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -707,7 +707,7 @@
 			]
 		},
 		{
-			"name":"rs_wall_S0_col",
+			"name":"rs_wall_S017_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -719,7 +719,7 @@
 			]
 		},
 		{
-			"name":"rs_wall_S1_col",
+			"name":"rs_wall_S119_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -731,7 +731,7 @@
 			]
 		},
 		{
-			"name":"rs_wall_S2_col",
+			"name":"rs_wall_S222_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -743,7 +743,7 @@
 			]
 		},
 		{
-			"name":"rs_wall_W0_col",
+			"name":"rs_wall_W061_col",
 			"primitives":[
 				{
 					"attributes":{

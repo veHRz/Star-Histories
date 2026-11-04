@@ -33,7 +33,7 @@
 	"nodes":[
 		{
 			"mesh":0,
-			"name":"rm_ceiling_col",
+			"name":"rm_ceiling3_col",
 			"translation":[
 				0,
 				2.9000000953674316,
@@ -42,7 +42,7 @@
 		},
 		{
 			"mesh":1,
-			"name":"rm_floor_col",
+			"name":"rm_floor1_col",
 			"translation":[
 				0,
 				-0.10000000149011612,
@@ -51,7 +51,7 @@
 		},
 		{
 			"mesh":2,
-			"name":"rm_jamb_col",
+			"name":"rm_jamb32_col",
 			"translation":[
 				-0.8199999928474426,
 				1.100000023841858,
@@ -60,7 +60,7 @@
 		},
 		{
 			"mesh":3,
-			"name":"rm_jamb_col.001",
+			"name":"rm_jamb36_col",
 			"translation":[
 				0.8199999928474426,
 				1.100000023841858,
@@ -69,7 +69,7 @@
 		},
 		{
 			"mesh":4,
-			"name":"rm_wall_E0_col",
+			"name":"rm_wall_E059_col",
 			"translation":[
 				3.0999999046325684,
 				1.399999976158142,
@@ -78,7 +78,7 @@
 		},
 		{
 			"mesh":5,
-			"name":"rm_wall_N0_col",
+			"name":"rm_wall_N07_col",
 			"translation":[
 				0,
 				1.399999976158142,
@@ -87,7 +87,7 @@
 		},
 		{
 			"mesh":6,
-			"name":"rm_wall_S0_col",
+			"name":"rm_wall_S023_col",
 			"translation":[
 				-1.9500000476837158,
 				1.399999976158142,
@@ -96,7 +96,7 @@
 		},
 		{
 			"mesh":7,
-			"name":"rm_wall_S1_col",
+			"name":"rm_wall_S126_col",
 			"translation":[
 				0,
 				2.5,
@@ -105,7 +105,7 @@
 		},
 		{
 			"mesh":8,
-			"name":"rm_wall_S2_col",
+			"name":"rm_wall_S228_col",
 			"translation":[
 				1.9500000476837158,
 				1.399999976158142,
@@ -114,7 +114,7 @@
 		},
 		{
 			"mesh":9,
-			"name":"rm_wall_W0_col",
+			"name":"rm_wall_W075_col",
 			"translation":[
 				-3.0999999046325684,
 				1.399999976158142,
@@ -358,7 +358,7 @@
 	],
 	"meshes":[
 		{
-			"name":"rm_ceiling_col",
+			"name":"rm_ceiling3_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -370,7 +370,7 @@
 			]
 		},
 		{
-			"name":"rm_floor_col",
+			"name":"rm_floor1_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -382,7 +382,7 @@
 			]
 		},
 		{
-			"name":"rm_jamb_col",
+			"name":"rm_jamb32_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -394,7 +394,7 @@
 			]
 		},
 		{
-			"name":"rm_jamb_col.001",
+			"name":"rm_jamb36_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -406,7 +406,7 @@
 			]
 		},
 		{
-			"name":"rm_wall_E0_col",
+			"name":"rm_wall_E059_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -418,7 +418,7 @@
 			]
 		},
 		{
-			"name":"rm_wall_N0_col",
+			"name":"rm_wall_N07_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -430,7 +430,7 @@
 			]
 		},
 		{
-			"name":"rm_wall_S0_col",
+			"name":"rm_wall_S023_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -442,7 +442,7 @@
 			]
 		},
 		{
-			"name":"rm_wall_S1_col",
+			"name":"rm_wall_S126_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -454,7 +454,7 @@
 			]
 		},
 		{
-			"name":"rm_wall_S2_col",
+			"name":"rm_wall_S228_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -466,7 +466,7 @@
 			]
 		},
 		{
-			"name":"rm_wall_W0_col",
+			"name":"rm_wall_W075_col",
 			"primitives":[
 				{
 					"attributes":{

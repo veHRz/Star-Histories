@@ -402,7 +402,9 @@ def room_shell(
         return obj
 
     def col(tag, size, center):
-        out["colliders"].append(c.collider_box(f"{prefix}_{tag}", size, center, coll))
+        # Nom unique : deux colliders du même nom deviendraient `…_col.001` dans Blender, que le
+        # jeu ne reconnaît plus comme collision (il les dessinerait, sans matériau).
+        out["colliders"].append(c.collider_box(nm(tag), size, center, coll))
 
     def bay_offset(side, i):
         k = ("NSEW".index(side) * 3 + i * 5) % len(_BAY_OFFSETS)

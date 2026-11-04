@@ -104,7 +104,7 @@
 		},
 		{
 			"mesh":6,
-			"name":"al_ceiling_col",
+			"name":"al_ceiling3_col",
 			"translation":[
 				0,
 				2.700000047683716,
@@ -113,7 +113,7 @@
 		},
 		{
 			"mesh":7,
-			"name":"al_floor_col",
+			"name":"al_floor1_col",
 			"translation":[
 				0,
 				-0.10000000149011612,
@@ -122,7 +122,7 @@
 		},
 		{
 			"mesh":8,
-			"name":"al_jamb_col",
+			"name":"al_jamb38_col",
 			"translation":[
 				1.9199999570846558,
 				1.100000023841858,
@@ -131,7 +131,7 @@
 		},
 		{
 			"mesh":9,
-			"name":"al_jamb_col.001",
+			"name":"al_jamb42_col",
 			"translation":[
 				1.9199999570846558,
 				1.100000023841858,
@@ -140,7 +140,7 @@
 		},
 		{
 			"mesh":10,
-			"name":"al_jamb_col.002",
+			"name":"al_jamb73_col",
 			"translation":[
 				-1.9199999570846558,
 				1.100000023841858,
@@ -149,7 +149,7 @@
 		},
 		{
 			"mesh":11,
-			"name":"al_jamb_col.003",
+			"name":"al_jamb77_col",
 			"translation":[
 				-1.9199999570846558,
 				1.100000023841858,
@@ -158,7 +158,7 @@
 		},
 		{
 			"mesh":12,
-			"name":"al_wall_E0_col",
+			"name":"al_wall_E030_col",
 			"translation":[
 				2.0999999046325684,
 				1.2999999523162842,
@@ -167,7 +167,7 @@
 		},
 		{
 			"mesh":13,
-			"name":"al_wall_E1_col",
+			"name":"al_wall_E132_col",
 			"translation":[
 				2.0999999046325684,
 				2.4000000953674316,
@@ -176,7 +176,7 @@
 		},
 		{
 			"mesh":14,
-			"name":"al_wall_E2_col",
+			"name":"al_wall_E235_col",
 			"translation":[
 				2.0999999046325684,
 				1.2999999523162842,
@@ -185,7 +185,7 @@
 		},
 		{
 			"mesh":15,
-			"name":"al_wall_N0_col",
+			"name":"al_wall_N06_col",
 			"translation":[
 				0,
 				1.2999999523162842,
@@ -194,7 +194,7 @@
 		},
 		{
 			"mesh":16,
-			"name":"al_wall_S0_col",
+			"name":"al_wall_S018_col",
 			"translation":[
 				0,
 				1.2999999523162842,
@@ -203,7 +203,7 @@
 		},
 		{
 			"mesh":17,
-			"name":"al_wall_W0_col",
+			"name":"al_wall_W065_col",
 			"translation":[
 				-2.0999999046325684,
 				1.2999999523162842,
@@ -212,7 +212,7 @@
 		},
 		{
 			"mesh":18,
-			"name":"al_wall_W1_col",
+			"name":"al_wall_W167_col",
 			"translation":[
 				-2.0999999046325684,
 				2.4000000953674316,
@@ -221,7 +221,7 @@
 		},
 		{
 			"mesh":19,
-			"name":"al_wall_W2_col",
+			"name":"al_wall_W270_col",
 			"translation":[
 				-2.0999999046325684,
 				1.2999999523162842,
@@ -488,7 +488,7 @@
 			]
 		},
 		{
-			"name":"al_ceiling_col",
+			"name":"al_ceiling3_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -500,7 +500,7 @@
 			]
 		},
 		{
-			"name":"al_floor_col",
+			"name":"al_floor1_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -512,7 +512,7 @@
 			]
 		},
 		{
-			"name":"al_jamb_col",
+			"name":"al_jamb38_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -524,7 +524,7 @@
 			]
 		},
 		{
-			"name":"al_jamb_col.001",
+			"name":"al_jamb42_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -536,7 +536,7 @@
 			]
 		},
 		{
-			"name":"al_jamb_col.002",
+			"name":"al_jamb73_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -548,7 +548,7 @@
 			]
 		},
 		{
-			"name":"al_jamb_col.003",
+			"name":"al_jamb77_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -560,7 +560,7 @@
 			]
 		},
 		{
-			"name":"al_wall_E0_col",
+			"name":"al_wall_E030_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -572,7 +572,7 @@
 			]
 		},
 		{
-			"name":"al_wall_E1_col",
+			"name":"al_wall_E132_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -584,7 +584,7 @@
 			]
 		},
 		{
-			"name":"al_wall_E2_col",
+			"name":"al_wall_E235_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -596,7 +596,7 @@
 			]
 		},
 		{
-			"name":"al_wall_N0_col",
+			"name":"al_wall_N06_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -608,7 +608,7 @@
 			]
 		},
 		{
-			"name":"al_wall_S0_col",
+			"name":"al_wall_S018_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -620,7 +620,7 @@
 			]
 		},
 		{
-			"name":"al_wall_W0_col",
+			"name":"al_wall_W065_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -632,7 +632,7 @@
 			]
 		},
 		{
-			"name":"al_wall_W1_col",
+			"name":"al_wall_W167_col",
 			"primitives":[
 				{
 					"attributes":{
@@ -644,7 +644,7 @@
 			]
 		},
 		{
-			"name":"al_wall_W2_col",
+			"name":"al_wall_W270_col",
 			"primitives":[
 				{
 					"attributes":{
