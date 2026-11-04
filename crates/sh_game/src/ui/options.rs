@@ -63,6 +63,7 @@ enum OptionsAction {
     Sensitivity(f32),
     InvertY,
     Tips,
+    Tutorial,
     Keys,
     Rebind(KeyCode),
     ResetKeys,
@@ -113,6 +114,7 @@ fn on_activate(
         }
         OptionsAction::InvertY => settings.invert_y = !settings.invert_y,
         OptionsAction::Tips => settings.tips = !settings.tips,
+        OptionsAction::Tutorial => settings.tutorial = !settings.tutorial,
         OptionsAction::Keys => screen.page = Page::Keys,
         OptionsAction::Rebind(default) => screen.waiting = Some(default),
         OptionsAction::ResetKeys => settings.keys.clear(),
@@ -303,6 +305,9 @@ fn main_page(ui: &mut ChildSpawnerCommands, texts: &Texts, fonts: &UiFonts, s: &
     });
     row(ui, fonts, texts.get("options.tips"), |r| {
         r.spawn(toggle(fonts, texts, OptionsAction::Tips, s.tips));
+    });
+    row(ui, fonts, texts.get("options.tutorial"), |r| {
+        r.spawn(toggle(fonts, texts, OptionsAction::Tutorial, s.tutorial));
     });
     ui.spawn(menu_button(
         fonts,

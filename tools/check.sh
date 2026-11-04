@@ -82,6 +82,10 @@ step "scénario voyage" \
     run_game "ERROR|panicked|sc.{1,3}nario voyage : sys_|sc.{1,3}nario .*termin" SH_START=global:hexis SH_SCENARIO=voyage SH_RAID=0
 step "scénario contract_loop" \
     run_game "ERROR|panicked|v.{1,3}rifi|sc.{1,3}nario .*termin" SH_START=global:hexis SH_SCENARIO=contract_loop SH_RAID=0
+
+# Critère de M8 : le tutoriel guidé joué en entier, de la nouvelle partie à la sauvegarde.
+step "scénario tutorial" \
+    run_game "ERROR|panicked|sc.{1,3}nario tutorial" SH_USER_DIR=target/tuto-user SH_START=new SH_TUTORIAL=1 SH_RAID=0 SH_SCENARIO=tutorial
 # Critères de M6 : un raid gagné (puis dégâts gardés et réparés à Hexis), fui, perdu.
 step "scénario raid_win" \
     run_game "ERROR|panicked|raid fini|v.{1,3}rifi|sc.{1,3}nario .*termin" SH_START=global:cygnara SH_SCENARIO=raid_win SH_RAID=1

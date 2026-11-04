@@ -49,6 +49,8 @@ pub struct UserSettings {
     pub invert_y: bool,
     /// Conseils de première fois (tutoriel léger).
     pub tips: bool,
+    /// Tutoriel guidé des premières minutes (M8) ; activé par défaut.
+    pub tutorial: bool,
     /// Touche d'origine → touche choisie (noms `KeyCode` : `KeyE` → `KeyF`).
     pub keys: BTreeMap<String, String>,
 }
@@ -64,6 +66,7 @@ impl Default for UserSettings {
             mouse_sensitivity: 1.0,
             invert_y: false,
             tips: true,
+            tutorial: true,
             keys: BTreeMap::new(),
         }
     }
@@ -109,7 +112,7 @@ impl UserSettings {
 
 /// Les touches d'origine que le joueur peut remapper (Échap, Entrée et les flèches des menus
 /// restent fixes).
-pub const REMAPPABLE: [KeyCode; 22] = [
+pub const REMAPPABLE: [KeyCode; 23] = [
     KeyCode::KeyW,
     KeyCode::KeyS,
     KeyCode::KeyA,
@@ -128,6 +131,7 @@ pub const REMAPPABLE: [KeyCode; 22] = [
     KeyCode::KeyC,
     KeyCode::KeyJ,
     KeyCode::KeyK,
+    KeyCode::KeyH,
     KeyCode::Digit1,
     KeyCode::Digit2,
     KeyCode::F5,
@@ -229,11 +233,12 @@ fn settings_path() -> std::path::PathBuf {
 fn load() -> UserSettings {
     if crate::dev::autopilot_active() {
         // `SH_KEYS=KeyE:KeyF,…` : un remappage imposé, pour le vérifier. L'autopilote est muet
-        // (il tourne pendant que l'auteur travaille), sauf `SH_AUDIO=1`, et sans conseils
-        // (captures propres), sauf `SH_TIPS=1`.
+        // (il tourne pendant que l'auteur travaille), sauf `SH_AUDIO=1`, et sans conseils ni
+        // tutoriel (captures propres), sauf `SH_TIPS=1` et `SH_TUTORIAL=1`.
         let defaults = UserSettings::default();
         let mut settings = UserSettings {
             tips: std::env::var_os("SH_TIPS").is_some(),
+            tutorial: std::env::var("SH_TUTORIAL").is_ok_and(|v| v.trim() != "0"),
             master_volume: if std::env::var_os("SH_AUDIO").is_some() {
                 defaults.master_volume
             } else {

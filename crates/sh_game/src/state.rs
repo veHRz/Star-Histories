@@ -134,6 +134,8 @@ fn forget_game(world: &mut World) {
     world.remove_resource::<crate::voyage::ShipFuel>();
     world.remove_resource::<crate::voyage::ResumeFlight>();
     world.remove_resource::<crate::combat::foot::PlayerArms>();
+    // Recréé au début de la partie suivante (ou apporté par la sauvegarde chargée).
+    world.remove_resource::<crate::tutorial::Tutorial>();
     world.insert_resource(crate::career::MissionLog::default());
     world.insert_resource(crate::interaction::Inventory::default());
     world.insert_resource(crate::codex::Codex::default());

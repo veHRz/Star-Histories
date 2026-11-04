@@ -67,6 +67,11 @@ pub struct QuickSave;
 #[action_output(bool)]
 pub struct QuickLoad;
 
+/// Passer le tutoriel guidé (deux appuis : voir `tutorial`).
+#[derive(InputAction)]
+#[action_output(bool)]
+pub struct SkipTutorial;
+
 // --- À pied --------------------------------------------------------------------------------
 
 /// Déplacement : x = droite, y = avant.
@@ -268,6 +273,9 @@ fn spawn_contexts(mut commands: Commands) {
             --
             Action::<QuickLoad>::new()
             Bindings [ Binding(KeyCode::F9) ]
+            --
+            Action::<SkipTutorial>::new()
+            Bindings [ Binding(KeyCode::KeyH) ]
         ]
     });
 
@@ -336,6 +344,9 @@ fn spawn_contexts(mut commands: Commands) {
             --
             Action::<QuickLoad>::new()
             Bindings [ Binding(KeyCode::F9) ]
+            --
+            Action::<SkipTutorial>::new()
+            Bindings [ Binding(KeyCode::KeyH) ]
         ]
     });
 
@@ -374,6 +385,9 @@ fn spawn_contexts(mut commands: Commands) {
             --
             Action::<ToggleMap>::new()
             Bindings [ Binding(KeyCode::KeyM) -- Binding(GamepadButton::Select) ]
+            --
+            Action::<SkipTutorial>::new()
+            Bindings [ Binding(KeyCode::KeyH) ]
             --
             Action::<Pause>::new()
             Bindings [ Binding(KeyCode::Escape) -- Binding(GamepadButton::Start) ]

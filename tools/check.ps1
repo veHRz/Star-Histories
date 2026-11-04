@@ -144,6 +144,20 @@ Step "scénario contract_loop" {
     $global:LASTEXITCODE = $code
 }
 
+# Critère de M8 : le tutoriel guidé joué en entier, de la nouvelle partie à la sauvegarde.
+Step "scénario tutorial" {
+    $env:SH_USER_DIR = "target/tuto-user"
+    $env:SH_START = "new"
+    $env:SH_TUTORIAL = "1"
+    $env:SH_RAID = "0"
+    $env:SH_SCENARIO = "tutorial"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_USER_DIR, Env:SH_START, Env:SH_TUTORIAL, Env:SH_RAID, Env:SH_SCENARIO -ErrorAction SilentlyContinue
+    $log | Select-String -Pattern "ERROR|panicked|sc.{1,3}nario tutorial" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
 # Critères de M6 : un raid gagné (puis dégâts gardés et réparés à Hexis), fui, perdu.
 Step "scénario raid_win" {
     $env:SH_START = "global:cygnara"

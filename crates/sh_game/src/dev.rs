@@ -13,6 +13,9 @@
 //! - `SH_PRESET=low|medium|high` : préréglage graphique (lu par `graphics`).
 //! - `SH_WINDOW=<L>x<H>|fullscreen` : taille de la fenêtre, ou plein écran sans bordure (les
 //!   mesures de la machine de référence se font en 1080p).
+//! - `SH_TUTORIAL=1` : le tutoriel guidé tourne (coupé sinon, comme les conseils) ;
+//!   `SH_TUTORIAL_STEP=<n>` le fait commencer à l'étape n (captures du panneau). Le scénario
+//!   `SH_SCENARIO=tutorial` le joue en entier.
 //!
 //! À la sortie, le temps de frame moyen et maximal est toujours journalisé (hors démarrage).
 
@@ -533,6 +536,26 @@ enum Step {
     /// `shipyard` : les chantiers du système). Raccourci de l'autopilote : le vol est testé
     /// par `fly_ship`.
     JumpNear(&'static str),
+    /// Tourner (lacet, aux commandes) pendant tant de secondes.
+    Turn(f32),
+    /// Croisière vers l'avant pendant tant de secondes.
+    Cruise(f32),
+    /// Placer le vaisseau, à l'arrêt, à tant de mètres au-dessus de la balise d'approche du
+    /// port, à la verticale de son astre. Raccourci : le trajet depuis l'arrivée pourrait
+    /// traverser la planète ; l'approche elle-même se vole ([`Step::FlyToBeacon`]).
+    JumpAboveBeacon(f64),
+    /// Voler jusqu'à portée de la balise d'approche : virer vers elle, pousser, croisière
+    /// tant qu'on a la place de ralentir.
+    FlyToBeacon,
+    /// Comme [`Step::Walk`], mais en coordonnées du quartier (repère du jeu : x, z), à quai.
+    WalkDistrict(f32, f32, Option<&'static str>),
+    /// Marcher jusqu'à la console de cette étiquette, la viser et l'utiliser (comme `E`) ;
+    /// fini quand le terminal s'ouvre.
+    UseConsole(&'static str),
+    /// Vérifier que le tutoriel est arrivé à l'étape n (9 : terminé).
+    Tutorial(usize),
+    /// Sauvegarde rapide (comme `F5`).
+    QuickSave,
 }
 
 /// La conduite de l'autopilote pendant un raid.
@@ -558,6 +581,7 @@ enum Terminal {
     Market,
     Sheet,
     Journal,
+    Codex,
 }
 
 /// Les étapes de terminal et de carrière : elles se jouent aux commandes, sans marcher.
@@ -571,6 +595,10 @@ fn is_career_step(step: &Step) -> bool {
             | Step::Shot(_)
             | Step::Wait(_)
             | Step::JumpNear(_)
+            | Step::JumpAboveBeacon(_)
+            | Step::FlyToBeacon
+            | Step::Tutorial(_)
+            | Step::QuickSave
     )
 }
 
@@ -776,6 +804,108 @@ const FIREFIGHT_LOSE: &[Step] = &[
     Step::Shot("m6-abordage-mort"),
 ];
 
+/// `tutorial` (avec `SH_START=new SH_TUTORIAL=1 SH_RAID=0`, et `SH_USER_DIR`) : tout le
+/// tutoriel guidé, par les mêmes actions qu'un joueur (critère de M8). Chaque étape franchie
+/// est vérifiée ([`Step::Tutorial`]) ; captures `target/shots/m8-tuto-*.png`.
+const TUTORIAL: &[Step] = &[
+    Step::Wait(2.0),
+    Step::Tutorial(1),
+    Step::Shot("m8-tuto-1-commandes"),
+    // 1. Regarder, pousser, la croisière.
+    Step::Turn(3.0),
+    Step::Thrust(4.0),
+    Step::Cruise(2.0),
+    Step::Tutorial(2),
+    // 2. La balise du spatioport, l'amarrage.
+    Step::JumpAboveBeacon(25_000.0),
+    Step::Wait(1.0),
+    Step::Shot("m8-tuto-2-balise"),
+    Step::FlyToBeacon,
+    Step::DockOrDepart,
+    Step::Tutorial(3),
+    // 3. Se lever, sortir par le sas (le chemin de `port_loop`), traverser le hall.
+    Step::StandUp,
+    Step::Wait(1.0),
+    Step::Shot("m8-tuto-3-sas"),
+    w(0.0, 20.3, None),
+    w(0.0, 18.0, None),
+    w(0.0, 16.4, None),
+    w(0.0, 15.0, Some("couloir_avant__cockpit")),
+    w(0.0, 12.8, None),
+    w(0.0, -3.0, None),
+    w(-2.4, -3.0, Some("couloir_arriere__sas")),
+    w(-3.8, -3.0, None),
+    w(-6.4, -3.0, Some("sas__passerelle")),
+    w(-8.3, -3.0, None),
+    // Dans le quartier : la passerelle, le hall (on contourne les bancs), le bureau.
+    Step::WalkDistrict(-6.0, 0.0, None),
+    Step::WalkDistrict(-15.0, 0.0, None),
+    Step::WalkDistrict(-15.0, -4.5, None),
+    Step::WalkDistrict(-20.0, -4.5, None),
+    Step::WalkDistrict(-20.0, -8.6, Some("hall__bureau")),
+    Step::Shot("m8-tuto-3-bureau"),
+    // 4. Le guichetier, un contrat de transport.
+    Step::UseConsole("contracts"),
+    Step::Tutorial(4),
+    Step::Choose("say:dlg.office.ask_work"),
+    Step::Choose("say:dlg.office.show_contracts"),
+    Step::Shot("m8-tuto-4-contrats"),
+    Step::Choose("accept:sys_cygnara"),
+    Step::Tutorial(5),
+    Step::Choose("close"),
+    Step::Wait(0.5),
+    // 5. Le journal, la fiche, le codex (comme leurs touches).
+    Step::Open(Terminal::Journal),
+    Step::Choose("close"),
+    Step::Wait(0.5),
+    Step::Open(Terminal::Sheet),
+    Step::Choose("close"),
+    Step::Wait(0.5),
+    Step::Open(Terminal::Codex),
+    Step::Choose("close"),
+    Step::Wait(0.5),
+    Step::Tutorial(6),
+    Step::Shot("m8-tuto-6-depart"),
+    // 6. Retour au cockpit, départ, la carte, la destination du contrat.
+    Step::WalkDistrict(-20.0, -8.6, Some("hall__bureau")),
+    Step::WalkDistrict(-20.0, -4.5, None),
+    Step::WalkDistrict(-15.0, -4.5, None),
+    Step::WalkDistrict(-15.0, 0.0, None),
+    Step::WalkDistrict(-6.0, 0.0, None),
+    w(-8.3, -3.0, None),
+    w(-6.4, -3.0, Some("sas__passerelle")),
+    w(-3.8, -3.0, None),
+    w(-2.4, -3.0, Some("couloir_arriere__sas")),
+    w(0.0, -3.0, None),
+    w(0.0, 12.8, None),
+    w(0.0, 15.0, Some("couloir_avant__cockpit")),
+    w(0.0, 16.4, None),
+    w(0.0, 17.4, None),
+    w(0.0, 18.6, None),
+    Step::SitAtHelm,
+    Step::DockOrDepart,
+    Step::OpenMap,
+    Step::Route("sys_cygnara"),
+    Step::Wait(1.0),
+    Step::Shot("m8-tuto-6-carte"),
+    Step::Tutorial(7),
+    // 7. Par Portail, livraison en orbite près du hub, paiement.
+    Step::Depart(sh_sim::travel::TravelMode::Portal),
+    Step::Wait(1.0),
+    Step::Shot("m8-tuto-7-hub"),
+    Step::Hail,
+    Step::Tutorial(8),
+    Step::Shot("m8-tuto-8-sauvegarde"),
+    // 8. Sauvegarder : fin.
+    Step::QuickSave,
+    Step::Tutorial(9),
+    Step::Wait(1.0),
+    Step::Shot("m8-tuto-fin"),
+];
+
+/// Distance horizontale (m) à laquelle l'autopilote s'arrête devant une console pour l'utiliser.
+const CONSOLE_DISTANCE: f32 = 1.4;
+
 /// Délai maximal d'une transition de vue (amarrage, départ) dans un scénario.
 const TRANSITION_SECONDS: f32 = 30.0;
 
@@ -850,6 +980,7 @@ impl Plugin for ScenarioPlugin {
             "raid_lose" => (RAID_LOSE, None),
             "firefight" => (FIREFIGHT, None),
             "firefight_lose" => (FIREFIGHT_LOSE, None),
+            "tutorial" => (TUTORIAL, None),
             _ => (WALK_SHIP, None),
         };
         if !matches!(
@@ -864,9 +995,10 @@ impl Plugin for ScenarioPlugin {
                 | "raid_lose"
                 | "firefight"
                 | "firefight_lose"
+                | "tutorial"
         ) {
             error!(
-                "SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage, contract_loop, raid_win, raid_flee, raid_lose, firefight, firefight_lose, menu_return, save_load, pause_escape)"
+                "SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage, contract_loop, raid_win, raid_flee, raid_lose, firefight, firefight_lose, tutorial, menu_return, save_load, pause_escape)"
             );
             app.add_systems(Startup, |mut exit: MessageWriter<AppExit>| {
                 exit.write(AppExit::error());
@@ -1248,9 +1380,16 @@ fn run_scenario(
         Option<Res<crate::clock::GameClock>>,
         Option<Res<crate::voyage::Location>>,
     ),
+    (consoles, focus, mut interact, terminal): (
+        Query<(&crate::sector::gltf::Interactable, &GlobalTransform)>,
+        Res<crate::interaction::Focus>,
+        MessageWriter<crate::interaction::InteractRequest>,
+        Option<Res<crate::ui::terminal::Terminal>>,
+    ),
     mut exit: MessageWriter<AppExit>,
 ) {
     use crate::sector::doors::DoorState;
+    use crate::sector::gltf::Interactable;
 
     scripted.0 = true;
     *intent = crate::player::PlayerIntent::default();
@@ -1313,7 +1452,13 @@ fn run_scenario(
         && is_career_step(&step)
     {
         scenario.step_time += time.delta_secs();
-        if scenario.step_time > TRANSITION_SECONDS {
+        // Une approche en vol prend plus longtemps qu'une transition.
+        let limit = if matches!(step, Step::FlyToBeacon) {
+            120.0
+        } else {
+            TRANSITION_SECONDS
+        };
+        if scenario.step_time > limit {
             error!(
                 "scénario {} : bloqué à l'étape {} ({step:?})",
                 scenario.name, scenario.index
@@ -1457,10 +1602,87 @@ fn run_scenario(
         scenario.best_distance = f32::MAX;
         scenario.since_progress = 0.0;
     };
-    let (x, y, door) = match step {
-        Step::Walk(x, y, door) => (x, y, door),
-        Step::Thrust(seconds) => {
-            pilot.thrust = Vec3::NEG_Z;
+    // Repère du vaisseau ; amarré, ses cellules sont placées dans celui du quartier.
+    let placement = docked
+        .is_some()
+        .then(|| {
+            sector
+                .as_ref()
+                .and_then(|s| s.sector.cells.iter().find_map(|c| c.placement))
+        })
+        .flatten();
+    // La cible de la marche, la porte à ouvrir d'abord, la distance d'arrivée.
+    let (target, door, arrive) = match step {
+        Step::Walk(x, y, door) => (
+            placement.map_or(Vec3::new(x, 0.0, -y), |p| {
+                crate::sector::v3(p.apply((x, 0.0, -y)))
+            }),
+            door,
+            0.35,
+        ),
+        Step::WalkDistrict(x, z, door) => (Vec3::new(x, 0.0, z), door, 0.35),
+        Step::UseConsole(label) => {
+            if terminal.as_ref().is_some_and(|t| t.page.is_some()) {
+                info!("scénario {} : console « {label} » utilisée", scenario.name);
+                advance(&mut scenario);
+                return;
+            }
+            let Some(console) = consoles
+                .iter()
+                .find(|(i, _)| matches!(i, Interactable::Console { label: l } if l == label))
+                .map(|(_, t)| t.translation())
+            else {
+                error!("scénario {} : aucune console « {label} »", scenario.name);
+                exit.write(AppExit::error());
+                return;
+            };
+            let pos = transform.translation();
+            let flat = Vec2::new(console.x - pos.x, console.z - pos.z).length();
+            if flat > CONSOLE_DISTANCE {
+                (Vec3::new(console.x, 0.0, console.z), None, CONSOLE_DISTANCE)
+            } else {
+                // Devant la console : la viser (une main humaine, 2,5 rad/s au plus), puis la
+                // touche d'interaction dès que la visée la désigne (une fois par seconde).
+                let eye = pos + Vec3::Y * controller.eye_height();
+                let d = (console - eye).normalize_or(Vec3::NEG_Z);
+                let wrap = |a: f32| {
+                    (a + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU)
+                        - std::f32::consts::PI
+                };
+                let dy = wrap(controller.yaw - (-d.x).atan2(-d.z));
+                let dp = controller.pitch - d.y.clamp(-1.0, 1.0).asin();
+                let max = 2.5 * dt;
+                intent.look = Vec2::new(dy.clamp(-max, max), dp.clamp(-max, max));
+                let aimed = focus.0.as_ref().is_some_and(
+                    |t| matches!(&t.kind, Interactable::Console { label: l } if l == label),
+                );
+                let retry = scenario.step_time - scenario.last_issue > 1.0;
+                if aimed && (scenario.issued.is_none() || retry) {
+                    interact.write(crate::interaction::InteractRequest);
+                    scenario.issued = Some(None);
+                    scenario.last_issue = scenario.step_time;
+                }
+                scenario.step_time += dt;
+                if scenario.step_time > TRANSITION_SECONDS {
+                    error!(
+                        "scénario {} : la console « {label} » ne s'ouvre pas (visée {})",
+                        scenario.name,
+                        if aimed { "posée" } else { "manquée" }
+                    );
+                    exit.write(AppExit::error());
+                }
+                return;
+            }
+        }
+        Step::Thrust(seconds) | Step::Turn(seconds) | Step::Cruise(seconds) => {
+            match step {
+                Step::Turn(_) => pilot.turn = Vec2::new(0.6, 0.0),
+                Step::Cruise(_) => {
+                    pilot.thrust = Vec3::NEG_Z;
+                    pilot.cruise = true;
+                }
+                _ => pilot.thrust = Vec3::NEG_Z,
+            }
             scenario.step_time += dt;
             if scenario.step_time >= seconds {
                 advance(&mut scenario);
@@ -1479,6 +1701,10 @@ fn run_scenario(
         | Step::Shot(_)
         | Step::Wait(_)
         | Step::JumpNear(_)
+        | Step::JumpAboveBeacon(_)
+        | Step::FlyToBeacon
+        | Step::Tutorial(_)
+        | Step::QuickSave
         | Step::Raid(..)
         | Step::Firefight(..) => return,
         Step::SitAtHelm | Step::StandUp | Step::DockOrDepart => {
@@ -1531,22 +1757,10 @@ fn run_scenario(
         return;
     }
 
-    // Repère du vaisseau ; amarré, ses cellules sont placées dans celui du quartier.
-    let placement = docked
-        .is_some()
-        .then(|| {
-            sector
-                .as_ref()
-                .and_then(|s| s.sector.cells.iter().find_map(|c| c.placement))
-        })
-        .flatten();
-    let target = placement.map_or(Vec3::new(x, 0.0, -y), |p| {
-        crate::sector::v3(p.apply((x, 0.0, -y)))
-    });
     let pos = transform.translation();
     let to = Vec2::new(target.x - pos.x, target.z - pos.z);
     let distance = to.length();
-    if distance < 0.35 {
+    if distance < arrive {
         advance(&mut scenario);
         return;
     }
@@ -1776,6 +1990,7 @@ fn career_step(world: &mut World, step: Step) {
                         Terminal::Market => Screen::Market,
                         Terminal::Sheet => Screen::Sheet,
                         Terminal::Journal => Screen::Journal,
+                        Terminal::Codex => Screen::Codex,
                     };
                     world.write_message(OpenTerminal(screen));
                     world.resource_mut::<Scenario>().issued = Some(None);
@@ -1858,6 +2073,70 @@ fn career_step(world: &mut World, step: Step) {
             crate::transition::request_dock(world);
             next(world);
         }
+        Step::JumpAboveBeacon(distance) => {
+            // La balise apparaît avec la vue : on l'attend.
+            let Some((beacon, _)) = beacon_of(world) else {
+                return;
+            };
+            // L'astre de la balise : la surface la plus proche.
+            let center = world
+                .query::<(&crate::space::SpacePosition, &crate::ship::SurfaceBody)>()
+                .iter(world)
+                .map(|(p, b)| (p.0, p.0.distance(beacon) - b.radius))
+                .min_by(|a, b| a.1.total_cmp(&b.1))
+                .map(|(p, _)| p);
+            let Some(center) = center else {
+                return;
+            };
+            let up = beacon - center;
+            let up = up * (1.0 / up.length().max(1e-6));
+            let Some(root) = world
+                .get_resource::<crate::sector::ActiveSector>()
+                .map(|s| s.root)
+            else {
+                return;
+            };
+            if let Some(mut ship) = world.get_mut::<crate::space::SpacePosition>(root) {
+                ship.0 = beacon + up * distance;
+            }
+            if let Some(mut motion) = world.get_mut::<crate::ship::ShipMotion>(root) {
+                motion.velocity = Default::default();
+                motion.angular = Vec3::ZERO;
+            }
+            next(world);
+        }
+        Step::FlyToBeacon => fly_to_beacon(world),
+        Step::Tutorial(n) => {
+            let enabled = world
+                .get_resource::<crate::options::UserSettings>()
+                .is_some_and(|s| s.tutorial);
+            if !enabled {
+                fail(world, "tutoriel coupé : lancer avec SH_TUTORIAL=1".into());
+                return;
+            }
+            let Some(tutorial) = world.get_resource::<crate::tutorial::Tutorial>().cloned() else {
+                return;
+            };
+            if tutorial.number() >= n {
+                info!(
+                    "scénario tutorial : étape {n} atteinte ({:?})",
+                    tutorial.progress
+                );
+                next(world);
+            } else if world.resource::<Scenario>().step_time > TRANSITION_SECONDS - 0.5 {
+                fail(
+                    world,
+                    format!(
+                        "le tutoriel n'atteint pas l'étape {n} : {:?}, cases {:?}",
+                        tutorial.progress, tutorial.ticked
+                    ),
+                );
+            }
+        }
+        Step::QuickSave => {
+            crate::save::save_now(world, crate::save::SaveKind::Quick);
+            next(world);
+        }
         Step::Assert(what, check) => {
             let data = world.resource::<crate::data::Data>().clone();
             let ok = world
@@ -1890,6 +2169,69 @@ fn career_step(world: &mut World, step: Step) {
         }
         _ => next(world),
     }
+}
+
+/// La balise d'approche du système (position, portée), en vue Globale.
+fn beacon_of(world: &mut World) -> Option<(sh_core::SpacePos, f64)> {
+    world
+        .query::<(&crate::transition::DockBeacon, &crate::space::SpacePosition)>()
+        .iter(world)
+        .next()
+        .map(|(b, p)| (p.0, b.range))
+}
+
+/// [`Step::FlyToBeacon`] : un frame de vol vers la balise. Virer vers elle ; une fois aligné,
+/// pousser, et rester en croisière tant que la distance laisse le temps de ralentir (la
+/// croisière coupée, la vitesse décroît en ≈ 1,5 s : environ 1,5 × v mètres).
+fn fly_to_beacon(world: &mut World) {
+    use bevy::math::DVec3;
+    let Some((beacon, range)) = beacon_of(world) else {
+        return;
+    };
+    let Some(root) = world
+        .get_resource::<crate::sector::ActiveSector>()
+        .map(|s| s.root)
+    else {
+        return;
+    };
+    let pose = world
+        .get::<crate::space::SpacePosition>(root)
+        .zip(world.get::<crate::space::SpaceRotation>(root))
+        .map(|(p, r)| (p.0, r.0));
+    let speed = world
+        .get::<crate::ship::ShipMotion>(root)
+        .map_or(0.0, |m| m.velocity.length());
+    let Some((pos, rot)) = pose else {
+        return;
+    };
+    let to = beacon - pos;
+    let distance = to.length();
+    let mut intent = crate::ship::PilotIntent::default();
+    if distance < range * 0.85 {
+        info!("scénario tutorial : balise à {distance:.0} m, à portée");
+        *world.resource_mut::<crate::ship::PilotIntent>() = intent;
+        let mut scenario = world.resource_mut::<Scenario>();
+        scenario.index += 1;
+        scenario.issued = None;
+        scenario.step_time = 0.0;
+        return;
+    }
+    let dir = DVec3::new(to.x, to.y, to.z) / distance.max(1e-6);
+    let to_world = rot.as_dquat();
+    let local = to_world.inverse() * dir;
+    let yaw = local.x.atan2(-local.z);
+    let pitch = local.y.atan2(-local.z);
+    intent.turn = Vec2::new(
+        (yaw * 3.0).clamp(-1.0, 1.0) as f32,
+        (pitch * 3.0).clamp(-1.0, 1.0) as f32,
+    );
+    let aligned = (to_world * DVec3::NEG_Z).angle_between(dir).to_degrees() < 10.0;
+    if aligned {
+        intent.thrust = Vec3::NEG_Z;
+        // Jamais à portée : la croisière relancée près du but le dépasserait.
+        intent.cruise = distance > range && distance > 1.6 * speed + 12_000.0;
+    }
+    *world.resource_mut::<crate::ship::PilotIntent>() = intent;
 }
 
 /// Une étape de raid, jouée avec le `World` à chaque frame : l'autopilote pilote, tire, lance

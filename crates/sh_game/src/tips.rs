@@ -2,6 +2,7 @@
 //! à quai, à pied, sur la carte, un contrat, un raid, un abordage), un encart dit ce qu'on peut
 //! y faire et avec quelles touches. Chaque conseil ne vient qu'une fois par partie (sauvegardé) ;
 //! les options peuvent les couper. L'autopilote les coupe (captures propres), sauf `SH_TIPS=1`.
+//! Pendant le tutoriel guidé (M8), ceux qu'il remplace se taisent (`tutorial::REPLACED_TIPS`).
 
 use std::collections::{BTreeSet, VecDeque};
 
@@ -62,6 +63,7 @@ fn detect(
     raid: Option<Res<Raid>>,
     fighters: Query<&Fighter>,
     career: Res<Career>,
+    tutorial: Option<Res<crate::tutorial::Tutorial>>,
     time: Res<Time<Real>>,
     mut seen: ResMut<TipsSeen>,
     mut queue: ResMut<TipQueue>,
@@ -94,6 +96,10 @@ fn detect(
     }
     if fighters.iter().any(Fighter::alive) {
         situations.push("boarding");
+    }
+    // Le tutoriel guide déjà ces situations : ses conseils attendent qu'il soit fini ou passé.
+    if crate::tutorial::is_active(&settings, tutorial.as_deref()) {
+        situations.retain(|tip| !crate::tutorial::REPLACED_TIPS.contains(tip));
     }
     // Une situation doit durer une seconde : au départ d'une partie, on est à pied l'instant
     // d'avant d'être assis aux commandes.

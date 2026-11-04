@@ -33,6 +33,7 @@ use crate::space::{SpacePosition, SpaceRotation};
 use crate::state::{AppState, CurrentPlace, EnterGame, ViewLevel};
 use crate::tips::TipsSeen;
 use crate::transition::Sequence;
+use crate::tutorial::Tutorial;
 use crate::ui::hud::Notice;
 use crate::voyage::{Location, ResumeFlight, ShipFuel};
 
@@ -44,6 +45,7 @@ pub struct SavePlugin;
 impl Plugin for SavePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<GameMode>()
+            .add_message::<GameSaved>()
             .add_observer(on_quick_save)
             .add_observer(on_quick_load)
             .add_systems(
@@ -83,6 +85,10 @@ impl SaveKind {
         }
     }
 }
+
+/// Une sauvegarde vient d'être écrite (le tutoriel attend la première du joueur).
+#[derive(Message, Clone, Copy, Debug)]
+pub struct GameSaved(pub SaveKind);
 
 /// Ce que montre la liste des sauvegardes.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -126,6 +132,10 @@ pub struct SaveFile {
     /// Conseils déjà montrés.
     #[serde(default)]
     pub tips: TipsSeen,
+    /// Avancement du tutoriel (M8). Absent d'une sauvegarde plus ancienne : terminé, on
+    /// n'impose pas le début du jeu à une partie déjà avancée.
+    #[serde(default = "Tutorial::finished")]
+    pub tutorial: Tutorial,
 }
 
 /// Une sauvegarde à charger : appliquée au menu principal, une fois la partie quittée.
@@ -329,6 +339,10 @@ fn capture(world: &World, kind: SaveKind) -> Result<SaveFile, &'static str> {
             .get_resource::<TipsSeen>()
             .cloned()
             .unwrap_or_default(),
+        tutorial: world
+            .get_resource::<Tutorial>()
+            .cloned()
+            .unwrap_or_else(Tutorial::finished),
     })
 }
 
@@ -358,6 +372,7 @@ pub fn save_now(world: &mut World, kind: SaveKind) {
     match sh_data::write_ron(&path, &save) {
         Ok(()) => {
             info!("sauvegarde écrite : {}", path.display());
+            world.write_message(GameSaved(kind));
             let key = match kind {
                 SaveKind::Auto | SaveKind::Ironman => "save.done_auto",
                 _ => "save.done",
@@ -486,6 +501,7 @@ fn install(world: &mut World, save: SaveFile) {
     world.insert_resource(save.inventory);
     world.insert_resource(save.codex);
     world.insert_resource(save.tips);
+    world.insert_resource(save.tutorial);
     world.insert_resource(Location {
         system: system.clone(),
     });

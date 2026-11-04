@@ -31,6 +31,7 @@ pub mod space;
 pub mod state;
 pub mod tips;
 pub mod transition;
+pub mod tutorial;
 pub mod ui;
 pub mod views;
 pub mod voyage;
@@ -87,6 +88,8 @@ impl Plugin for StarHistoriesPlugin {
             audio::GameAudioPlugin,
             codex::CodexPlugin,
             tips::TipsPlugin,
+            // Tutoriel guidé (M8).
+            tutorial::TutorialPlugin,
         ));
         #[cfg(feature = "dev")]
         app.add_plugins(dev_tools::DevToolsPlugin);
