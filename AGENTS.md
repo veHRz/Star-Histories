@@ -113,6 +113,7 @@ Le jeu lit des variables d'environnement (`crates/sh_game/src/dev.rs`) :
 | `SH_SCREENSHOT_FRAME=N` | Frame de la capture (défaut 90) |
 | `SH_START=<vue>[:<lieu>]` | Démarre directement dans une vue : `galaxy`, `global:<lieu>` (ex. `global:hexis`), `sector:<lieu>` (ex. `sector:test`) ; `menu` = menu principal. Lieu inconnu = arrêt en erreur |
 | `SH_PRESET=<préréglage>` | Préréglage graphique : `low`, `medium` (défaut) ou `high` |
+| `SH_WINDOW=<L>x<H>` / `fullscreen` | Taille de la fenêtre (défaut 1600×900), ou plein écran sans bordure : les mesures de la machine de référence se font en `fullscreen` (1080p) |
 | `SH_SHOW_FPS=1` | Garde l'affichage FPS pendant une capture (masqué par défaut pour des images propres ; feature `dev`) |
 | `SH_GPU_CLUSTERING=1` | Réactive le clustering GPU des lumières (cassé sur UHD 770, voir §4) |
 | `SH_BAKED_LIGHTING=0` | Ignore les lightmaps : éclairage des intérieurs entièrement dynamique (comparaisons de performance) |
@@ -132,7 +133,7 @@ Le jeu lit des variables d'environnement (`crates/sh_game/src/dev.rs`) :
 | `SH_SCENARIO=firefight` / `firefight_lose` | Avec `SH_START=sector:player_ship SH_SPAWN=soute SH_BOARDING=2` (ou `3`) : abordage repoussé à pied ; défaite passive |
 | `SH_SCENARIO=fly_ship` | Avec `SH_START=global:hexis` : vol aux commandes (assisté, croisière, lacet, découplé), puis marche du cockpit au couloir en plein vol |
 
-À la sortie, le jeu journalise toujours le **temps de frame moyen et maximal** et le nombre de frames au-dessus de 33 ms (hors chargement). `tools/check.ps1` (Windows) et `tools/check.sh` (Linux) lancent un test de fumée de chaque point d'entrée ; ces deux scripts font la même chose, modifie-les **ensemble**.
+À la sortie, le jeu journalise toujours le **temps de frame moyen et maximal** et le nombre de frames au-dessus de 33 ms (hors chargement). `tools/check.ps1` (Windows) et `tools/check.sh` (Linux) lancent un test de fumée de chaque point d'entrée ; ces deux scripts font la même chose, modifie-les **ensemble**. Les **mesures de performance** passent par `tools/perf.ps1` / `tools/perf.sh` (même règle) : build release, puis chaque scénario qui porte un critère de performance (`walk_ship` avec et sans lightmaps, `fly_ship`, `port_loop`, `raid_win`, `firefight`, `firefight_lose`), résumé dans `target/perf/` (exemple : `powershell -ExecutionPolicy Bypass -File tools/perf.ps1 -Preset medium -Window fullscreen`). Le jeu occupe l'écran pendant les mesures : préviens l'auteur.
 
 Exemple (PowerShell) :
 
@@ -180,6 +181,7 @@ Pièges rencontrés dans ce dépôt (M0) :
 - **glTF (M1)** : une scène s'instancie avec `WorldAssetRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset(…)))` (l'ancien `SceneRoot`) ; l'instance prête déclenche `On<WorldInstanceReady>` sur la racine ; les extras d'un nœud arrivent en JSON dans `GltfExtras { value }` ; le maillage d'un nœud est souvent sur ses enfants (primitives).
 - **Lightmaps (M1)** : composant `bevy::pbr::Lightmap { image, .. }` sur chaque entité maillage qui a un 2e jeu d'UV (`Mesh::ATTRIBUTE_UV_1`, TEXCOORD_1 du glTF : il faut donc aussi un TEXCOORD_0) ; la valeur lue est multipliée par `StandardMaterial::lightmap_exposure` puis par la couleur diffuse. `PointLight::affects_lightmapped_mesh_diffuse: false` évite de compter deux fois la lumière cuite (le spéculaire reste dynamique) ; `GlobalAmbientLight::affects_lightmapped_meshes` idem pour l'ambiante. Le chargeur EXR de Bevy produit du `Rgba32Float` (non filtrable sur tous les GPU) : les lightmaps sont des **PNG sRGB normalisés** (`tools/blender/lightmap.py`).
 - **avian3d 0.8** : `MoveAndSlide` (paramètre système) fait le « collide and slide » d'un contrôleur cinématique ; dans `ShapeHitData`, `normal1` est la normale de la surface touchée. Un collider sans corps rigide s'attache au `RigidBody` ancêtre le plus proche.
+- **Fenêtre sans focus bridée à 60 Hz (mesures de M6)** : le réglage par défaut (`WinitSettings::game()`) ralentit la boucle quand la fenêtre n'a pas le focus, ce qui est le cas d'une fenêtre lancée par un agent. Les frames rapides étaient alors comptées ≈ 16,7 ms (« calé sur 60 Hz ») et le vrai coût était masqué. L'autopilote passe en `WinitSettings::continuous()` dès qu'une de ses variables est posée (`dev.rs`).
 
 Quand une API te surprend, cherche un exemple : `rg -l "NomDeLApi" .reference/bevy-0.20.1/examples`.
 
@@ -204,6 +206,7 @@ tools/
   blender/                 scripts bpy versionnés qui génèrent chaque asset (voir §9)
   fonts/                   conversion de la police Inter (fournie avec Blender) en TTF
   check.ps1 / check.sh     vérification complète (Windows / Linux) : fmt --check, lint, tests, import à jour, fumée de chaque SH_START
+  perf.ps1 / perf.sh       mesures de performance en release : scénarios des critères, résumé dans target/perf/
   setup-linux.sh           installation d'un poste Linux (paquets, LFS, sources de Bevy, addon MCP)
 assets/
   data/canon/              données transcrites du canon (chaque entrée cite sa section source)
