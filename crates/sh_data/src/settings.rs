@@ -76,6 +76,9 @@ pub struct GraphicsPreset {
     /// intégré, chaque pixel les évalue toutes : c'est le poste le plus cher (mesures de M7).
     #[serde(default)]
     pub baked_cell_lights: bool,
+    /// Vitrages éclairés (reflets du soleil) ; sinon une simple teinte, bien moins chère.
+    #[serde(default)]
+    pub lit_glass: bool,
     pub bloom: bool,
     pub anti_aliasing: AntiAliasing,
     /// Distance d'affichage maximale des détails (mètres), pour les `VisibilityRange`.

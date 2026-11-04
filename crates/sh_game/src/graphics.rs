@@ -137,14 +137,22 @@ fn configure_cameras(
 fn configure_directional_lights(
     mut commands: Commands,
     settings: Res<GraphicsSettings>,
+    mut shadow_map: ResMut<DirectionalLightShadowMap>,
     mut lights: Query<(Entity, &mut DirectionalLight)>,
 ) {
     let p = &settings.preset;
+    if settings.is_changed() && shadow_map.size != p.shadow_map_size as usize {
+        shadow_map.size = p.shadow_map_size as usize;
+    }
     for (entity, mut light) in &mut lights {
         if !settings.is_changed() && !light.is_added() {
             continue;
         }
         light.shadow_maps_enabled = p.directional_shadows;
+        // Sans ombre, rien n'arrête le soleil : il traverserait les parois du vaisseau. Les
+        // surfaces cuites gardent alors leur seul éclairage précalculé (les objets mobiles,
+        // eux, le reçoivent encore : c'est pourquoi tous les préréglages gardent les ombres).
+        light.affects_lightmapped_mesh_diffuse = p.directional_shadows;
         commands.entity(entity).insert(
             CascadeShadowConfigBuilder {
                 num_cascades: usize::from(p.shadow_cascades),

@@ -190,6 +190,37 @@ fn on_instance_ready(
         }
     }
 
+    // Vitrages : sans reflets (Bas, Moyen), une simple teinte, bien moins chère qu'un matériau
+    // éclairé mélangé sur une grande surface (le hublot du cockpit occupe un tiers de l'écran).
+    let lit_glass = assets.settings.as_ref().is_some_and(|s| s.preset.lit_glass);
+    if !lit_glass {
+        let mut glass: Vec<_> = children
+            .iter_descendants(root)
+            .filter_map(|node| meshes.get(node).ok())
+            .filter_map(|(_, material)| material.map(|m| m.id()))
+            .collect();
+        glass.sort_unstable();
+        glass.dedup();
+        for id in glass {
+            let blended = assets
+                .materials
+                .get(id)
+                .is_some_and(|m| matches!(m.alpha_mode, AlphaMode::Blend) && !m.unlit);
+            if blended && let Some(mut m) = assets.materials.get_mut(id) {
+                // Non éclairée, la couleur s'ajouterait telle quelle et voilerait l'espace :
+                // presque noire, elle ne fait qu'assombrir et teinter ce qu'on voit au travers.
+                let c = m.base_color.to_linear();
+                m.base_color = Color::LinearRgba(LinearRgba::new(
+                    c.red * 0.04,
+                    c.green * 0.04,
+                    c.blue * 0.04,
+                    c.alpha,
+                ));
+                m.unlit = true;
+            }
+        }
+    }
+
     for node in children.iter_descendants(root) {
         let Ok((name, gltf_extras)) = nodes.get(node) else {
             continue;
