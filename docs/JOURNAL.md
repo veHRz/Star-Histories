@@ -6,6 +6,7 @@
 
 - L'auteur valide le visuel de M8 sur les captures avant / après ; commits poussés.
 - **Bug signalé** : la carte s'ouvrait une demi-seconde puis se refermait. La touche M, encore tenue quand le contexte Carte s'active, comptait pour un nouvel appui (les scénarios n'appuyaient que sur un frame). Les actions « à un coup » portent `require_reset` ; scénario `map_key` (touche tenue 150 ms) ajouté à `tools/check.*`.
+- **Lightmaps du spatioport** : le dépliage dense du lot B est commun à tous les secteurs (`lightmap.py` : `cull_hidden_faces`, `prepare`, écart de 2,5 px) ; spatioport et salle témoin recuits à 512 échantillons. Hall ≈ 7 → 19 texels/m, marché 18, toujours en 1024 px (mémoire vidéo inchangée). Encadrements de porte vérifiés en capture (rien retiré à moins de 2 m d'un passage).
 
 ## 04/11/2026 — Poste Linux : M8, vague 2 (B, C) et fin de l'interface
 

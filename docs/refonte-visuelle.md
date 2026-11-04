@@ -216,9 +216,12 @@ et sautable à tout moment ; son avancement est sauvegardé (`SaveFile`, `#[serd
 - **Vague 2 intégrée et commitée** : B et C, plus le lot U2 (fin de l'interface). `tools/check.sh`
   vert. Défaut du kit corrigé (colliders au nom en double dessinés en pavés gris). Captures avant /
   après : `target/shots/m8-avant-apres-{vaisseau,quai-espace}.jpg`.
-- **Points ouverts** : validation de l'auteur ; dépliage des lightmaps du lot B
-  (`ships/player_ship.py`, `prepare_lightmap`) à reporter dans `lightmap.py` puis recuire le
-  spatioport (≈ 7 texels/m au hall et au marché) ; mesures sous Windows en Bas (`tools/perf.ps1`),
-  mémoire vidéo des textures (≈ 250 Mio avec les jeux ajoutés) ; corvettes jamais vues de près en
-  jeu (rendus de l'artiste).
+- **Validé par l'auteur** (04/11/2026) et poussé. Correctif : la carte se refermait d'elle-même
+  (touche tenue d'un contexte à l'autre, `require_reset`, scénario `map_key`).
+- **Lightmaps denses pour tous les secteurs** : le dépliage du lot B (faces cachées retirées,
+  écart de 2,5 px, résolution doublée sous 18 texels/m) est passé dans `lightmap.py` ; spatioport
+  et salle témoin recuits (hall 19, marché 18, autres cellules 30 à 36 texels/m, au lieu de ≈ 7),
+  toujours en 1024 px au plus.
+- **Points ouverts** : mesures sous Windows en Bas (`tools/perf.ps1`), mémoire vidéo des textures
+  (≈ 250 Mio avec les jeux ajoutés) ; corvettes jamais vues de près en jeu (rendus de l'artiste).
 
