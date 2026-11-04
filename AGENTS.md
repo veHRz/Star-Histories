@@ -12,7 +12,7 @@
 - **L'auteur** (veHRz) écrit l'univers (le « canon »). **Toi, tu construis le jeu.** Tu ne réécris pas l'univers.
 - **La pile** : Rust **1.99.1**, **Bevy 0.20.1**, physique **avian3d 0.8**, modèles 3D faits dans **Blender 5.2.3 LTS** piloté par **MCP for Blender**.
 - **La machine de référence** est le poste de développement Windows (il y en a aussi un sous Linux, §3.1) : i5-12500, 32 Go de RAM, **GPU intégré Intel UHD 770**. Le jeu doit y tenir **60 i/s en 1080p en qualité « Moyenne »** (30 i/s minimum en toutes circonstances). C'est une contrainte de conception, pas un détail de fin de projet.
-- **Le plan** : `docs/ROADMAP.md`, jalons M0 → M7, à suivre dans l'ordre. La conception du jeu est dans `docs/GDD.md`.
+- **Le plan** : `docs/ROADMAP.md`, jalons M0 → M8, à suivre dans l'ordre (M8, la refonte visuelle et le tutoriel : `docs/refonte-visuelle.md`). La conception du jeu est dans `docs/GDD.md`.
 
 ---
 
@@ -47,6 +47,9 @@
 | `docs/QUESTIONS.md` | Questions ouvertes pour l'auteur | Toi ; l'auteur y répond |
 | `docs/JOURNAL.md` | Journal de bord court, une entrée par session | Toi |
 | `docs/prompt-initial.md` | Le prompt qui a lancé le projet | — |
+| `docs/refonte-visuelle.md` | Plan de M8 : direction artistique « futur usé », contraintes, lots et méthode orchestrateur + sous-agents | Toi |
+| `docs/prompt-m8.md` | Le prompt qui lance M8 dans une nouvelle conversation | — |
+| `.claude/agents/` | Définitions des sous-agents (`artiste-blender`, `dev-jeu`) : règles de travail en parallèle | Toi, avec prudence |
 | `.reference/bevy-0.20.1/` | Clone en lecture seule de Bevy v0.20.1 (exemples, sources, guides de migration). Ignoré par Git | Personne |
 | `assets/` | Tout ce que le jeu charge à l'exécution | Toi |
 | `art/` | Fichiers sources `.blend` (Git LFS) | Toi via Blender |
@@ -365,7 +368,7 @@ L'auteur a imaginé quatre vues pour répartir la charge. Le principe est conser
 - **Origine** : centre de la base pour props et personnages ; centre de masse pour les vaisseaux ; coin de grille pour les modules.
 - **Noms dans Blender** (relus par le jeu via les extras glTF, `GltfExtras`) : `*_col` collision simplifiée (non rendue), `*_lod1` / `*_lod2` niveaux de détail, empties `SPAWN_<id>`, `CELL_<id>`, `PORTAL_<celluleA>_<celluleB>`, `SOCKET_<usage>`, `INTERACT_<type>`. Les propriétés personnalisées Blender deviennent des extras glTF : sers-t'en pour les métadonnées (type de porte, faction, interaction).
 - **Matériaux** : peu de matériaux PBR partagés (trim sheets, palettes, couleurs de sommets), émissif pour les lumières de décor. Textures 1K par défaut, 2K pour les pièces maîtresses, KTX2 si possible. L'éclairage des intérieurs peut être **précalculé dans Blender** (bake Cycles → `Lightmap` dans Bevy) : c'est le meilleur levier de performance sur GPU intégré.
-- **Identités visuelles** (proposition à valider) : Empire = rigueur, classes uniformes, « une flotte pensée comme un marteau » ; UGL = flotte hétérogène, vaisseaux personnels des héros de la Rébellion ; pirates = assemblages, « facture pirate » ; Hexa-Corp = industriel, neutre, efficace. Ton général : space opera inspiré de Star Wars et Star Trek, **sans emprunt** (tout est original). **Direction artistique validée : réaliste stylisé, géométrie simple et lisible.** **Pas de boucliers énergétiques**, jamais : seul le blindage protège.
+- **Identités visuelles** (proposition à valider) : Empire = rigueur, classes uniformes, « une flotte pensée comme un marteau » ; UGL = flotte hétérogène, vaisseaux personnels des héros de la Rébellion ; pirates = assemblages, « facture pirate » ; Hexa-Corp = industriel, neutre, efficace. Ton général : space opera inspiré de Star Wars et Star Trek, **sans emprunt** (tout est original). **Direction artistique (décision de l'auteur, Q14, 04/11/2026) : futuriste, « futur usé » inspiré de Star Wars, détaillé (panneaux, tuyaux, usure, lumière contrastée), jamais copié** ; elle remplace la géométrie simple et lisible de M1–M7 (brief complet : `docs/refonte-visuelle.md` §2). **Pas de boucliers énergétiques**, jamais : seul le blindage protège.
 - **Licences** : Poly Haven (CC0) autorisé ; Sketchfab et Poly Pizza seulement avec une licence compatible, vérifiée. Tout asset externe est consigné dans `assets/CREDITS.md` (source, auteur, licence). `generate_3d` (Hyper3D, Tripo, Meshy, Hunyuan) : services payants et licences propres, **uniquement avec l'accord de l'auteur**.
 
 ---
@@ -435,6 +438,13 @@ Détails dans `docs/GDD.md`. Les piliers :
 - Avance jalon par jalon sans attendre de validation pour les choix techniques. Arrête-toi et demande quand : une installation exige l'admin, un choix d'univers ou de direction artistique structurant se présente, ou une dépense (service payant) serait nécessaire.
 - Lance les commandes longues (première compilation, build release) en arrière-plan.
 - Si tu bloques sur une API plus de deux essais : lis l'exemple Bevy correspondant plutôt que de deviner.
+
+### 12.5 Travail en parallèle avec des sous-agents (M8)
+
+- Un **orchestrateur** répartit le travail en lots (`docs/refonte-visuelle.md` §4) et lance un sous-agent par lot (`.claude/agents/artiste-blender.md` pour les assets, `.claude/agents/dev-jeu.md` pour le code). Il garde pour lui l'intégration, les tests, les commits et les échanges avec l'auteur.
+- **Un fichier, un propriétaire** : deux sous-agents ne touchent jamais le même fichier. Le code partagé, les fichiers de langue (sauf le lot qui en reçoit une partie), `AGENTS.md` et `docs/` restent à l'orchestrateur.
+- **Les sous-agents ne testent pas le jeu** : ni `cargo t`, ni le jeu, ni `tools/check.*`, ni `tools/perf.*`, ni `git`. Les artistes lancent Blender en arrière-plan (un processus chacun, jamais le Blender ouvert ni le MCP) et regardent leurs propres rendus ; le développeur peut lancer `cargo lint`. L'orchestrateur intègre et teste **une fois par vague**, puis commite lot par lot.
+- Pas plus de deux bakes Cycles en même temps sur une machine ; les compilations Rust se partagent le dossier `target/` (verrou).
 
 ---
 
