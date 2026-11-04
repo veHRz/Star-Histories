@@ -2,6 +2,12 @@
 
 > Une entrée courte par session (2 à 5 lignes) : ce qui a été fait, ce qui reste en suspens, les décisions prises. Le plus récent en haut.
 
+## 04/11/2026 — Poste Windows : premiers essais de l'auteur, nouvelle partie et Échap
+
+- **« Nouvelle partie » ouvrait encore le vaisseau seul en vue Sectorielle** (le lieu de test de M1, `menu.rs` n'avait pas suivi M2) : pas d'espace, sas fermé, console « en veille à quai ». Elle démarre maintenant comme le départ P1 le prévoit : aux commandes, en vue Globale du système de départ (`EnterGame::new_game`, lu dans les données). `SH_START=new` rejoue exactement ce chemin (fumée de `check.ps1` / `check.sh`). Message de la console de pilotage reformulé : il renvoie au siège du pilote.
+- **Échap plantait** (`living::show_news` lisait `State<ViewLevel>`, absent hors partie) et une nouvelle partie aurait repris le monde de la partie quittée : la partie quittée (Échap ou mort) est effacée à la sortie de `InGame` (`state::forget_game`, auparavant dans le seul chemin de la mort). L'effacer en plein `Update` faisait planter le terminal : la condition d'un groupe de systèmes chaîné est évaluée une fois, avant que les ressources disparaissent. Scénario `menu_return` ajouté aux deux scripts.
+- Les scénarios de l'autopilote démarraient tous par `SH_START` : aucun ne passait par le menu, d'où ces deux bugs restés invisibles depuis M2.
+
 ## 04/11/2026 — Poste Windows : vérification de M6, mesures de performance (M1, M2, M6)
 
 - **Vérification** : `tools/check.ps1` vert sous Windows (fmt, lint, tests, fumée, tous les scénarios dont `raid_win`, `raid_flee`, `raid_lose`, `firefight`, `firefight_lose`) ; `walk_ship` monte bien l'escalier à ≈ 45 i/s. Captures `target/shots/m6-*.png` regardées : correctes. Défauts mineurs déjà connus : étiquettes qui se chevauchent (« HexisApproche du spatioport d'Hexis », hub de Cygnara sous une corvette).
