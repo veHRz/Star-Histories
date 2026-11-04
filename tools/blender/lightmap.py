@@ -6,9 +6,11 @@ des cellules (direct, rebonds, ombres douces) est calculé une fois par Cycles e
 des objets mobiles (portes), sans carte d'ombre.
 
 Étapes, appelées par le script d'un secteur :
-1. `unwrap(objets)` : 2e jeu d'UV (`lightmap`, TEXCOORD_1 en glTF) commun à tous les objets
-   d'une cellule, avant leur fusion par matériau : la version Locale et la version Sectorielle
-   d'une cellule partagent ainsi la même lightmap ;
+1. `cull_hidden_faces(...)` puis `prepare(objets)` (ou `unwrap(objets, res)`) : 2e jeu d'UV
+   (`lightmap`, TEXCOORD_1 en glTF) commun à tous les objets d'une cellule, avant leur fusion
+   par matériau : la version Locale et la version Sectorielle d'une cellule partagent ainsi la
+   même lightmap. `prepare` double la résolution tant que la densité mesurée reste sous
+   `MIN_DENSITY` ;
 2. `bake_cells(...)` : une vraie lampe Blender par repère `LIGHT_`, puis un bake diffus par
    cellule, avec toutes les cellules dans la scène (les voisines occultent et renvoient la
    lumière) ;
@@ -36,8 +38,17 @@ WATTS_TO_LUMENS = 683.0
 # Densité visée (texels par mètre) et bornes de résolution d'une lightmap.
 TEXELS_PER_METER = 20.0
 MIN_RES, MAX_RES = 256, 1024
-# Marge autour des îlots UV et débord du bake, en texels.
+# Débord du bake autour des îlots UV, en texels.
 PADDING = 3
+# Écart entre deux îlots de l'atlas, en texels (lot B de M8). Il était de 6 (2 × PADDING) : avec
+# les milliers de petits îlots du kit (plaques, chants de quelques millimètres), les marges
+# mangeaient l'atlas (≈ 7 à 10 texels/m au sol au lieu de 20). 2,5 texels suffisent : la
+# lightmap n'a pas de mipmaps, le filtrage bilinéaire ne lit qu'un texel au-delà du bord, et le
+# débord du bake (EXTEND) remplit l'écart moitié par chaque voisin.
+GAP_TEXELS = 2.5
+# Densité moyenne visée après dépliage (texels par mètre) : en dessous, `prepare` double la
+# résolution (jusqu'à MAX_RES).
+MIN_DENSITY = 18.0
 # Échantillons Cycles (SH_BAKE_SAMPLES pour itérer vite, au prix du bruit).
 SAMPLES = int(os.environ.get("SH_BAKE_SAMPLES", "512"))
 # Part des texels sous le facteur d'échelle (le reste, sous les plafonniers, sature).
@@ -82,7 +93,7 @@ def unwrap(objects, res: int) -> None:
     bpy.context.view_layer.objects.active = meshes[0]
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
-    margin = 2.0 * PADDING / res
+    margin = GAP_TEXELS / res
     bpy.ops.uv.smart_project(
         angle_limit=math.radians(66.0), island_margin=margin, area_weight=0.0, scale_to_bounds=False
     )
@@ -91,6 +102,88 @@ def unwrap(objects, res: int) -> None:
     for obj in meshes:
         # Le premier jeu reste le jeu actif au rendu (textures éventuelles du matériau).
         obj.data.uv_layers.active = obj.data.uv_layers[0]
+
+
+def density(objects, res: int) -> float:
+    """Densité moyenne de l'atlas (texels par mètre) : √(aire UV × res² / aire 3D)."""
+    uv_area = area = 0.0
+    for obj in _meshes(objects):
+        layer = obj.data.uv_layers.get(UV_NAME)
+        s = obj.matrix_world.to_scale()
+        f = abs(s.x * s.y * s.z) ** (2.0 / 3.0)
+        for poly in obj.data.polygons:
+            uvs = [layer.data[i].uv for i in poly.loop_indices]
+            for i in range(1, len(uvs) - 1):
+                ax, ay = uvs[i].x - uvs[0].x, uvs[i].y - uvs[0].y
+                bx, by = uvs[i + 1].x - uvs[0].x, uvs[i + 1].y - uvs[0].y
+                uv_area += abs(ax * by - bx * ay) / 2
+            area += poly.area * f
+    return math.sqrt(uv_area * res * res / max(area, 1e-9))
+
+
+def prepare(objects) -> tuple[int, float]:
+    """Dépliage à la plus petite résolution qui tient MIN_DENSITY (bornée par MAX_RES) ;
+    renvoie (résolution, densité en texels par mètre)."""
+    res = resolution_for(objects)
+    while True:
+        unwrap(objects, res)
+        got = density(objects, res)
+        if got >= MIN_DENSITY or res >= MAX_RES:
+            return res, got
+        res *= 2
+
+
+def cull_hidden_faces(objects, lo, hi, floors=(0.0,), keep_near=(), keep_radius=2.0):
+    """Supprime les faces que le joueur ne voit jamais (lot B de M8) : faces au-delà des bornes
+    intérieures `lo`–`hi` de la cellule et tournées vers le dehors, dessous posés sur un sol
+    (`floors`), dos plaqués contre une paroi ou le plafond. Moins de triangles, et l'atlas de
+    lightmap ne leur réserve plus de place. Rien n'est retiré à moins de `keep_radius` (à
+    l'horizontale) d'un point de `keep_near` : les encadrements d'une ouverture dépassent des
+    bornes et se voient depuis la cellule voisine. Renvoie (objets gardés, faces supprimées) ;
+    un objet vidé est supprimé de la scène."""
+    import bmesh
+    from mathutils import Vector
+
+    lo, hi = Vector(lo), Vector(hi)
+    eps = 0.004
+    removed = 0
+    keep = []
+    for obj in objects:
+        if obj.type != "MESH":
+            keep.append(obj)
+            continue
+        mw = obj.matrix_world
+        nmat = mw.to_3x3().inverted().transposed()
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        doomed = []
+        for f in bm.faces:
+            cw = mw @ f.calc_center_median()
+            if any(math.hypot(cw.x - px, cw.y - py) < keep_radius for px, py in keep_near):
+                continue
+            nw = (nmat @ f.normal).normalized()
+            clamped = Vector([min(max(cw[i], lo[i]), hi[i]) for i in range(3)])
+            out = cw - clamped
+            if out.length > 0.01 and nw.dot(out.normalized()) > 0.7:
+                doomed.append(f)
+            elif nw.z < -0.9 and any(abs(cw.z - fl) < eps for fl in floors):
+                doomed.append(f)
+            elif nw.z > 0.9 and abs(cw.z - hi.z) < eps:
+                doomed.append(f)
+            elif (nw.x < -0.9 and abs(cw.x - lo.x) < eps) or (nw.x > 0.9 and abs(cw.x - hi.x) < eps):
+                doomed.append(f)
+            elif (nw.y < -0.9 and abs(cw.y - lo.y) < eps) or (nw.y > 0.9 and abs(cw.y - hi.y) < eps):
+                doomed.append(f)
+        if doomed:
+            bmesh.ops.delete(bm, geom=doomed, context="FACES")
+            bm.to_mesh(obj.data)
+            removed += len(doomed)
+        bm.free()
+        if len(obj.data.polygons) == 0:
+            bpy.data.objects.remove(obj, do_unlink=True)
+            continue
+        keep.append(obj)
+    return keep, removed
 
 
 def _setup_cycles(scene) -> None:

@@ -525,13 +525,13 @@ def pump(k: Cell, m: dict, at):
 
 def export(cells: dict, bake: bool) -> dict:
     exports = c.collection("EXPORT")
-    resolutions = {cid: lm.resolution_for(k.visual) for cid, k in cells.items()}
+    resolutions, densities = {}, {}
     bake_input = {}
     stats = {}
     quiet = io.StringIO()
     with contextlib.redirect_stdout(quiet), contextlib.redirect_stderr(quiet):
         for cid, k in cells.items():
-            lm.unwrap(k.visual, resolutions[cid])
+            resolutions[cid], densities[cid] = lm.prepare(k.visual)
             merged = c.join_by_material(k.visual, cid, exports)
             c.export_gltf(f"assets/{MODELS}/{cid}.gltf", merged + k.colliders + k.marks)
             lod = c.join_by_material(k.structure, f"{cid}_lod1", exports)
@@ -547,7 +547,7 @@ def export(cells: dict, bake: bool) -> dict:
             }
             bake_input[cid] = {"bake": merged, "res": resolutions[cid], "marks": k.marks}
     for cid, s in stats.items():
-        print(f"cellule {cid} : {s['tris']} triangles, {len(s['materials'])} matériaux, LOD {s['lod_tris']} triangles, lightmap {s['res']} px")
+        print(f"cellule {cid} : {s['tris']} triangles, {len(s['materials'])} matériaux, LOD {s['lod_tris']} triangles, lightmap {s['res']} px ({densities[cid]:.1f} texels/m)")
         print(f"  matériaux : {', '.join(s['materials'])}")
     lightmaps = {}
     if bake:

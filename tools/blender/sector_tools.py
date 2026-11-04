@@ -232,13 +232,20 @@ def export_sector(
     renamed = sum(unique_collider_names(p["colliders"]) for p in built.values())
     if renamed:
         print(f"colliders renommés (noms en double du kit) : {renamed}")
-    resolutions = {cell: lm.resolution_for(p["visual"] + p["pickups"]) for cell, p in built.items()}
     bake_input = {}
     stats = {}
+    resolutions, densities, culled = {}, {}, {}
     quiet = io.StringIO()
     with contextlib.redirect_stdout(quiet), contextlib.redirect_stderr(quiet):
         for cell, parts in built.items():
-            lm.unwrap(parts["visual"] + parts["pickups"], resolutions[cell])
+            # Faces jamais vues retirées (sauf autour des passages), puis dépliage assez dense.
+            x0, x1, y0, y1, h = cells[cell]
+            doors = [(x, y) for a, b, _kind, x, y, _axis in portals if cell in (a, b)]
+            visual, culled[cell] = lm.cull_hidden_faces(parts["visual"], (x0, y0, 0.0), (x1, y1, h), keep_near=doors)
+            alive = set(visual)
+            parts["visual"] = visual
+            parts["structure"] = [o for o in parts["structure"] if o in alive]
+            resolutions[cell], densities[cell] = lm.prepare(parts["visual"] + parts["pickups"])
             merged = c.join_by_material(parts["visual"], cell, exports)
             full = merged + parts["colliders"] + parts["marks"] + parts["pickups"]
             c.export_gltf(f"assets/{meta['models']}/{cell}{MODEL_EXT}", full)
@@ -253,6 +260,8 @@ def export_sector(
                 "lod_tris": _tris(lod),
                 "materials": sorted({o.data.materials[0].name for o in merged}),
                 "res": resolutions[cell],
+                "density": densities[cell],
+                "culled": culled[cell],
                 "colliders": len(parts["colliders"]),
                 "merged": merged,
                 "lod": lod,
@@ -261,7 +270,8 @@ def export_sector(
     for cell, s in stats.items():
         print(
             f"cellule {cell} : {s['tris']} triangles, {len(s['materials'])} matériaux, LOD {s['lod_tris']} "
-            f"triangles, {s['colliders']} colliders, lightmap {s['res']} px"
+            f"triangles, {s['colliders']} colliders, lightmap {s['res']} px ({s['density']:.1f} texels/m), "
+            f"{s['culled']} faces cachées retirées"
         )
         print(f"  matériaux : {', '.join(s['materials'])}")
     removed = _remove_stale(meta["models"], cells)

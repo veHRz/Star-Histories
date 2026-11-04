@@ -847,128 +847,26 @@ def sector_ron(lightmaps: dict) -> str:
 
 
 # --- Lightmap : faces cachées, dépliage ---------------------------------------------------------
-
-# Écart entre deux îlots de l'atlas, en texels. `lightmap.unwrap` en laisse 6 (2 × PADDING) :
-# avec les milliers de petits îlots du kit (plaques, chants de quelques millimètres), les marges
-# mangeaient l'atlas (≈ 10 texels/m au sol au lieu de 20). 2,5 texels suffisent : la lightmap
-# n'a pas de mipmaps, le filtrage bilinéaire ne lit qu'un texel au-delà du bord, et le débord du
-# bake (EXTEND) remplit l'écart moitié par chaque voisin.
-LM_GAP_TEXELS = 2.5
+# Écart de 2,5 texels entre îlots, densité minimale de 18 texels/m, faces cachées retirées :
+# introduits ici (lot B de M8), désormais communs à tous les secteurs (`lightmap.py`).
 
 
 def cull_hidden_faces(k: Cell) -> int:
-    """Supprime les faces que le joueur ne voit jamais : faces extérieures de la coque (au-delà
-    des bornes intérieures, tournées vers le dehors), dessous posés sur le sol, dos plaqués contre
-    une paroi ou le plafond. Moins de triangles, et l'atlas de lightmap ne leur réserve plus de
-    place. Les objets ramassables (mobiles) ne sont pas touchés. Renvoie le nombre de faces
-    supprimées."""
-    import bmesh
-
-    lo = Vector((k.x0, k.y0, 0.0))
-    hi = Vector((k.x1, k.y1, k.h))
+    """Faces que le joueur ne voit jamais retirées (`lightmap.cull_hidden_faces`) : bornes
+    intérieures de la cellule, sol, et l'estrade du cockpit (0,8 m)."""
     floors = [0.0] + ([0.8] if k.id == "cockpit" else [])
-    eps = 0.004
-    removed = 0
-    keep = []
-    for obj in k.visual:
-        if obj.type != "MESH":
-            keep.append(obj)
-            continue
-        mw = obj.matrix_world
-        nmat = mw.to_3x3().inverted().transposed()
-        bm = bmesh.new()
-        bm.from_mesh(obj.data)
-        doomed = []
-        for f in bm.faces:
-            cw = mw @ f.calc_center_median()
-            nw = (nmat @ f.normal).normalized()
-            clamped = Vector((min(max(cw[i], lo[i]), hi[i]) for i in range(3)))
-            out = cw - clamped
-            if out.length > 0.01 and nw.dot(out.normalized()) > 0.7:
-                doomed.append(f)
-            elif nw.z < -0.9 and any(abs(cw.z - fl) < eps for fl in floors):
-                doomed.append(f)
-            elif nw.z > 0.9 and abs(cw.z - k.h) < eps:
-                doomed.append(f)
-            elif (nw.x < -0.9 and abs(cw.x - k.x0) < eps) or (nw.x > 0.9 and abs(cw.x - k.x1) < eps):
-                doomed.append(f)
-            elif (nw.y < -0.9 and abs(cw.y - k.y0) < eps) or (nw.y > 0.9 and abs(cw.y - k.y1) < eps):
-                doomed.append(f)
-        if doomed:
-            bmesh.ops.delete(bm, geom=doomed, context="FACES")
-            bm.to_mesh(obj.data)
-            removed += len(doomed)
-        bm.free()
-        if len(obj.data.polygons) == 0:
-            bpy.data.objects.remove(obj, do_unlink=True)
-            continue
-        keep.append(obj)
+    keep, removed = lm.cull_hidden_faces(k.visual, (k.x0, k.y0, 0.0), (k.x1, k.y1, k.h), floors=floors)
     alive = set(keep)
     k.visual = keep
     k.structure = [o for o in k.structure if o in alive]
     return removed
 
 
-def unwrap_lightmap(objects, res: int) -> None:
-    """Comme `lightmap.unwrap` (2e jeu d'UV `lightmap` commun aux objets, avant la fusion), avec
-    un écart de LM_GAP_TEXELS entre les îlots."""
-    meshes = [o for o in objects if o.type == "MESH"]
-    for obj in meshes:
-        uvs = obj.data.uv_layers
-        if len(uvs) == 0:
-            uvs.new(name=c.UV_TEXTURE)
-        layer = uvs.get(lm.UV_NAME) or uvs.new(name=lm.UV_NAME)
-        uvs.active = layer
-    bpy.ops.object.select_all(action="DESELECT")
-    for obj in meshes:
-        obj.hide_set(False)
-        obj.select_set(True)
-    bpy.context.view_layer.objects.active = meshes[0]
-    bpy.ops.object.mode_set(mode="EDIT")
-    bpy.ops.mesh.select_all(action="SELECT")
-    margin = LM_GAP_TEXELS / res
-    bpy.ops.uv.smart_project(angle_limit=math.radians(66.0), island_margin=margin, area_weight=0.0, scale_to_bounds=False)
-    bpy.ops.uv.pack_islands(rotate=True, margin_method="FRACTION", margin=margin)
-    bpy.ops.object.mode_set(mode="OBJECT")
-    for obj in meshes:
-        obj.data.uv_layers.active = obj.data.uv_layers[0]
-
-
-def lightmap_density(objects, res: int) -> float:
-    """Densité moyenne de l'atlas (texels par mètre) : √(aire UV × res² / aire 3D)."""
-    uv_area = area = 0.0
-    for obj in objects:
-        if obj.type != "MESH":
-            continue
-        layer = obj.data.uv_layers.get(lm.UV_NAME)
-        s = obj.matrix_world.to_scale()
-        f = abs(s.x * s.y * s.z) ** (2.0 / 3.0)
-        for poly in obj.data.polygons:
-            uvs = [layer.data[i].uv for i in poly.loop_indices]
-            for i in range(1, len(uvs) - 1):
-                ax, ay = uvs[i].x - uvs[0].x, uvs[i].y - uvs[0].y
-                bx, by = uvs[i + 1].x - uvs[0].x, uvs[i + 1].y - uvs[0].y
-                uv_area += abs(ax * by - bx * ay) / 2
-            area += poly.area * f
-    return math.sqrt(uv_area * res * res / max(area, 1e-9))
-
-
-# Densité visée (texels par mètre) : en dessous, la résolution double (jusqu'à lm.MAX_RES).
-LM_MIN_DENSITY = 18.0
-
-
 def prepare_lightmap(k: Cell) -> tuple[int, float]:
     """Faces cachées retirées, résolution de la lightmap, dépliage ; renvoie (résolution,
     densité en texels par mètre)."""
     cull_hidden_faces(k)
-    objs = k.visual + k.pickups
-    res = lm.resolution_for(objs)
-    while True:
-        unwrap_lightmap(objs, res)
-        density = lightmap_density(objs, res)
-        if density >= LM_MIN_DENSITY or res >= lm.MAX_RES:
-            return res, density
-        res *= 2
+    return lm.prepare(k.visual + k.pickups)
 
 
 # --- Export et bake -----------------------------------------------------------------------------
