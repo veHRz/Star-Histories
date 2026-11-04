@@ -2,6 +2,14 @@
 
 > Une entrée courte par session (2 à 5 lignes) : ce qui a été fait, ce qui reste en suspens, les décisions prises. Le plus récent en haut.
 
+## 04/11/2026 — Poste Linux : M8, vague 2 (B, C) et fin de l'interface
+
+- **Vague 2** : vaisseau du joueur (B) et spatioport d'Hexis (C) réassemblés avec le nouveau kit, habillés, lightmaps recuites à 512 échantillons. Gameplay intact : `tools/check.sh` vert, tous les scénarios (dont `tutorial`, `walk_ship`, `port_loop`, `save_load`, abordages).
+- **Défaut trouvé en jeu** : `room_shell` donnait le même nom à plusieurs colliders, Blender les renommait `…_col.001`, le jeu les dessinait en pavés gris (et on les traversait). Noms numérotés, `export_gltf` refuse un collider renommé, kit réexporté.
+- **Interface** : les écrans hors du lot U (options, carte, bandeau, date et nouvelles, conseils, tutoriel, mort, étiquettes) sont habillés (lot U2).
+- Captures avant / après : `target/shots/m8-avant-apres-{vaisseau,quai-espace}.jpg` (15 vues fixes, Moyen). **À mesurer sous Windows** : tout M8 en Bas, plein écran 1080p (`tools/perf.ps1`), dont la mémoire vidéo des textures ; sur ce poste, quelques pics de 43 à 65 ms aux transitions (`walk_ship`, `firefight_lose`).
+- **Reste** : validation de l'auteur sur les captures ; reporter dans `lightmap.py` le dépliage plus dense du lot B (le hall et le marché n'ont que ≈ 7 texels/m) ; mesures Windows.
+
 ## 04/11/2026 — Poste Linux : M8, point de contrôle et vague 1 (A, D, E, F, T, U)
 
 - **Point de contrôle** : `tools/check.sh` vert, avant refait sur ce poste (`captures.sh m8-avant`), salle témoin capturée en Moyen et en Bas ; l'auteur **valide la direction** et **demande le lot U**. La salle témoin entre dans la fumée des scripts de vérification.

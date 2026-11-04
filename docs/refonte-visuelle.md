@@ -213,4 +213,12 @@ et sautable à tout moment ; son avancement est sauvegardé (`SaveFile`, `#[serd
   (`transition.rs`), date et nouvelles, conseils, écran de mort, étiquettes de cibles.
 - Vague 2 lancée : B (vaisseau du joueur) et C (spatioport), avec les demandes du lot A (export
   `.gltf`, `avoid=` des plafonniers, consoles retournées, pièces sans UV, styles `industrial`).
+- **Vague 2 intégrée et commitée** : B et C, plus le lot U2 (fin de l'interface). `tools/check.sh`
+  vert. Défaut du kit corrigé (colliders au nom en double dessinés en pavés gris). Captures avant /
+  après : `target/shots/m8-avant-apres-{vaisseau,quai-espace}.jpg`.
+- **Points ouverts** : validation de l'auteur ; dépliage des lightmaps du lot B
+  (`ships/player_ship.py`, `prepare_lightmap`) à reporter dans `lightmap.py` puis recuire le
+  spatioport (≈ 7 texels/m au hall et au marché) ; mesures sous Windows en Bas (`tools/perf.ps1`),
+  mémoire vidéo des textures (≈ 250 Mio avec les jeux ajoutés) ; corvettes jamais vues de près en
+  jeu (rendus de l'artiste).
 

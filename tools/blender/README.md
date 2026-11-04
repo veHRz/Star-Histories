@@ -16,7 +16,8 @@ source de vérité.
 | `space/hexis_orbitals.py` | Installations orbitales d'Hexis (P15, P18 ; lot E de M8) : `assets/models/space/{l_enclume,portal_hub,shipyard,freighter}.gltf`, texture `orbital_lights_*`, `art/space/hexis_orbitals.blend` (`-- --textures --previews --only a,b`). Émissifs calibrés pour le jeu : l'émissif n'est pas atténué par l'exposition de la caméra (≈ 4 pour un feu, 1 à 2 pour un hublot) |
 | `space/warships.py` | Corvettes pirate et de l'Union (P26 ; lot D de M8) : `assets/models/space/{pirate,ugl}_corvette.gltf`, textures `warship_rust_*` et `warship_lights_*`, `art/space/warships.blend` (`-- --previews`) |
 | `characters/pirate.py`, `characters/mag_pistol.py` | Abordeur pirate et pistolet magnétique du joueur (P26 ; lot F de M8) : `assets/models/characters/pirate.gltf`, `weapons/mag_pistol.gltf`, sources dans `art/characters/` ; textures `char_gear_*` et `char_cloth_*` par `char_atlas.py` et `char_cloth.py` (à lancer avant, ou régénérées si absentes) ; `char_kit.py` (outils), `char_preview.py` (rendus) |
-| `ships/player_ship.py` | Vaisseau du joueur (P12) : une paire de modèles par cellule dans `assets/models/ships/player_ship/`, une lightmap par cellule dans `assets/textures/lightmaps/player_ship/`, le descripteur `assets/data/propositions/sectors/player_ship.ron`, `art/ships/player_ship.blend` |
+| `ships/player_ship.py` | Vaisseau du joueur (P12 ; lot B de M8) : une paire de modèles par cellule (`<cellule>.gltf`, `<cellule>_lod.gltf`) dans `assets/models/ships/player_ship/`, une lightmap par cellule dans `assets/textures/lightmaps/player_ship/`, le descripteur `assets/data/propositions/sectors/player_ship.ron`, `art/ships/player_ship.blend` (`-- --no-bake --no-export --lit --game --only a,b --samples N`). Dépliage de lightmap propre (`prepare_lightmap` : faces cachées retirées, marge 2,5 px), plus dense que `lightmap.unwrap` |
+| `places/hexis_spaceport.py`, `sector_tools.py` | Spatioport d'Hexis (P7 ; lot C de M8) et outils de secteur : cellules en style `station`, export glTF séparé (`export_sector`, colliders renommés au nom unique), descripteur, lightmaps, aperçus « comme en jeu » (`-- --no-bake --lit --only a,b --res --samples`) |
 
 ## Lancer
 
@@ -50,7 +51,7 @@ secteurs), puis une capture en jeu (`SH_START=sector:player_ship`, `SH_SPAWN=<id
 | Nom (Blender) | Effet dans le jeu (`crates/sh_game/src/sector/gltf.rs`) |
 |---|---|
 | `*_col` | Collision (enveloppe convexe du maillage), jamais rendue |
-| `*_lod1_*` | Version simplifiée (qualité Sectorielle), exportée dans `<cellule>_lod.glb` |
+| `*_lod1_*` | Version simplifiée (qualité Sectorielle), exportée dans `<cellule>_lod.gltf` |
 | `LIGHT_<id>` | Lumière ponctuelle ; extras `lumens`, `range`, `color`, `shadow_candidate` (ombre dynamique, seulement sans lightmap). Le bake en fait une lampe Blender de `lumens / 683` W |
 | UV `lightmap` | 2e jeu d'UV (TEXCOORD_1, `UV_1` dans Bevy), commun aux deux modèles d'une cellule : le jeu y pose la lightmap (`Lightmap`) |
 | `INTERACT_<nom>` | Zone d'interaction ; extras `interact` (`console`, `seat`, `pickup`, `ladder`) et ses paramètres (`label`, `role`, `item`) ; les enfants d'un `pickup` disparaissent avec lui |
