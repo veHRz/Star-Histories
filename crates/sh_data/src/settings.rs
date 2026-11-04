@@ -5,8 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Les trois préréglages graphiques (AGENTS.md §10). « Moyen » est la cible de la machine de
-/// référence (UHD 770, 1080p, 60 i/s).
+/// Les trois préréglages graphiques (AGENTS.md §10). « Bas » est la cible de la machine de
+/// référence (UHD 770, 1080p, 60 i/s ; « Moyen » jusqu'à M7, Q15).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GraphicsPresets {
     pub low: GraphicsPreset,
@@ -81,8 +81,16 @@ pub struct GraphicsPreset {
     pub lit_glass: bool,
     pub bloom: bool,
     pub anti_aliasing: AntiAliasing,
+    /// Filtrage anisotrope des textures de la bibliothèque de matériaux (1 = désactivé, au plus
+    /// 16) : net sur les sols vus en biais, mais chaque échantillon coûte plus de lectures.
+    #[serde(default = "default_anisotropy")]
+    pub anisotropy: u16,
     /// Distance d'affichage maximale des détails (mètres), pour les `VisibilityRange`.
     pub detail_distance: f32,
+}
+
+fn default_anisotropy() -> u16 {
+    1
 }
 
 /// Espace de la vue Globale (AGENTS.md §6.4).

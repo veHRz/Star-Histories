@@ -40,7 +40,7 @@ rustc --version
 say "Git LFS (configuration locale au dépôt uniquement)"
 git lfs install --local
 git lfs pull
-small=$(find assets/fonts assets/models -type f \( -name '*.ttf' -o -name '*.glb' \) -size -1k)
+small=$(find assets/fonts assets/models -type f \( -name '*.ttf' -o -name '*.glb' -o -name '*.bin' \) -size -1k)
 if [ -n "$small" ]; then
     echo "   ÉCHEC : fichiers encore à l'état de pointeurs LFS :"; echo "$small"; exit 1
 fi

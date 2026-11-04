@@ -21,6 +21,7 @@ pub mod input;
 pub mod interaction;
 pub mod living;
 pub mod loading;
+pub mod materials;
 pub mod options;
 pub mod player;
 pub mod save;
@@ -58,6 +59,7 @@ impl Plugin for StarHistoriesPlugin {
             state::StatePlugin,
             clock::ClockPlugin,
             loading::LoadingPlugin,
+            materials::MaterialLibraryPlugin,
             ui::UiPlugin,
             input::InputPlugin,
             views::ViewsPlugin,

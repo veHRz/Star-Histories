@@ -496,6 +496,11 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
             &ctx,
             "detail_distance doit être positive",
         );
+        c.check(
+            (1..=16).contains(&p.anisotropy),
+            &ctx,
+            "anisotropy hors de [1 ; 16]",
+        );
     }
     c.check(
         data.clock.time_scale > 0.0,

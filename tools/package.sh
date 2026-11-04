@@ -12,7 +12,7 @@ fi
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 
 # Les fichiers Git LFS doivent être là, pas leurs pointeurs (quelques octets).
-pointers=$(find assets -type f \( -name '*.glb' -o -name '*.png' -o -name '*.wav' -o -name '*.ttf' \) -size -200c)
+pointers=$(find assets -type f \( -name '*.glb' -o -name '*.bin' -o -name '*.png' -o -name '*.wav' -o -name '*.ttf' \) -size -200c)
 if [ -n "$pointers" ]; then
     echo "Fichiers LFS absents (lancer git lfs pull) :"
     echo "$pointers" | sed 's/^/   /'

@@ -18,9 +18,10 @@ fn sources(dossier: &Path) -> Vec<PathBuf> {
 
 /// Une clé de texte : segments ASCII minuscules séparés par des points (`menu.new_game`).
 fn ressemble_a_une_cle(s: &str) -> bool {
+    // Les noms de fichiers d'assets ne sont pas des clés.
+    const FICHIERS: [&str; 6] = [".ron", ".ttf", ".png", ".gltf", ".glb", ".bin"];
     s.contains('.')
-        && !s.ends_with(".ron")
-        && !s.ends_with(".ttf")
+        && !FICHIERS.iter().any(|ext| s.ends_with(ext))
         && s.split('.').all(|segment| {
             !segment.is_empty()
                 && segment

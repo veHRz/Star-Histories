@@ -1,8 +1,10 @@
-// Préréglages graphiques (AGENTS.md §10). « Moyen » est la cible de la machine de référence :
-// Intel UHD 770, 1080p, 60 i/s. Réglages techniques, pas des faits d'univers.
+// Préréglages graphiques (AGENTS.md §10). « Bas » est la cible de la machine de référence
+// (Intel UHD 770, 1080p, 60 i/s) depuis M8 (décision de l'auteur, Q15) ; c'était « Moyen » de M1 à
+// M7. Réglages techniques, pas des faits d'univers.
 // Moyen, mesuré sur l'UHD 770 en 1080p (M7) : rendu 3D à 0,8 (l'interface reste nette), ombre du
 // soleil légère (1 cascade de 1024, 40 m, Hardware2x2), pas de lumières dynamiques dans les cellules
 // cuites, vitrages teintés sans reflets ; ≈ 16 ms dans le cockpit en vol (docs/JOURNAL.md).
+// Filtrage anisotrope des textures de matériaux (M8) : 1 en Bas, 4 en Moyen, 8 en Haut.
 (
     low: (
         render_scale: 0.75,
@@ -17,6 +19,7 @@
         lit_glass: false,
         bloom: false,
         anti_aliasing: Fxaa,
+        anisotropy: 1,
         detail_distance: 60.0,
     ),
     medium: (
@@ -32,6 +35,7 @@
         lit_glass: false,
         bloom: true,
         anti_aliasing: Fxaa,
+        anisotropy: 4,
         detail_distance: 120.0,
     ),
     high: (
@@ -47,6 +51,7 @@
         lit_glass: true,
         bloom: true,
         anti_aliasing: Smaa,
+        anisotropy: 8,
         detail_distance: 250.0,
     ),
 )

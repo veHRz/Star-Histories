@@ -11,7 +11,7 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
 $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
 
 # Les fichiers Git LFS doivent être là, pas leurs pointeurs (quelques octets).
-$pointers = Get-ChildItem assets -Recurse -File -Include *.glb, *.png, *.wav, *.ttf | Where-Object { $_.Length -lt 200 }
+$pointers = Get-ChildItem assets -Recurse -File -Include *.glb, *.bin, *.png, *.wav, *.ttf | Where-Object { $_.Length -lt 200 }
 if ($pointers) {
     Write-Host "Fichiers LFS absents (lancer git lfs pull) :" -ForegroundColor Red
     $pointers | ForEach-Object { Write-Host "   $($_.FullName)" }
