@@ -2,6 +2,11 @@
 
 > Une entrée courte par session (2 à 5 lignes) : ce qui a été fait, ce qui reste en suspens, les décisions prises. Le plus récent en haut.
 
+## 04/11/2026 — Poste Windows : préparation de M8
+
+- L'auteur a testé la tranche de M7 : elle tourne, mais elle est « moche » (murs plats, aucun détail) et il manque un vrai tutoriel. Décision (Q14) : refonte visuelle futuriste, « futur usé » inspiré de Star Wars sans emprunt, et tutoriel guidé désactivable. Direction sonore P27 validée « pour un début ».
+- Préparé pour un agent orchestrateur dans une nouvelle conversation : plan `docs/refonte-visuelle.md` (brief artistique, contraintes de performance et de pipeline, lots à propriétaire unique, vagues, point de contrôle avec l'auteur après le lot 0, tests par l'orchestrateur seul), sous-agents `.claude/agents/artiste-blender.md` (Blender en arrière-plan, rendus regardés, ni cargo ni git) et `.claude/agents/dev-jeu.md` (`cargo lint` seulement), jalon M8 dans la feuille de route, AGENTS.md (§9.3, §12.5), prompt de départ `docs/prompt-m8.md`.
+
 ## 04/11/2026 — Poste Windows : retour de l'auteur sur le menu de pause
 
 - Après « Reprendre », l'écran de pause restait affiché (rien ne l'effaçait une fois la pause retirée) ; un double Échap plantait : la condition du groupe chaîné (fermeture puis affichage) n'était évaluée qu'une fois, et la fermeture retirait la pause entre les deux. Même défaut latent dans les options (bouton « Retour »). Conditions posées sur chaque système, écran effacé en reprenant ; scénario `pause_escape` au vrai clavier ajouté aux deux scripts. Les tests passaient : aucun ne fermait la pause par Échap ni par ses boutons.

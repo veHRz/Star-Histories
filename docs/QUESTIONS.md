@@ -42,3 +42,6 @@
 
 13. **Disposition du clavier.** Joues-tu en AZERTY ? Faut-il afficher les touches selon la disposition réelle ?
    → **« Oui je joue en AZERTY, il faudra afficher la disposition réelle du clavier ; le remappage complet arrive avec les options (M7). »** (03/11/2026) — intégré : les aides citent des jetons de touche (`[KeyE]`) remplacés par l'étiquette de la disposition (`gameplay/keyboard.ron`, AZERTY supposée au départ), corrigée à chaque appui par le vrai caractère de la touche. Les liaisons restent physiques jusqu'au remappage de M7 (la carte est donc sur la touche « , » en AZERTY).
+
+14. **Direction artistique après M7.** La tranche est jouable : la direction « réaliste stylisé, géométrie simple » suffit-elle ?
+   → **« Il est moche. Pas vraiment moche, mais les murs sont plats, il n'y a aucun détail ; il faudrait un vrai tuto qui explique le jeu et guide les premières minutes (désactivable dans les options). La prochaine partie : la refonte totale du visuel pour un style futuriste (inspiré de Star Wars). »** (04/11/2026) — remplace la direction validée en Q5 ; intégré comme jalon M8 (`docs/refonte-visuelle.md`). La direction sonore (P27) est validée « pour un début ».
