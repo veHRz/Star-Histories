@@ -224,8 +224,12 @@ fn settings_path() -> std::path::PathBuf {
 
 fn load() -> UserSettings {
     if crate::dev::autopilot_active() {
-        // `SH_KEYS=KeyE:KeyF,…` : un remappage imposé, pour le vérifier.
+        // `SH_KEYS=KeyE:KeyF,…` : un remappage imposé, pour le vérifier. L'autopilote est muet
+        // (il tourne pendant que l'auteur travaille), sauf `SH_AUDIO=1`.
         let mut settings = UserSettings::default();
+        if std::env::var_os("SH_AUDIO").is_none() {
+            settings.master_volume = 0.0;
+        }
         for pair in std::env::var("SH_KEYS").unwrap_or_default().split(',') {
             if let Some((from, to)) = pair.split_once(':')
                 && let (Some(from), Some(to)) = (parse_key(from.trim()), parse_key(to.trim()))

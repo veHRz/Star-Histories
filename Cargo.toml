@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/*", "tools/sh_import"]
+members = ["crates/*", "tools/sh_import", "tools/sh_audio"]
 resolver = "3"
 
 [workspace.package]
@@ -10,7 +10,7 @@ publish = false
 
 [workspace.dependencies]
 # Moteur et écosystème Bevy (compatibilité 0.20 vérifiée, AGENTS.md §5.3).
-bevy = "0.20.1"
+bevy = { version = "0.20.1", features = ["wav"] }
 bevy_enhanced_input = "0.27"
 bevy-inspector-egui = "0.38"
 avian3d = "0.8"

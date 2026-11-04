@@ -1,0 +1,10 @@
+[package]
+name = "sh_audio"
+description = "Génère les sons du jeu (musiques, ambiances, effets) dans assets/audio : synthèse déterministe, sans dépendance."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

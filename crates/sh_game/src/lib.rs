@@ -7,6 +7,7 @@
 use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResolution};
 
+pub mod audio;
 pub mod career;
 pub mod clock;
 pub mod combat;
@@ -76,6 +77,7 @@ impl Plugin for StarHistoriesPlugin {
             combat::CombatPlugin,
             save::SavePlugin,
             options::OptionsPlugin,
+            audio::GameAudioPlugin,
         ));
         #[cfg(feature = "dev")]
         app.add_plugins(dev_tools::DevToolsPlugin);
