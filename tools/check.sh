@@ -42,7 +42,7 @@ step "cargo t" cargo t
 step "import du canon à jour" cargo run -q -p sh_import -- --check
 
 # Chaque point d'entrée de l'autopilote doit démarrer, charger les données et quitter sans panique.
-for start in menu new galaxy global:hexis sector:test sector:player_ship sector:hexis_spaceport; do
+for start in menu new galaxy global:hexis sector:test sector:player_ship sector:hexis_spaceport sector:salle_temoin; do
     step "fumée SH_START=${start}" \
         run_game "ERROR|panicked|donn.{1,3}es charg|temps de frame" SH_START="$start" SH_EXIT_AFTER_FRAMES=150
 done

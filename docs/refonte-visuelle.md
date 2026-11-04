@@ -192,3 +192,16 @@ et sautable à tout moment ; son avancement est sauvegardé (`SaveFile`, `#[serd
 - **Suite** : captures complètes de la salle témoin (Moyen et Bas), les montrer à l'auteur, attendre
   son accord sur la direction et sa réponse sur le lot U ; puis vague A, D, E, F, T, puis B et C
   (§4, §7). Mesures de performance finales sur le poste Windows, en Bas (Q15).
+
+**04/11/2026, poste Linux — point de contrôle passé, vague 1 lancée.**
+
+- `tools/check.sh` vert en entier (lint, tests, fumée, tous les scénarios) ; la salle témoin entre
+  dans la fumée de `check.sh` / `check.ps1`. Avant refait sur ce poste : `tools/captures.sh m8-avant`
+  (15 vues, Moyen, 1600×900, non versionnées).
+- Salle témoin capturée en Moyen et en Bas (coursive en enfilade, plafond, mur et sol, atelier
+  large, console, trappe) : Bas et Moyen presque identiques (éclairage cuit ; seul l'anisotrope
+  diffère). Défaut connu : le panneau de porte du kit, plat et gris (n'est éclairé que par
+  l'ambiante : objet mobile sans lightmap), à refaire au lot A.
+- **Décision de l'auteur** : direction artistique validée sur ces captures ; **lot U demandé**.
+- Vague 1 : A, D, E, F (artistes), T et U (`dev-jeu`, U dans un arbre de travail séparé : deux
+  développeurs dans la même crate se casseraient mutuellement `cargo lint`).

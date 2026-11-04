@@ -26,7 +26,7 @@ Step "cargo t" { cargo t }
 Step "import du canon à jour" { cargo run -q -p sh_import -- --check }
 
 # Chaque point d'entrée de l'autopilote doit démarrer, charger les données et quitter sans panique.
-$starts = @("menu", "new", "galaxy", "global:hexis", "sector:test", "sector:player_ship", "sector:hexis_spaceport")
+$starts = @("menu", "new", "galaxy", "global:hexis", "sector:test", "sector:player_ship", "sector:hexis_spaceport", "sector:salle_temoin")
 foreach ($start in $starts) {
     Step "fumée SH_START=$start" {
         $env:SH_START = $start
