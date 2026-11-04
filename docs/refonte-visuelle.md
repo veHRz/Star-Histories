@@ -205,3 +205,12 @@ et sautable à tout moment ; son avancement est sauvegardé (`SaveFile`, `#[serd
 - **Décision de l'auteur** : direction artistique validée sur ces captures ; **lot U demandé**.
 - Vague 1 : A, D, E, F (artistes), T et U (`dev-jeu`, U dans un arbre de travail séparé : deux
   développeurs dans la même crate se casseraient mutuellement `cargo lint`).
+- **Vague 1 intégrée et commitée** (un commit par lot) : A, D, E, F, T, U, plus l'arme vue à la
+  première personne (`combat/foot.rs`, modèle donné par `Firearm::model`). Tous les modèles du jeu
+  hors vaisseau du joueur et spatioport sont en `.gltf`. `tools/check.sh` vert.
+- Interface encore à habiller (hors des fichiers du lot U) : écran des options (titre), bandeau du
+  lieu (`views/mod.rs`), panneaux de la carte (`views/galaxy.rs`), écrans de transition
+  (`transition.rs`), date et nouvelles, conseils, écran de mort, étiquettes de cibles.
+- Vague 2 lancée : B (vaisseau du joueur) et C (spatioport), avec les demandes du lot A (export
+  `.gltf`, `avoid=` des plafonniers, consoles retournées, pièces sans UV, styles `industrial`).
+

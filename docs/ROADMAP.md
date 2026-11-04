@@ -144,12 +144,12 @@ Testée par l'auteur le 04/11/2026 : jouable de bout en bout (un bug du menu de 
 But : un jeu beau et compréhensible dès la première minute, sans rien perdre en performances. Décision de l'auteur (Q14) : direction futuriste inspirée de Star Wars, sans emprunt. Plan, lots, règles et méthode (orchestrateur + sous-agents) : `docs/refonte-visuelle.md`.
 
 - [x] Lot 0 : bibliothèque de matériaux « futur usé » (textures cuites dans Blender, trim sheets) ; textures partagées et mipmaps côté Bevy ; **point de contrôle avec l'auteur** sur captures. *Livré le 04/11/2026 (poste Windows) ; captures complètes de la salle témoin en Moyen et en Bas sur le poste Linux, **direction validée par l'auteur le 04/11/2026**, lot U demandé.*
-- [ ] Lot A : kit d'intérieur refait (même API).
+- [x] Lot A : kit d'intérieur refait (même API). *04/11/2026, poste Linux : styles `ship` / `industrial` / `station`, habillage, nouvelle porte.*
 - [ ] Lots B et C : vaisseau du joueur et spatioport d'Hexis réassemblés et habillés, lightmaps recuites.
-- [ ] Lots D et E : corvettes, cargo, L'Enclume, hub de Portails, chantiers.
-- [ ] Lot F : abordeur pirate (et armes portatives).
-- [ ] Lot T : tutoriel guidé des premières minutes, désactivable dans les options, joué en entier par un scénario d'autopilote.
-- [ ] Lot U (demandé par l'auteur le 04/11/2026) : interface dans la même direction.
+- [x] Lots D et E : corvettes, cargo, L'Enclume, hub de Portails, chantiers. *04/11/2026, poste Linux.*
+- [x] Lot F : abordeur pirate (et armes portatives). *04/11/2026, poste Linux : pistolet magnétique vu à la première personne pendant les combats à pied.*
+- [x] Lot T : tutoriel guidé des premières minutes, désactivable dans les options, joué en entier par un scénario d'autopilote. *04/11/2026, poste Linux : `SH_SCENARIO=tutorial` dans `check.sh` / `check.ps1`.*
+- [x] Lot U (demandé par l'auteur le 04/11/2026) : interface dans la même direction. *04/11/2026, poste Linux (reste à habiller : options, carte, bandeau du lieu, écrans de transition et de mort).*
 - [ ] Intégration et tests par l'orchestrateur à chaque vague : `tools/check.ps1`, captures avant / après, `tools/perf.ps1` (≥ 60 i/s en Bas sur UHD 770 : cible abaissée de Moyen à Bas par l'auteur, Q15).
 
 **Fini quand** : l'auteur valide le nouveau visuel en jeu ; le tutoriel mène une nouvelle partie jusqu'à la première livraison et la sauvegarde ; `tools/check.ps1` vert ; ≥ 60 i/s en Bas sur la machine de référence.

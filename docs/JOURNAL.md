@@ -2,6 +2,14 @@
 
 > Une entrée courte par session (2 à 5 lignes) : ce qui a été fait, ce qui reste en suspens, les décisions prises. Le plus récent en haut.
 
+## 04/11/2026 — Poste Linux : M8, point de contrôle et vague 1 (A, D, E, F, T, U)
+
+- **Point de contrôle** : `tools/check.sh` vert, avant refait sur ce poste (`captures.sh m8-avant`), salle témoin capturée en Moyen et en Bas ; l'auteur **valide la direction** et **demande le lot U**. La salle témoin entre dans la fumée des scripts de vérification.
+- **Vague 1**, six sous-agents en parallèle (U dans un arbre de travail séparé : deux développeurs dans la même crate se cassent `cargo lint`) : kit d'intérieur (styles `ship` / `industrial` / `station`, habillage, nouvelle porte), corvettes, orbitales d'Hexis, abordeur et pistolet, tutoriel guidé (8 étapes sur faits observés, `SH_SCENARIO=tutorial` vert de bout en bout), interface « futur usé » (cadres en 9 tranches, DejaVu Sans Mono). En plus : l'arme du joueur vue à la première personne. Modèles basculés en `.gltf`, anciens `.glb` retirés.
+- **Retours renvoyés aux sous-agents sur captures** : terminal sans retrait intérieur et texte superposé sous la pause (U) ; émissifs des orbitales brûlés en jeu (E : l'émissif n'est pas atténué par l'exposition, AGENTS.md §4). Panneau du tutoriel descendu sous la date.
+- `tools/check.sh` vert après intégration. **À mesurer sous Windows** (UHD 770, `tools/perf.ps1`, Bas, plein écran 1080p) : tout M8, dont le poids des textures en mémoire vidéo (≈ 207 Mio pour le lot 0, plus `char_*`, `warship_*`, `orbital_*` ≈ 45 Mio) et le coût des cellules plus détaillées.
+- **Reste** : vague 2 (B vaisseau du joueur, C spatioport, lightmaps recuites), captures avant / après, validation de l'auteur. Les corvettes ne s'approchent pas assez du cockpit pour être jugées en jeu (rendus de l'artiste).
+
 ## 04/11/2026 — Poste Windows : M8, lot 0 (orchestrateur et sous-agent artiste)
 
 - **Lot 0 livré** par le sous-agent `artiste-blender` (≈ 1 h 30) : 15 matériaux « futur usé » procéduraux (numpy, raccords parfaits, déterministes), 50 PNG, trim sheet, fonctions `textured_material` / `uv_box` / `uv_trim` / `export_gltf`, salle témoin `sector:salle_temoin` (coursive froide à pans coupés, atelier ambré, lightmaps à 128 échantillons). Côté jeu (`materials.rs`) : glTF séparé à textures partagées, préchargement, mipmaps sur un fil de calcul, répétition, anisotrope par préréglage. Vérifié en jeu : `target/shots/m8-temoin-{entree,atelier}.png` (Moyen, 115–140 i/s ici). Détails et points ouverts (≈ 207 Mio de textures en mémoire vidéo) : `docs/refonte-visuelle.md` §9.
