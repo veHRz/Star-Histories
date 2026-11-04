@@ -2,6 +2,10 @@
 
 > Une entrée courte par session (2 à 5 lignes) : ce qui a été fait, ce qui reste en suspens, les décisions prises. Le plus récent en haut.
 
+## 04/11/2026 — Poste Windows : retour de l'auteur sur le menu de pause
+
+- Après « Reprendre », l'écran de pause restait affiché (rien ne l'effaçait une fois la pause retirée) ; un double Échap plantait : la condition du groupe chaîné (fermeture puis affichage) n'était évaluée qu'une fois, et la fermeture retirait la pause entre les deux. Même défaut latent dans les options (bouton « Retour »). Conditions posées sur chaque système, écran effacé en reprenant ; scénario `pause_escape` au vrai clavier ajouté aux deux scripts. Les tests passaient : aucun ne fermait la pause par Échap ni par ses boutons.
+
 ## 04/11/2026 — Poste Windows : M7, la finition
 
 - **Performance** (UHD 770, release, Moyen, plein écran 1080p, `tools/perf.ps1`) : les temps GPU par passe (`SH_GPU_TIMINGS=1`) montraient la passe opaque à 19–23 ms sur ~30, presque tout dans les lumières ponctuelles évaluées par pixel. Puis, en A/B alternés (la machine partagée faisait varier les mesures isolées de ±30 %) : plus de lumières dynamiques dans les cellules cuites (`baked_cell_lights`), filtrage d'ombre `Hardware2x2`, ombre du soleil 1024 / 1 cascade / 40 m, vitrages teintés sans reflets (`lit_glass`), rendu 3D à 0,8. Écartés : prépasse de profondeur (plus lent), ombres du soleil coupées (le soleil traverse la coque : les lumières ne filtrent pas par maillage). Résultat : `walk_ship` 12,1 ms (83 i/s, aucune frame > 33 ms), `fly_ship` 15,1, `port_loop` 16,0 (56 pics aux amarrages), `raid_win` 16,5 (61 i/s, 43 pics), abordages 11,6–12,9. Critères de performance de M1, M2, M6 et M7 atteints en moyenne ; restent des pics de 50 ms aux transitions.
