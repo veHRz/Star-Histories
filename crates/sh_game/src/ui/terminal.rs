@@ -24,7 +24,7 @@ use crate::career::{
 };
 use crate::clock::{GameClock, format_date};
 use crate::data::{Data, Texts};
-use crate::input::{Back, OpenJournal, OpenSheet};
+use crate::input::{Back, OpenCodex, OpenJournal, OpenSheet};
 use crate::living::{LivingWorld, PlayerKnowledge, display_name, latest_news};
 use crate::state::{AppState, ControlMode, ViewLevel};
 use crate::ui::hud::Notice;
@@ -40,6 +40,7 @@ impl Plugin for TerminalPlugin {
             .add_observer(on_back)
             .add_observer(on_open_sheet)
             .add_observer(on_open_journal)
+            .add_observer(on_open_codex)
             .add_observer(on_choice_button)
             .add_observer(on_hover)
             .add_observer(on_unhover)
@@ -75,6 +76,9 @@ pub enum Screen {
     Commodity(String),
     Sheet,
     Journal,
+    /// Le codex : la liste des fiches découvertes, puis une fiche.
+    Codex,
+    CodexEntry(crate::codex::Entry),
     /// Le chantier : devis et réparation du vaisseau.
     Repair,
 }
@@ -170,6 +174,8 @@ pub struct Ctx<'a> {
     pub log: &'a MissionLog,
     /// Les objets portés (ramassés à pied).
     pub items: &'a std::collections::BTreeMap<String, u32>,
+    /// Les fiches découvertes.
+    pub codex: &'a crate::codex::Codex,
 }
 
 impl Ctx<'_> {
@@ -207,6 +213,8 @@ pub fn page(ctx: &Ctx, term: &Terminal) -> Page {
         Screen::Sheet => sheet_page(ctx),
         Screen::Journal => journal_page(ctx),
         Screen::Repair => repair_page(ctx),
+        Screen::Codex => codex_page(ctx),
+        Screen::CodexEntry(entry) => codex_entry_page(ctx, entry),
     };
     if let Some(note) = &term.note {
         page.body = format!("{}\n\n{note}", page.body);
@@ -523,10 +531,10 @@ fn sheet_page(ctx: &Ctx) -> Page {
     Page {
         title: t.get("sheet.title"),
         body: lines.join("\n"),
-        choices: vec![choice(
-            t.get("journal.title"),
-            Action::Goto(Screen::Journal),
-        )],
+        choices: vec![
+            choice(t.get("journal.title"), Action::Goto(Screen::Journal)),
+            choice(t.get("codex.title"), Action::Goto(Screen::Codex)),
+        ],
     }
 }
 
@@ -603,11 +611,64 @@ fn journal_page(ctx: &Ctx) -> Page {
     Page {
         title: t.get("journal.title"),
         body: lines.join("\n"),
-        choices: vec![choice(t.get("sheet.title"), Action::Goto(Screen::Sheet))],
+        choices: vec![
+            choice(t.get("sheet.title"), Action::Goto(Screen::Sheet)),
+            choice(t.get("codex.title"), Action::Goto(Screen::Codex)),
+        ],
+    }
+}
+
+fn codex_page(ctx: &Ctx) -> Page {
+    let t = ctx.texts;
+    let entries = ctx
+        .codex
+        .places
+        .iter()
+        .map(|p| crate::codex::Entry::Place(p.clone()))
+        .chain(
+            ctx.codex
+                .factions
+                .iter()
+                .map(|f| crate::codex::Entry::Faction(f.clone())),
+        );
+    let choices = entries
+        .map(|e| {
+            choice(
+                crate::codex::entry_name(ctx.data, &e),
+                Action::Goto(Screen::CodexEntry(e)),
+            )
+        })
+        .collect();
+    Page {
+        title: t.get("codex.title"),
+        body: if ctx.codex.is_empty() {
+            t.get("codex.empty")
+        } else {
+            t.get("codex.intro")
+        },
+        choices,
+    }
+}
+
+fn codex_entry_page(ctx: &Ctx, entry: &crate::codex::Entry) -> Page {
+    let t = ctx.texts;
+    let (title, lines) = crate::codex::describe(t, ctx.data, entry)
+        .unwrap_or_else(|| (t.get("codex.title"), vec![t.get("codex.empty")]));
+    Page {
+        title,
+        body: lines.join(
+            "
+",
+        ),
+        choices: vec![choice(t.get("codex.back"), Action::Goto(Screen::Codex))],
     }
 }
 
 // --- Ouverture, choix, fermeture ----------------------------------------------------------
+
+fn on_open_codex(_: On<Start<OpenCodex>>, mut open: MessageWriter<OpenTerminal>) {
+    open.write(OpenTerminal(Screen::Codex));
+}
 
 fn on_open_sheet(_: On<Start<OpenSheet>>, mut open: MessageWriter<OpenTerminal>) {
     open.write(OpenTerminal(Screen::Sheet));
@@ -1028,6 +1089,7 @@ fn render(
     living: Option<Res<LivingWorld>>,
     log: Res<MissionLog>,
     inventory: Res<crate::interaction::Inventory>,
+    codex: Res<crate::codex::Codex>,
     career: Res<Career>,
     terminal: Option<ResMut<Terminal>>,
     roots: Query<Entity, With<TerminalUi>>,
@@ -1050,6 +1112,7 @@ fn render(
         today: clock.date,
         log: &log,
         items: &inventory.items,
+        codex: &codex,
     };
     let fresh = page(&ctx, &term);
     if term.page.as_ref() == Some(&fresh) && !roots.is_empty() {

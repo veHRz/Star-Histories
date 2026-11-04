@@ -22,6 +22,7 @@ use sh_sim::{Captain, SimWorld, WorldSave};
 
 use crate::career::{Career, MissionLog};
 use crate::clock::GameClock;
+use crate::codex::Codex;
 use crate::combat::{Death, Raid};
 use crate::data::{Data, Texts};
 use crate::input::{QuickLoad, QuickSave};
@@ -30,6 +31,7 @@ use crate::living::{LivingWorld, PlayerKnowledge};
 use crate::sector::{ActiveSector, Docked};
 use crate::space::{SpacePosition, SpaceRotation};
 use crate::state::{AppState, CurrentPlace, EnterGame, ViewLevel};
+use crate::tips::TipsSeen;
 use crate::transition::Sequence;
 use crate::ui::hud::Notice;
 use crate::voyage::{Location, ResumeFlight, ShipFuel};
@@ -118,6 +120,12 @@ pub struct SaveFile {
     pub fuel: Option<(f64, f64)>,
     pub inventory: Inventory,
     pub place: SavedPlace,
+    /// Fiches découvertes ; absent des premières sauvegardes de M7 (format inchangé).
+    #[serde(default)]
+    pub codex: Codex,
+    /// Conseils déjà montrés.
+    #[serde(default)]
+    pub tips: TipsSeen,
 }
 
 /// Une sauvegarde à charger : appliquée au menu principal, une fois la partie quittée.
@@ -316,6 +324,11 @@ fn capture(world: &World, kind: SaveKind) -> Result<SaveFile, &'static str> {
                 .unwrap_or_default(),
         },
         place,
+        codex: world.get_resource::<Codex>().cloned().unwrap_or_default(),
+        tips: world
+            .get_resource::<TipsSeen>()
+            .cloned()
+            .unwrap_or_default(),
     })
 }
 
@@ -471,6 +484,8 @@ fn install(world: &mut World, save: SaveFile) {
     world.insert_resource(save.missions);
     world.insert_resource(save.clock);
     world.insert_resource(save.inventory);
+    world.insert_resource(save.codex);
+    world.insert_resource(save.tips);
     world.insert_resource(Location {
         system: system.clone(),
     });

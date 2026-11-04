@@ -176,6 +176,10 @@ pub struct OpenSheet;
 #[action_output(bool)]
 pub struct OpenJournal;
 
+#[derive(InputAction)]
+#[action_output(bool)]
+pub struct OpenCodex;
+
 // --- Carte ---------------------------------------------------------------------------------
 
 /// Panoramique : x = est, y = nord.
@@ -253,6 +257,9 @@ fn spawn_contexts(mut commands: Commands) {
             Action::<OpenJournal>::new()
             Bindings [ Binding(KeyCode::KeyJ) ]
             --
+            Action::<OpenCodex>::new()
+            Bindings [ Binding(KeyCode::KeyK) ]
+            --
             Action::<Pause>::new()
             Bindings [ Binding(KeyCode::Escape) -- Binding(GamepadButton::Start) ]
             --
@@ -317,6 +324,9 @@ fn spawn_contexts(mut commands: Commands) {
             --
             Action::<OpenJournal>::new()
             Bindings [ Binding(KeyCode::KeyJ) ]
+            --
+            Action::<OpenCodex>::new()
+            Bindings [ Binding(KeyCode::KeyK) ]
             --
             Action::<Pause>::new()
             Bindings [ Binding(KeyCode::Escape) -- Binding(GamepadButton::Start) ]

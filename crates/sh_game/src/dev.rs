@@ -48,6 +48,18 @@ impl Plugin for AutopilotPlugin {
                 pause_shot.run_if(resource_exists::<crate::sector::ActiveSector>),
             );
         }
+        if let Ok(value) = std::env::var("SH_TERMINAL") {
+            use crate::ui::terminal::Screen;
+            let screen = match value.trim() {
+                "fiche" => Screen::Sheet,
+                "journal" => Screen::Journal,
+                _ => Screen::Codex,
+            };
+            app.insert_resource(TerminalShot(screen)).add_systems(
+                Update,
+                terminal_shot.run_if(resource_exists::<crate::career::Career>),
+            );
+        }
         // `SH_OPTIONS=1|keys` : l'écran des options (ou sa page des touches) au menu principal.
         if let Ok(value) = std::env::var("SH_OPTIONS") {
             let keys = value.trim() == "keys";
@@ -254,6 +266,23 @@ fn report_on_exit(mut exits: MessageReader<AppExit>, stats: Res<FrameStats>) {
 #[derive(Resource)]
 struct PauseShot {
     load: bool,
+}
+
+/// `SH_TERMINAL=codex|fiche|journal` : ouvre cet écran du terminal (captures).
+#[derive(Resource)]
+struct TerminalShot(crate::ui::terminal::Screen);
+
+fn terminal_shot(
+    time: Res<Time<Real>>,
+    shot: Res<TerminalShot>,
+    mut open: MessageWriter<crate::ui::terminal::OpenTerminal>,
+    mut since: Local<f32>,
+) {
+    let before = *since;
+    *since += time.delta_secs();
+    if before <= 3.0 && *since > 3.0 {
+        open.write(crate::ui::terminal::OpenTerminal(shot.0.clone()));
+    }
 }
 
 /// Ouvre le menu de pause trois secondes après l'entrée à bord.

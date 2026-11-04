@@ -136,6 +136,8 @@ fn forget_game(world: &mut World) {
     world.remove_resource::<crate::combat::foot::PlayerArms>();
     world.insert_resource(crate::career::MissionLog::default());
     world.insert_resource(crate::interaction::Inventory::default());
+    world.insert_resource(crate::codex::Codex::default());
+    world.insert_resource(crate::tips::TipsSeen::default());
 }
 
 fn log_transitions(

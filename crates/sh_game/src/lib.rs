@@ -10,6 +10,7 @@ use bevy::window::{PresentMode, WindowResolution};
 pub mod audio;
 pub mod career;
 pub mod clock;
+pub mod codex;
 pub mod combat;
 pub mod data;
 pub mod dev;
@@ -27,6 +28,7 @@ pub mod sector;
 pub mod ship;
 pub mod space;
 pub mod state;
+pub mod tips;
 pub mod transition;
 pub mod ui;
 pub mod views;
@@ -75,9 +77,14 @@ impl Plugin for StarHistoriesPlugin {
             living::LivingWorldPlugin,
             career::CareerPlugin,
             combat::CombatPlugin,
+        ))
+        // Finition (M7) : sauvegarde, options, son, codex, conseils.
+        .add_plugins((
             save::SavePlugin,
             options::OptionsPlugin,
             audio::GameAudioPlugin,
+            codex::CodexPlugin,
+            tips::TipsPlugin,
         ));
         #[cfg(feature = "dev")]
         app.add_plugins(dev_tools::DevToolsPlugin);

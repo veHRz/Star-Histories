@@ -56,6 +56,7 @@ enum OptionsAction {
     Volume(Channel, f32),
     Sensitivity(f32),
     InvertY,
+    Tips,
     Keys,
     Rebind(KeyCode),
     ResetKeys,
@@ -105,6 +106,7 @@ fn on_activate(
             settings.mouse_sensitivity = (settings.mouse_sensitivity + delta).clamp(0.2, 3.0);
         }
         OptionsAction::InvertY => settings.invert_y = !settings.invert_y,
+        OptionsAction::Tips => settings.tips = !settings.tips,
         OptionsAction::Keys => screen.page = Page::Keys,
         OptionsAction::Rebind(default) => screen.waiting = Some(default),
         OptionsAction::ResetKeys => settings.keys.clear(),
@@ -278,6 +280,9 @@ fn main_page(ui: &mut ChildSpawnerCommands, texts: &Texts, fonts: &UiFonts, s: &
     });
     row(ui, fonts, texts.get("options.invert_y"), |r| {
         r.spawn(toggle(fonts, texts, OptionsAction::InvertY, s.invert_y));
+    });
+    row(ui, fonts, texts.get("options.tips"), |r| {
+        r.spawn(toggle(fonts, texts, OptionsAction::Tips, s.tips));
     });
     ui.spawn(menu_button(
         fonts,
