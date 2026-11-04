@@ -54,6 +54,8 @@ sh_game.workspace = true
 # et du jeu (inspecteur, caméra libre, affichage des performances).
 # Lancer avec `cargo dev` (alias défini dans .cargo/config.toml). Jamais dans un build distribué.
 dev = ["bevy/dynamic_linking", "bevy/dev", "sh_game/dev"]
+# Build distribué (`tools/package.ps1`) : sous Windows, pas de fenêtre de console à côté du jeu.
+dist = []
 
 # Le code du jeu reste rapide à compiler, les dépendances sont optimisées une fois pour toutes.
 [profile.dev]

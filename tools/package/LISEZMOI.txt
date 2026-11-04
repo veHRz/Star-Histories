@@ -1,0 +1,31 @@
+STAR HISTORIES — tranche jouable « Le contrat d'Hexis »
+=====================================================
+
+Lancer : StarHistories.exe (Windows) ou star_histories (Linux). Le dossier « assets » doit
+rester à côté de l'exécutable.
+
+Vous êtes capitaine indépendant d'un petit cargo, endetté auprès de la Banque d'Hexis, en
+425at. Prenez un contrat au bureau d'Hexa-Corp du spatioport, livrez-le à Cygnara, payez vos
+échéances… et méfiez-vous de la Ligue des Pirates.
+
+Touches (positions d'un clavier AZERTY ; tout se remappe dans Options › Touches)
+  À pied            Z Q S D, souris, Maj courir, Ctrl s'accroupir, Espace sauter,
+                    E interagir, clic gauche tirer, R recharger
+  Aux commandes     Z Q S D et Espace/Ctrl pousser, souris diriger, A/E roulis,
+                    Maj croisière, W assistance de vol, G amarrage/départ, F se lever,
+                    clic gauche canons, clic droit missile, X leurres
+  Carte             touche « , », clic pour choisir, 1 Portail, 2 hyperespace
+  Partout           C fiche, J journal, K codex, Échap pause,
+                    F5 sauvegarde rapide, F9 chargement rapide
+
+Sauvegardes et réglages
+  Windows : %APPDATA%\StarHistories   (saves\ et settings.ron)
+  Linux   : ~/.local/share/star_histories
+  Sauvegarde automatique à l'arrivée à quai ou dans un système. En « Homme de fer », une
+  seule sauvegarde, automatique, effacée à la mort.
+
+Qualité graphique : Options › Qualité graphique. « Moyen » vise 60 images/s en 1080p sur un
+GPU intégré récent ; « Bas » si le jeu saccade.
+
+Tout le son est généré par le projet ; la police Inter est sous licence SIL OFL 1.1
+(assets/fonts/OFL-Inter.txt). Crédits complets : assets/CREDITS.md.
