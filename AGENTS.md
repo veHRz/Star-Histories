@@ -111,7 +111,7 @@ Le jeu lit des variables d'environnement (`crates/sh_game/src/dev.rs`) :
 | `SH_EXIT_AFTER_FRAMES=N` | Quitte proprement après N frames (test de fumée : pas de panique) |
 | `SH_SCREENSHOT=target/shots/x.png` | Enregistre une capture puis quitte |
 | `SH_SCREENSHOT_FRAME=N` | Frame de la capture (défaut 90) |
-| `SH_START=<vue>[:<lieu>]` | Démarre directement dans une vue : `galaxy`, `global:<lieu>` (ex. `global:hexis`), `sector:<lieu>` (ex. `sector:test`) ; `menu` = menu principal. Lieu inconnu = arrêt en erreur |
+| `SH_START=<vue>[:<lieu>]` | Démarre directement dans une vue : `galaxy`, `global:<lieu>` (ex. `global:hexis`), `sector:<lieu>` (ex. `sector:test`) ; `new` = nouvelle partie, exactement comme le bouton du menu (aux commandes, système du départ) ; `menu` = menu principal. Lieu inconnu = arrêt en erreur |
 | `SH_PRESET=<préréglage>` | Préréglage graphique : `low`, `medium` (défaut) ou `high` |
 | `SH_WINDOW=<L>x<H>` / `fullscreen` | Taille de la fenêtre (défaut 1600×900), ou plein écran sans bordure : les mesures de la machine de référence se font en `fullscreen` (1080p) |
 | `SH_SHOW_FPS=1` | Garde l'affichage FPS pendant une capture (masqué par défaut pour des images propres ; feature `dev`) |
@@ -121,6 +121,7 @@ Le jeu lit des variables d'environnement (`crates/sh_game/src/dev.rs`) :
 | `SH_LOOK=x,y,z` | Direction initiale de la caméra en vue Globale (captures du ciel, des astres) |
 | `SH_ARRIVAL=<objet>,<distance>` | Vue Globale : arrivée près d'un autre objet (station, structure, astre), à cette distance en mètres |
 | `SH_SCENARIO=walk_ship` | Parcours scripté du vaisseau du joueur (sas → cockpit), avec mesure du temps de frame |
+| `SH_SCENARIO=menu_return` | Avec `SH_START=new` : Échap vers le menu principal, puis « Nouvelle partie », qui doit repartir de zéro (une partie quittée est effacée, `state::forget_game`) |
 | `SH_DAYS=N` | La partie commence N jours après le jour 1 de 425at ; le monde vivant rattrape (captures des nouvelles, des flottes connues) |
 | `SH_ROUTE=<système>`, `SH_HOVER=<système>` | Vue Galaxie : itinéraire posé depuis la position du vaisseau, survol simulé (captures du panneau et de l'infobulle) |
 | `SH_SCENARIO=voyage` | Avec `SH_START=global:hexis` : Hexis → Cygnara par Portail, retour par hyperespace, durées vérifiées (critère de M3) |
