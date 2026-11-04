@@ -6,6 +6,9 @@
 //! phénomènes ; la position du vaisseau ; une infobulle au survol (champs publics seulement) ;
 //! un clic choisit une destination et affiche ses itinéraires ([`crate::voyage`]).
 //!
+//! Habillage (M8) : l'infobulle est une plaquette à barre ambre (nom en titre), l'itinéraire un
+//! relevé d'instrument (position et carburant à chasse fixe, route en ambre).
+//!
 //! Repère : 1 unité de carte = 1 unité du monde, x vers l'est, y de la carte vers le sud (+z),
 //! nord en haut de l'écran.
 
@@ -21,7 +24,7 @@ use crate::graphics::WorldCamera;
 use crate::input::{Pan, Zoom};
 use crate::living::PlayerKnowledge;
 use crate::state::{ControlMode, ViewLevel};
-use crate::ui::theme::{self, UiFonts};
+use crate::ui::theme::{self, Frame, UiFonts};
 use crate::views::{WorldLabel, view_banner};
 use crate::voyage::{HoveredEntry, Location, RoutePlan, ShipFuel};
 
@@ -75,11 +78,26 @@ struct HoveredFleet(Option<FleetMarker>);
 #[derive(Resource)]
 struct ForcedHover(Option<MapEntry>);
 
+/// L'infobulle (plaquette sous le curseur) : le nom en titre, les champs publics dessous.
 #[derive(Component)]
 struct Tooltip;
 
 #[derive(Component)]
-struct RoutePanel;
+struct TooltipTitle;
+
+#[derive(Component)]
+struct TooltipBody;
+
+/// Les lignes du panneau d'itinéraire.
+#[derive(Component, Clone, Copy, PartialEq, Eq)]
+enum RouteLine {
+    /// Position et carburant (relevé à chasse fixe).
+    Status,
+    /// « Route vers … », ou la consigne sans route.
+    Title,
+    /// Portail et hyperespace (cachée sans route).
+    Options,
+}
 
 /// Position du monde d'un point de la carte.
 fn world(pos: MapPos) -> Vec3 {
@@ -249,31 +267,83 @@ fn spawn_galaxy(
     commands.spawn((
         SCOPE,
         Tooltip,
-        Text::new(""),
-        fonts.body(14.0),
-        TextColor(theme::TEXT),
+        Pickable::IGNORE,
         Node {
             position_type: PositionType::Absolute,
-            padding: UiRect::axes(px(10), px(6)),
+            flex_direction: FlexDirection::Column,
+            row_gap: px(3),
+            max_width: px(360),
+            // Large à gauche : la barre ambre de la plaquette.
+            padding: UiRect::new(px(14), px(12), px(7), px(9)),
             ..default()
         },
-        BackgroundColor(theme::PANEL),
+        fonts.frame(Frame::Plate),
         Visibility::Hidden,
+        children![
+            (
+                TooltipTitle,
+                Text::new(""),
+                fonts.title(15.0),
+                TextColor(theme::TEXT),
+                Pickable::IGNORE,
+            ),
+            (
+                TooltipBody,
+                Text::new(""),
+                fonts.body(14.0),
+                TextColor(theme::TEXT_DIM),
+                Pickable::IGNORE,
+            ),
+        ],
     ));
+    // Le panneau d'itinéraire : un relevé d'instrument. En haut la position et le carburant (à
+    // chasse fixe), puis la route choisie (titre ambre) et ses deux façons d'y aller.
     commands.spawn((
         SCOPE,
-        RoutePanel,
-        Text::new(""),
-        fonts.body(16.0),
-        TextColor(theme::TEXT),
+        Pickable::IGNORE,
         Node {
             position_type: PositionType::Absolute,
             left: px(20),
             bottom: px(20),
-            padding: UiRect::axes(px(14), px(10)),
+            flex_direction: FlexDirection::Column,
+            row_gap: px(4),
+            padding: UiRect::new(px(18), px(18), px(12), px(14)),
             ..default()
         },
-        BackgroundColor(theme::PANEL),
+        fonts.frame(Frame::Readout),
+        children![
+            (
+                RouteLine::Status,
+                Text::new(""),
+                fonts.mono(14.0),
+                TextColor(theme::SCREEN),
+                Pickable::IGNORE,
+            ),
+            (
+                Pickable::IGNORE,
+                Node {
+                    width: percent(100),
+                    height: px(1),
+                    margin: UiRect::vertical(px(4)),
+                    ..default()
+                },
+                BackgroundColor(theme::SCREEN_DIM),
+            ),
+            (
+                RouteLine::Title,
+                Text::new(""),
+                fonts.title(16.0),
+                TextColor(theme::ACCENT),
+                Pickable::IGNORE,
+            ),
+            (
+                RouteLine::Options,
+                Text::new(""),
+                fonts.body(15.0),
+                TextColor(theme::TEXT),
+                Pickable::IGNORE,
+            ),
+        ],
     ));
     // Autopilote (captures) : `SH_HOVER=<système>` simule le survol, `SH_ROUTE=<système>` pose
     // un itinéraire.
@@ -410,19 +480,27 @@ fn hover(
     }
 }
 
+/// Remplace un texte seulement s'il a changé : un texte réécrit est remis en page.
+fn set_text(text: &mut Text, wanted: String) {
+    if text.0 != wanted {
+        text.0 = wanted;
+    }
+}
+
+#[allow(clippy::type_complexity)]
 fn show_tooltip(
     data: Res<Data>,
     texts: Res<Texts>,
     hovered: Res<HoveredEntry>,
     hovered_fleet: Res<HoveredFleet>,
     window: Single<&Window, With<PrimaryWindow>>,
-    mut tooltip: Single<(&mut Text, &mut Node, &mut Visibility), With<Tooltip>>,
+    mut tooltip: Single<(&mut Node, &mut Visibility), With<Tooltip>>,
+    mut title: Single<&mut Text, (With<TooltipTitle>, Without<TooltipBody>)>,
+    mut body: Single<&mut Text, (With<TooltipBody>, Without<TooltipTitle>)>,
 ) {
-    let (text, node, visibility) = &mut *tooltip;
-    if let Some(fleet) = &hovered_fleet.0 {
-        let cursor = window.cursor_position().unwrap_or(window.size() / 2.0);
-        node.left = px(cursor.x + 16.0);
-        node.top = px(cursor.y + 12.0);
+    let (node, visibility) = &mut *tooltip;
+    // Le nom en titre, les autres lignes dessous ; sans entrée survolée, rien.
+    let lines = if let Some(fleet) = &hovered_fleet.0 {
         let mut lines = vec![fleet.name.clone(), texts.get("map.tip.kind.fleet")];
         if let Some(faction) = fleet.faction.as_ref().and_then(|f| data.faction(f)) {
             lines.push(texts.format("map.tip.controller", &[("faction", &faction.name)]));
@@ -434,14 +512,33 @@ fn show_tooltip(
                 ("place", &crate::living::display_name(&data, &fleet.at)),
             ],
         ));
-        let wanted = lines.join("\n");
-        if text.0 != wanted {
-            text.0 = wanted;
+        lines
+    } else if let Some(entry) = &hovered.0 {
+        let kind = match entry.kind {
+            MapKind::System => "map.tip.kind.system",
+            MapKind::Body => "map.tip.kind.body",
+            MapKind::Station => "map.tip.kind.station",
+            MapKind::Phenomenon => "map.tip.kind.phenomenon",
+        };
+        let mut lines = vec![entry.name.clone(), texts.get(kind)];
+        if let Some(cell) = entry.cell {
+            lines.push(texts.format("map.tip.cell", &[("cell", &cell.to_string())]));
         }
-        **visibility = Visibility::Inherited;
-        return;
-    }
-    let Some(entry) = &hovered.0 else {
+        if let Some(faction) = entry.controller.as_ref().and_then(|f| data.faction(f)) {
+            lines.push(texts.format("map.tip.controller", &[("faction", &faction.name)]));
+        }
+        if entry.population > 0 {
+            let value = population_text(&texts, entry.population);
+            lines.push(texts.format("map.tip.population", &[("value", &value)]));
+        }
+        if entry.has_portal_hub {
+            lines.push(texts.get("map.tip.hub"));
+        }
+        if entry.destroyed {
+            lines.push(texts.get("map.tip.destroyed"));
+        }
+        lines
+    } else {
         **visibility = Visibility::Hidden;
         return;
     };
@@ -449,33 +546,9 @@ fn show_tooltip(
     let cursor = window.cursor_position().unwrap_or(window.size() / 2.0);
     node.left = px(cursor.x + 16.0);
     node.top = px(cursor.y + 12.0);
-    let kind = match entry.kind {
-        MapKind::System => "map.tip.kind.system",
-        MapKind::Body => "map.tip.kind.body",
-        MapKind::Station => "map.tip.kind.station",
-        MapKind::Phenomenon => "map.tip.kind.phenomenon",
-    };
-    let mut lines = vec![entry.name.clone(), texts.get(kind)];
-    if let Some(cell) = entry.cell {
-        lines.push(texts.format("map.tip.cell", &[("cell", &cell.to_string())]));
-    }
-    if let Some(faction) = entry.controller.as_ref().and_then(|f| data.faction(f)) {
-        lines.push(texts.format("map.tip.controller", &[("faction", &faction.name)]));
-    }
-    if entry.population > 0 {
-        let value = population_text(&texts, entry.population);
-        lines.push(texts.format("map.tip.population", &[("value", &value)]));
-    }
-    if entry.has_portal_hub {
-        lines.push(texts.get("map.tip.hub"));
-    }
-    if entry.destroyed {
-        lines.push(texts.get("map.tip.destroyed"));
-    }
-    let wanted = lines.join("\n");
-    if text.0 != wanted {
-        text.0 = wanted;
-    }
+    let mut lines = lines.into_iter();
+    set_text(&mut title, lines.next().unwrap_or_default());
+    set_text(&mut body, lines.collect::<Vec<_>>().join("\n"));
     **visibility = Visibility::Inherited;
 }
 
@@ -485,23 +558,25 @@ fn show_route(
     route: Option<Res<RoutePlan>>,
     fuel: Option<Res<ShipFuel>>,
     location: Option<Res<Location>>,
-    mut panel: Single<&mut Text, With<RoutePanel>>,
+    mut lines: Query<(&RouteLine, &mut Text, &mut TextColor, &mut Node)>,
 ) {
     let here = location
         .and_then(|l| data.galaxy.system(&l.system))
         .map_or_else(String::new, |s| s.name.clone());
-    let mut lines = vec![texts.format("map.here", &[("place", &here)])];
     let have = fuel.as_ref().map_or(0.0, |f| f.units);
-    lines.push(texts.format("map.fuel", &[("fuel", &format!("{have:.0}"))]));
-    match route {
-        None => lines.push(texts.get("map.plan.hint")),
+    let status = [
+        texts.format("map.here", &[("place", &here)]),
+        texts.format("map.fuel", &[("fuel", &format!("{have:.0}"))]),
+    ]
+    .join("\n");
+    let (title, title_color, options) = match route {
+        None => (texts.get("map.plan.hint"), theme::TEXT_DIM, Vec::new()),
         Some(route) => {
             let name = data
                 .galaxy
                 .system(&route.dest)
                 .map_or_else(String::new, |s| s.name.clone());
-            lines.push(texts.format("map.plan.title", &[("name", &name)]));
-            lines.push(match &route.portal {
+            let mut options = vec![match &route.portal {
                 Some(p) => texts.format(
                     "map.plan.portal",
                     &[
@@ -511,7 +586,7 @@ fn show_route(
                     ],
                 ),
                 None => texts.get("map.plan.no_portal"),
-            });
+            }];
             if let Some(h) = &route.hyperspace {
                 let mut line = texts.format(
                     "map.plan.hyperspace",
@@ -526,13 +601,37 @@ fn show_route(
                 if h.fuel > have {
                     line.push_str(&texts.get("map.plan.no_fuel"));
                 }
-                lines.push(line);
+                options.push(line);
+            }
+            (
+                texts.format("map.plan.title", &[("name", &name)]),
+                theme::ACCENT,
+                options,
+            )
+        }
+    };
+    for (line, mut text, mut color, mut node) in &mut lines {
+        match line {
+            RouteLine::Status => set_text(&mut text, status.clone()),
+            RouteLine::Title => {
+                set_text(&mut text, title.clone());
+                if color.0 != title_color {
+                    color.0 = title_color;
+                }
+            }
+            RouteLine::Options => {
+                // Sans route, la ligne se retire : pas de vide au bas du panneau.
+                let display = if options.is_empty() {
+                    Display::None
+                } else {
+                    Display::Flex
+                };
+                if node.display != display {
+                    node.display = display;
+                }
+                set_text(&mut text, options.join("\n"));
             }
         }
-    }
-    let wanted = lines.join("\n");
-    if panel.0 != wanted {
-        panel.0 = wanted;
     }
 }
 

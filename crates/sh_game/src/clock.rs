@@ -9,7 +9,7 @@ use sh_core::{StellarDate, Year};
 
 use crate::data::{Data, Texts};
 use crate::state::{AppState, ViewLevel};
-use crate::ui::theme::{self, UiFonts};
+use crate::ui::theme::{self, Frame, UiFonts};
 
 pub struct ClockPlugin;
 
@@ -88,21 +88,50 @@ fn tick(time: Res<Time>, data: Res<Data>, mut clock: ResMut<GameClock>) {
 #[derive(Component)]
 struct DateText;
 
-fn spawn_date(mut commands: Commands, fonts: Res<UiFonts>) {
+/// La colonne du coin haut droit : la date (relevé à chasse fixe), puis le fil des nouvelles
+/// (`living`), puis le panneau du tutoriel (`tutorial`). Empilés dans un même nœud, ils ne se
+/// chevauchent jamais, quel que soit le nombre de lignes des nouvelles ; un élément caché
+/// (`Display::None`) rend sa place.
+#[derive(Component)]
+pub struct HudCorner;
+
+/// Largeur maximale de cette colonne, en pixels d'interface (le panneau du tutoriel la remplit).
+/// Le bandeau du lieu (`views::view_banner`) s'arrête avant.
+pub const HUD_CORNER_WIDTH: f32 = 400.0;
+
+pub(crate) fn spawn_date(mut commands: Commands, fonts: Res<UiFonts>) {
     commands.spawn((
-        Name::new("Date du monde"),
-        DateText,
+        Name::new("Coin haut droit"),
+        HudCorner,
         DespawnOnExit(AppState::InGame),
-        Text::new(""),
-        fonts.body(16.0),
-        TextColor(theme::TEXT),
-        TextShadow::default(),
+        // Rien n'y retient un clic : la carte galactique reste cliquable dessous.
+        Pickable::IGNORE,
         Node {
             position_type: PositionType::Absolute,
-            right: px(22),
-            top: px(18),
+            right: px(20),
+            top: px(16),
+            max_width: px(HUD_CORNER_WIDTH),
+            flex_direction: FlexDirection::Column,
+            align_items: AlignItems::FlexEnd,
+            row_gap: px(6),
             ..default()
         },
+        children![(
+            Name::new("Date du monde"),
+            Pickable::IGNORE,
+            Node {
+                padding: UiRect::axes(px(16), px(9)),
+                ..default()
+            },
+            fonts.frame(Frame::Readout),
+            children![(
+                DateText,
+                Text::new(""),
+                fonts.mono(16.0),
+                TextColor(theme::TEXT),
+                Pickable::IGNORE,
+            )],
+        )],
     ));
 }
 

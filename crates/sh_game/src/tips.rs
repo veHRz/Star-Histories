@@ -3,6 +3,7 @@
 //! y faire et avec quelles touches. Chaque conseil ne vient qu'une fois par partie (sauvegardé) ;
 //! les options peuvent les couper. L'autopilote les coupe (captures propres), sauf `SH_TIPS=1`.
 //! Pendant le tutoriel guidé (M8), ceux qu'il remplace se taisent (`tutorial::REPLACED_TIPS`).
+//! Habillage (M8) : une plaquette à barre ambre, titre en capitales.
 
 use std::collections::{BTreeSet, VecDeque};
 
@@ -16,7 +17,7 @@ use crate::data::Texts;
 use crate::options::UserSettings;
 use crate::sector::Docked;
 use crate::state::{AppState, ControlMode, ViewLevel};
-use crate::ui::theme::{self, UiFonts};
+use crate::ui::theme::{self, Frame, UiFonts};
 
 pub struct TipsPlugin;
 
@@ -50,6 +51,10 @@ struct TipQueue {
 
 /// Secondes d'affichage d'un conseil.
 const TIP_SECONDS: f32 = 12.0;
+
+/// Place de l'encart : centré en haut, sous le bandeau du lieu (px).
+const TIP_TOP: f32 = 112.0;
+const TIP_WIDTH: f32 = 620.0;
 
 #[derive(Component)]
 struct TipUi;
@@ -142,30 +147,36 @@ fn show(
             TipUi,
             DespawnOnExit(AppState::InGame),
             GlobalZIndex(5),
+            Pickable::IGNORE,
             Node {
                 position_type: PositionType::Absolute,
-                top: px(96),
+                // Sous le bandeau du lieu, même quand sa ligne des commandes passe à la ligne.
+                top: px(TIP_TOP),
                 left: percent(50),
-                width: px(620),
-                margin: UiRect::left(px(-310)),
+                width: px(TIP_WIDTH),
+                margin: UiRect::left(px(-TIP_WIDTH / 2.0)),
                 flex_direction: FlexDirection::Column,
-                padding: UiRect::axes(px(18), px(12)),
-                border: UiRect::left(px(3)),
-                row_gap: px(4),
+                // Large à gauche : la barre ambre de la plaquette.
+                padding: UiRect::new(px(20), px(18), px(10), px(13)),
+                row_gap: px(6),
                 ..default()
             },
-            BorderColor::all(theme::ACCENT),
-            BackgroundColor(theme::PANEL),
+            fonts.frame(Frame::Plate),
             children![
                 (
-                    Text::new(texts.get("tips.title")),
-                    fonts.title(16.0),
-                    TextColor(theme::ACCENT),
+                    theme::heading(
+                        fonts.as_ref(),
+                        &texts.get("tips.title"),
+                        14.0,
+                        theme::ACCENT
+                    ),
+                    Pickable::IGNORE,
                 ),
                 (
                     Text::new(texts.get(&format!("tips.{tip}"))),
                     fonts.body(16.0),
                     TextColor(theme::TEXT),
+                    Pickable::IGNORE,
                 ),
             ],
         ))

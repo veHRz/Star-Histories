@@ -9,6 +9,8 @@
 //!
 //! Le fondu est le seul « écran de chargement », et il est court : les modèles du quartier sont
 //! préchargés pendant l'approche, et l'intérieur du vaisseau n'est jamais déchargé du cache.
+//! Un voyage interstellaire, plus long, pose sur le fondu une carte de chargement au style de
+//! l'écran de démarrage (`loading`).
 
 use bevy::math::DVec3;
 use bevy::prelude::*;
@@ -47,6 +49,10 @@ impl Plugin for TransitionPlugin {
                     animate_fade,
                 )
                     .chain(),
+            )
+            .add_systems(
+                Update,
+                animate_travel_card.run_if(resource_exists::<Sequence>),
             );
     }
 }
@@ -121,6 +127,19 @@ pub struct Fade {
 #[derive(Component)]
 struct FadeVeil;
 
+/// La carte de chargement d'un voyage (sa vignette suit le fondu).
+#[derive(Component)]
+struct TravelCard;
+
+/// Le curseur de la jauge de la carte de chargement.
+#[derive(Component)]
+struct TravelSweep;
+
+/// Jauge de la carte de chargement : largeur de la piste et du curseur (mêmes valeurs que
+/// l'écran de chargement du démarrage, `loading`).
+const CARD_TRACK_WIDTH: f32 = 360.0;
+const CARD_SWEEP_WIDTH: f32 = 72.0;
+
 fn spawn_fade(mut commands: Commands) {
     commands.spawn((
         Name::new("Voile de transition"),
@@ -141,6 +160,7 @@ fn animate_fade(
     time: Res<Time>,
     mut fade: ResMut<Fade>,
     mut veil: Query<&mut BackgroundColor, With<FadeVeil>>,
+    mut cards: Query<&mut BackgroundGradient, With<TravelCard>>,
 ) {
     let step = time.delta_secs() / FADE_SECONDS;
     let alpha = if fade.alpha < fade.target {
@@ -153,6 +173,21 @@ fn animate_fade(
         for mut color in &mut veil {
             color.0 = Color::BLACK.with_alpha(alpha);
         }
+        for mut gradient in &mut cards {
+            *gradient = theme::backdrop_gradient(alpha);
+        }
+    }
+}
+
+/// Le curseur de la carte de chargement va et vient sur sa piste (comme celui de `loading`).
+fn animate_travel_card(
+    time: Res<Time<Real>>,
+    mut sweep: Query<&mut UiTransform, With<TravelSweep>>,
+) {
+    let phase = 0.5 - 0.5 * (time.elapsed_secs() * 2.2).cos();
+    let x = phase * (CARD_TRACK_WIDTH - CARD_SWEEP_WIDTH);
+    for mut transform in &mut sweep {
+        transform.translation = Val2::px(x, 0.0);
     }
 }
 
@@ -446,12 +481,19 @@ pub fn start_travel(world: &mut World, dest: Id<Place>, plan: TravelPlan) {
         "travel.tip.{}",
         arrival.date.day_index().rem_euclid(3)
     ));
-    let line = |text: String, size: f32, color: Color| {
-        (Text::new(text), fonts.body(size), TextColor(color))
-    };
-    let card = world
-        .spawn((
+    let arrival_text = texts.format(
+        "travel.card.arrival",
+        &[("date", &format_date(&texts, arrival.date))],
+    );
+    // L'écran de chargement du démarrage (`loading`) : équerres, nom en capitales sur un filet,
+    // jauge à curseur ambre (la durée n'est pas mesurable), astuce en bas. La vignette suit le
+    // fondu au noir (`animate_fade`) : la carte apparaît avec lui au lieu de couper la vue.
+    let alpha = world.resource::<Fade>().alpha;
+    let card = {
+        let mut commands = world.commands();
+        let mut card = commands.spawn((
             Name::new("Carte de chargement du voyage"),
+            TravelCard,
             Node {
                 position_type: PositionType::Absolute,
                 width: percent(100),
@@ -459,31 +501,73 @@ pub fn start_travel(world: &mut World, dest: Id<Place>, plan: TravelPlan) {
                 flex_direction: FlexDirection::Column,
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
-                row_gap: px(10),
                 ..default()
             },
+            theme::backdrop_gradient(alpha),
             GlobalZIndex(i32::MAX),
             Pickable::IGNORE,
-            children![
-                (
-                    Text::new(system.name.clone()),
-                    fonts.title(40.0),
-                    TextColor(theme::TEXT)
-                ),
-                line(mode, 20.0, theme::ACCENT),
-                line(
-                    texts.format(
-                        "travel.card.arrival",
-                        &[("date", &format_date(&texts, arrival.date))]
-                    ),
-                    18.0,
-                    theme::TEXT,
-                ),
-                line(info, 16.0, theme::TEXT_DIM),
-                line(tip, 15.0, theme::TEXT_DIM),
-            ],
-        ))
-        .id();
+        ));
+        card.with_children(|screen| {
+            theme::spawn_corner_marks(screen, 28.0, 44.0, theme::SCREEN_DIM);
+            screen.spawn(theme::heading(&fonts, &system.name, 44.0, theme::TEXT));
+            screen.spawn(theme::rule(
+                px(CARD_TRACK_WIDTH + 80.0),
+                UiRect::new(px(0), px(0), px(14), px(22)),
+            ));
+            screen.spawn((Text::new(mode), fonts.body(20.0), TextColor(theme::ACCENT)));
+            screen.spawn((
+                Text::new(arrival_text),
+                fonts.mono(17.0),
+                TextColor(theme::TEXT),
+                Node {
+                    margin: UiRect::top(px(10)),
+                    ..default()
+                },
+            ));
+            screen.spawn((
+                Text::new(info),
+                fonts.body(16.0),
+                TextColor(theme::TEXT_DIM),
+                Node {
+                    margin: UiRect::top(px(6)),
+                    ..default()
+                },
+            ));
+            // La piste et son curseur, qui glisse par `UiTransform` (pas de remise en page).
+            screen.spawn((
+                Node {
+                    width: px(CARD_TRACK_WIDTH),
+                    height: px(4),
+                    margin: UiRect::vertical(px(22)),
+                    overflow: Overflow::clip(),
+                    ..default()
+                },
+                BackgroundColor(theme::RULE),
+                children![(
+                    TravelSweep,
+                    Node {
+                        width: px(CARD_SWEEP_WIDTH),
+                        height: percent(100),
+                        ..default()
+                    },
+                    BackgroundColor(theme::ACCENT),
+                    UiTransform::default(),
+                )],
+            ));
+            screen.spawn((
+                Text::new(tip),
+                fonts.body(15.0),
+                TextColor(theme::TEXT_DIM),
+                TextLayout::justify(Justify::Center),
+                Node {
+                    max_width: px(720),
+                    ..default()
+                },
+            ));
+        });
+        card.id()
+    };
+    world.flush();
     world.insert_resource(Sequence::Travel {
         dest,
         plan,

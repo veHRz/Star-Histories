@@ -32,6 +32,7 @@ use sh_data::dialogue::{Dialogue, Effect, Screen as DialogueScreen};
 use sh_sim::{Captain, Contract, ContractKind, ContractState};
 
 use crate::career::{Career, CargoPoint};
+use crate::clock::HudCorner;
 use crate::data::{Data, Texts};
 use crate::graphics::WorldCamera;
 use crate::input::SkipTutorial;
@@ -49,7 +50,7 @@ use crate::tips::TipsSeen;
 use crate::transition::{DockBeacon, Sequence};
 use crate::ui::hud::Notice;
 use crate::ui::terminal::{Screen, Terminal};
-use crate::ui::theme::{self, UiFonts};
+use crate::ui::theme::{self, Frame, UiFonts};
 use crate::voyage::{Location, RoutePlan};
 
 pub struct TutorialPlugin;
@@ -741,6 +742,9 @@ fn on_skip_key(
 #[derive(Component)]
 struct TutorialPanel;
 
+/// Largeur du panneau d'objectif : celle de la colonne du coin haut droit.
+const PANEL_WIDTH: f32 = crate::clock::HUD_CORNER_WIDTH;
+
 /// Ce que montre le panneau (comparé d'un frame à l'autre : il n'est refait qu'au changement).
 #[derive(Clone, Debug, PartialEq)]
 struct PanelContent {
@@ -835,6 +839,7 @@ fn render_panel(
         Option<Res<GameMode>>,
     ),
     panels: Query<Entity, With<TutorialPanel>>,
+    corners: Query<Entity, With<HudCorner>>,
     mut shown: Local<Option<PanelContent>>,
 ) {
     let stage = tutorial
@@ -864,6 +869,23 @@ fn render_panel(
     for panel in &panels {
         commands.entity(panel).despawn();
     }
+    // Panneau d'appareil (coupe ambre, rivets), rangé dans la colonne du coin haut droit, sous
+    // la date et le fil des nouvelles (`clock::HudCorner`) : il descend quand les nouvelles
+    // s'allongent, remonte sur la carte où elles se cachent, et ne les couvre jamais.
+    let mut node = Node {
+        width: px(PANEL_WIDTH),
+        flex_direction: FlexDirection::Column,
+        // Retrait : la coupe ambre en haut à gauche et les rivets des coins restent dégagés.
+        padding: UiRect::new(px(22), px(20), px(16), px(16)),
+        row_gap: px(5),
+        ..default()
+    };
+    let corner = corners.iter().next();
+    if corner.is_none() {
+        node.position_type = PositionType::Absolute;
+        node.top = px(76);
+        node.right = px(20);
+    }
     let panel = commands
         .spawn((
             Name::new("Tutoriel"),
@@ -871,22 +893,13 @@ fn render_panel(
             DespawnOnExit(AppState::InGame),
             GlobalZIndex(4),
             Pickable::IGNORE,
-            Node {
-                position_type: PositionType::Absolute,
-                // Sous la date et la ligne des nouvelles (`clock`, `living`), en haut à droite.
-                top: px(76),
-                right: px(20),
-                width: px(400),
-                flex_direction: FlexDirection::Column,
-                padding: UiRect::axes(px(16), px(12)),
-                border: UiRect::left(px(3)),
-                row_gap: px(5),
-                ..default()
-            },
-            BorderColor::all(theme::ACCENT),
-            BackgroundColor(theme::PANEL),
+            node,
+            fonts.frame(Frame::Panel),
         ))
         .id();
+    if let Some(corner) = corner {
+        commands.entity(panel).insert(ChildOf(corner));
+    }
     // Le panneau ne retient jamais un clic (la carte galactique est cliquable dessous).
     let line = |text: String, font: TextFont, color: Color| {
         (
@@ -897,28 +910,68 @@ fn render_panel(
             Pickable::IGNORE,
         )
     };
-    commands.spawn(line(
-        content.header.clone(),
-        fonts.title(13.0),
-        theme::ACCENT,
+    // En-tête : l'étape en capitales ambre, les voyants de l'appareil.
+    commands.spawn((
+        ChildOf(panel),
+        Pickable::IGNORE,
+        Node {
+            flex_direction: FlexDirection::Row,
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::SpaceBetween,
+            column_gap: px(12),
+            ..default()
+        },
+        children![
+            (
+                theme::heading(&fonts, &content.header, 13.0, theme::ACCENT),
+                Pickable::IGNORE,
+            ),
+            (theme::status_lights(), Pickable::IGNORE),
+        ],
     ));
     commands.spawn(line(content.title.clone(), fonts.title(19.0), theme::TEXT));
+    commands.spawn((
+        ChildOf(panel),
+        Pickable::IGNORE,
+        theme::rule(percent(100), UiRect::new(px(0), px(0), px(1), px(5))),
+    ));
     commands.spawn(line(content.body.clone(), fonts.body(15.0), theme::TEXT));
     for (done, text) in &content.checks {
         // Une case cochée s'efface un peu : l'œil va à ce qui reste à faire.
-        let (mark, color) = if *done {
-            ('✓', theme::TEXT_DIM)
+        let (mark, color, mark_color) = if *done {
+            ('✓', theme::TEXT_DIM, theme::SCREEN)
         } else {
-            ('○', theme::TEXT)
+            ('○', theme::TEXT, theme::ACCENT)
         };
-        commands.spawn(line(format!("{mark}  {text}"), fonts.body(15.0), color));
+        commands.spawn((
+            ChildOf(panel),
+            Pickable::IGNORE,
+            Text::new(format!("{mark}  ")),
+            fonts.body(15.0),
+            TextColor(mark_color),
+            children![(
+                TextSpan::new(text.clone()),
+                fonts.body(15.0),
+                TextColor(color)
+            )],
+        ));
     }
     commands.spawn((
-        line(content.footer.clone(), fonts.body(13.0), theme::TEXT_DIM),
+        ChildOf(panel),
+        Pickable::IGNORE,
         Node {
+            width: percent(100),
+            height: px(1),
             margin: UiRect::top(px(4)),
+            flex_shrink: 0.0,
             ..default()
         },
+        BackgroundColor(theme::RULE),
+    ));
+    commands.spawn(line(
+        content.footer.clone(),
+        fonts.body(13.0),
+        theme::TEXT_DIM,
     ));
     *shown = Some(content);
 }
@@ -1078,6 +1131,8 @@ fn place_marker(
                 Text::new(text),
                 fonts.title(15.0),
                 TextColor(theme::ACCENT),
+                // Ombre courte : l'ambre reste lisible sur une coque claire ou un écran allumé.
+                theme::label_shadow(),
                 TextLayout::justify(Justify::Center),
                 Node {
                     position_type: PositionType::Absolute,

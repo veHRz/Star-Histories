@@ -5,10 +5,11 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
+use crate::clock::HUD_CORNER_WIDTH;
 use crate::data::Texts;
 use crate::graphics::WorldCamera;
 use crate::state::ControlMode;
-use crate::ui::theme::{self, UiFonts};
+use crate::ui::theme::{self, Frame, UiFonts};
 
 pub mod galaxy;
 pub mod global;
@@ -32,7 +33,13 @@ impl Plugin for ViewsPlugin {
     }
 }
 
-/// Bandeau de titre d'une vue de test, en haut à gauche.
+/// Bandeau du lieu et des commandes, en haut à gauche : une plaquette à barre ambre, le nom du
+/// lieu en capitales espacées, la ligne des commandes dessous.
+///
+/// Il s'arrête avant la colonne du coin haut droit (date, nouvelles, tutoriel :
+/// [`crate::clock::HudCorner`]) : la ligne des commandes, longue, passe à la ligne plutôt que
+/// de passer sous la date. Le nœud extérieur fixe cette largeur permise ; la plaquette prend
+/// celle de son texte.
 pub fn view_banner(
     texts: &Texts,
     fonts: &UiFonts,
@@ -42,23 +49,42 @@ pub fn view_banner(
 ) -> impl Bundle {
     (
         scope,
+        Pickable::IGNORE,
         Node {
             position_type: PositionType::Absolute,
             left: px(20),
             top: px(16),
+            right: px(HUD_CORNER_WIDTH + 40.0),
             flex_direction: FlexDirection::Column,
-            padding: UiRect::axes(px(14), px(10)),
+            align_items: AlignItems::FlexStart,
             ..default()
         },
-        BackgroundColor(theme::PANEL),
-        children![
-            (Text::new(title), fonts.title(22.0), TextColor(theme::TEXT)),
-            (
-                Text::new(texts.get(hint_key)),
-                fonts.body(14.0),
-                TextColor(theme::TEXT_DIM)
-            ),
-        ],
+        children![(
+            Pickable::IGNORE,
+            Node {
+                max_width: percent(100),
+                flex_direction: FlexDirection::Column,
+                row_gap: px(3),
+                // Large à gauche : la barre ambre de la plaquette.
+                padding: UiRect::new(px(16), px(14), px(7), px(9)),
+                ..default()
+            },
+            fonts.frame(Frame::Plate),
+            children![
+                (
+                    Text::new(theme::caps(&title)),
+                    fonts.heading(17.0),
+                    TextColor(theme::TEXT),
+                    Pickable::IGNORE,
+                ),
+                (
+                    Text::new(texts.get(hint_key)),
+                    fonts.body(14.0),
+                    TextColor(theme::TEXT_DIM),
+                    Pickable::IGNORE,
+                ),
+            ],
+        )],
     )
 }
 

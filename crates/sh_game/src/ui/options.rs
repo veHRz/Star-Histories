@@ -2,6 +2,10 @@
 //! écran, volumes, souris, puis la page des touches (remappage par touche, voir `options`).
 //! Échap revient en arrière (annule d'abord une touche en attente) ; l'écran se ferme au
 //! relâchement, comme le terminal, pour que l'écran dessous ne voie pas la touche.
+//!
+//! Habillage (M8) : l'écran d'appareil du menu de pause (équerres, titre en capitales sur un
+//! filet), les réglages dans un panneau à pans coupés, une ligne par réglage séparée d'un filet,
+//! petits boutons à cadre (le choix courant allumé en ambre), valeurs en relevé à chasse fixe.
 
 use bevy::input::ButtonState;
 use bevy::input::keyboard::KeyboardInput;
@@ -11,7 +15,8 @@ use sh_data::PresetLevel;
 
 use crate::data::Texts;
 use crate::options::{REMAPPABLE, UserSettings, choosable, key_name};
-use crate::ui::theme::{self, MenuButton, UiFonts, menu_button};
+use crate::ui::menu::panel_node;
+use crate::ui::theme::{self, Frame, MenuButton, UiFonts, menu_button};
 
 pub struct OptionsUiPlugin;
 
@@ -211,119 +216,145 @@ fn render(
         ))
         .id();
     commands.entity(root).with_children(|ui| {
+        theme::spawn_corner_marks(ui, 28.0, 44.0, theme::SCREEN_DIM);
         let title = match screen.page {
             Page::Main => "menu.options",
             Page::Keys => "options.keys.title",
         };
+        ui.spawn(theme::heading(&fonts, &texts.get(title), 40.0, theme::TEXT));
+        ui.spawn(theme::rule(
+            px(420),
+            UiRect::new(px(0), px(0), px(12), px(20)),
+        ));
+        ui.spawn((panel_node(UiRect::ZERO), fonts.frame(Frame::Panel)))
+            .with_children(|panel| {
+                let secondary = match screen.page {
+                    Page::Main => {
+                        main_page(panel, &texts, &fonts, &settings);
+                        (texts.get("options.keys"), OptionsAction::Keys)
+                    }
+                    Page::Keys => {
+                        keys_page(panel, &texts, &fonts, &settings, screen.waiting);
+                        (texts.get("options.keys.reset"), OptionsAction::ResetKeys)
+                    }
+                };
+                // Les deux boutons du bas, côte à côte : la page des touches tient en hauteur.
+                panel
+                    .spawn(Node {
+                        flex_direction: FlexDirection::Row,
+                        column_gap: px(16),
+                        margin: UiRect::top(px(14)),
+                        ..default()
+                    })
+                    .with_children(|buttons| {
+                        for (label, action) in
+                            [secondary, (texts.get("menu.back"), OptionsAction::Back)]
+                        {
+                            buttons
+                                .spawn(menu_button(&fonts, label, action, true))
+                                .insert(Node {
+                                    width: px(FOOT_BUTTON_WIDTH),
+                                    height: px(48),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    padding: UiRect::horizontal(px(18)),
+                                    ..default()
+                                });
+                        }
+                    });
+            });
+        // La consigne de la page, sous le panneau : longue, elle ne doit pas l'élargir.
+        let hint = match screen.page {
+            Page::Main => "options.hint",
+            Page::Keys => "options.keys.hint",
+        };
         ui.spawn((
-            Text::new(texts.get(title)),
-            fonts.title(40.0),
-            TextColor(theme::TEXT),
+            Text::new(texts.get(hint)),
+            fonts.body(15.0),
+            TextColor(theme::TEXT_DIM),
+            TextLayout::justify(Justify::Center),
             Node {
-                margin: UiRect::bottom(px(20)),
+                max_width: px(900),
+                margin: UiRect::top(px(16)),
                 ..default()
             },
-        ));
-        match screen.page {
-            Page::Main => main_page(ui, &texts, &fonts, &settings),
-            Page::Keys => keys_page(ui, &texts, &fonts, &settings, screen.waiting),
-        }
-        ui.spawn(menu_button(
-            &fonts,
-            texts.get("menu.back"),
-            OptionsAction::Back,
-            true,
         ));
     });
 }
 
+/// Largeur des deux boutons du bas (« Touches… » ou « Touches par défaut », « Retour »).
+const FOOT_BUTTON_WIDTH: f32 = 300.0;
+/// Largeur d'une ligne de la page principale (intitulé à gauche, commandes à droite).
+const ROW_WIDTH: f32 = 640.0;
+/// Largeur d'une ligne de la page des touches (deux colonnes).
+const KEY_ROW_WIDTH: f32 = 470.0;
+
 fn main_page(ui: &mut ChildSpawnerCommands, texts: &Texts, fonts: &UiFonts, s: &UserSettings) {
     let percent = |v: f32| format!("{} %", texts.number(f64::from(v) * 100.0, 0));
-    row(ui, fonts, texts.get("options.graphics"), |r| {
+    row(ui, fonts, texts.get("options.graphics"), true, |r| {
         for (level, key) in [
             (PresetLevel::Low, "options.preset.low"),
             (PresetLevel::Medium, "options.preset.medium"),
             (PresetLevel::High, "options.preset.high"),
         ] {
-            r.spawn(small_button(
+            spawn_small(
+                r,
                 fonts,
                 texts.get(key),
                 OptionsAction::Preset(level),
                 s.preset == level,
-            ));
+            );
         }
     });
-    row(ui, fonts, texts.get("options.fullscreen"), |r| {
-        r.spawn(toggle(
-            fonts,
-            texts,
-            OptionsAction::Fullscreen,
-            s.fullscreen,
-        ));
+    row(ui, fonts, texts.get("options.fullscreen"), true, |r| {
+        toggle(r, fonts, texts, OptionsAction::Fullscreen, s.fullscreen);
     });
     for (key, channel, value) in [
         ("options.master_volume", Channel::Master, s.master_volume),
         ("options.music_volume", Channel::Music, s.music_volume),
         ("options.effects_volume", Channel::Effects, s.effects_volume),
     ] {
-        row(ui, fonts, texts.get(key), |r| {
-            r.spawn(small_button(
+        row(ui, fonts, texts.get(key), true, |r| {
+            spawn_small(
+                r,
                 fonts,
                 "−".into(),
                 OptionsAction::Volume(channel, -0.1),
                 false,
-            ));
+            );
             r.spawn(value_text(fonts, percent(value)));
-            r.spawn(small_button(
+            spawn_small(
+                r,
                 fonts,
                 "+".into(),
                 OptionsAction::Volume(channel, 0.1),
                 false,
-            ));
+            );
         });
     }
-    row(ui, fonts, texts.get("options.sensitivity"), |r| {
-        r.spawn(small_button(
+    row(ui, fonts, texts.get("options.sensitivity"), true, |r| {
+        spawn_small(
+            r,
             fonts,
             "−".into(),
             OptionsAction::Sensitivity(-0.1),
             false,
-        ));
+        );
         r.spawn(value_text(
             fonts,
             texts.number(f64::from(s.mouse_sensitivity), 1),
         ));
-        r.spawn(small_button(
-            fonts,
-            "+".into(),
-            OptionsAction::Sensitivity(0.1),
-            false,
-        ));
+        spawn_small(r, fonts, "+".into(), OptionsAction::Sensitivity(0.1), false);
     });
-    row(ui, fonts, texts.get("options.invert_y"), |r| {
-        r.spawn(toggle(fonts, texts, OptionsAction::InvertY, s.invert_y));
+    row(ui, fonts, texts.get("options.invert_y"), true, |r| {
+        toggle(r, fonts, texts, OptionsAction::InvertY, s.invert_y);
     });
-    row(ui, fonts, texts.get("options.tips"), |r| {
-        r.spawn(toggle(fonts, texts, OptionsAction::Tips, s.tips));
+    row(ui, fonts, texts.get("options.tips"), true, |r| {
+        toggle(r, fonts, texts, OptionsAction::Tips, s.tips);
     });
-    row(ui, fonts, texts.get("options.tutorial"), |r| {
-        r.spawn(toggle(fonts, texts, OptionsAction::Tutorial, s.tutorial));
+    row(ui, fonts, texts.get("options.tutorial"), false, |r| {
+        toggle(r, fonts, texts, OptionsAction::Tutorial, s.tutorial);
     });
-    ui.spawn(menu_button(
-        fonts,
-        texts.get("options.keys"),
-        OptionsAction::Keys,
-        true,
-    ));
-    ui.spawn((
-        Text::new(texts.get("options.hint")),
-        fonts.body(15.0),
-        TextColor(theme::TEXT_DIM),
-        Node {
-            margin: UiRect::vertical(px(10)),
-            ..default()
-        },
-    ));
 }
 
 fn keys_page(
@@ -333,31 +364,32 @@ fn keys_page(
     s: &UserSettings,
     waiting: Option<KeyCode>,
 ) {
-    ui.spawn((
-        Text::new(texts.get("options.keys.hint")),
-        fonts.body(15.0),
-        TextColor(theme::TEXT_DIM),
-        Node {
-            margin: UiRect::bottom(px(12)),
-            ..default()
-        },
-    ));
-    // Deux colonnes : la liste tient sans défilement.
+    // Deux colonnes séparées d'un filet vertical : la liste tient sans défilement.
     ui.spawn(Node {
         flex_direction: FlexDirection::Row,
-        column_gap: px(28),
+        column_gap: px(18),
         ..default()
     })
     .with_children(|columns| {
         let half = REMAPPABLE.len().div_ceil(2);
-        for chunk in REMAPPABLE.chunks(half) {
+        for (index, chunk) in REMAPPABLE.chunks(half).enumerate() {
+            if index > 0 {
+                columns.spawn((
+                    Node {
+                        width: px(1),
+                        align_self: AlignSelf::Stretch,
+                        ..default()
+                    },
+                    BackgroundColor(theme::RULE),
+                ));
+            }
             columns
                 .spawn(Node {
                     flex_direction: FlexDirection::Column,
                     ..default()
                 })
                 .with_children(|column| {
-                    for original in chunk {
+                    for (i, original) in chunk.iter().enumerate() {
                         let label = if waiting == Some(*original) {
                             texts.get("options.keys.waiting")
                         } else {
@@ -365,12 +397,20 @@ fn keys_page(
                         };
                         column
                             .spawn(Node {
-                                width: px(470),
-                                height: px(38),
+                                width: px(KEY_ROW_WIDTH),
+                                height: px(31),
                                 align_items: AlignItems::Center,
                                 justify_content: JustifyContent::SpaceBetween,
+                                column_gap: px(12),
+                                // Le filet sous chaque ligne, sauf la dernière.
+                                border: UiRect::bottom(px(if i + 1 < chunk.len() {
+                                    1.0
+                                } else {
+                                    0.0
+                                })),
                                 ..default()
                             })
+                            .insert(BorderColor::all(ROW_RULE))
                             .with_children(|line| {
                                 line.spawn((
                                     Text::new(
@@ -379,39 +419,51 @@ fn keys_page(
                                     fonts.body(15.0),
                                     TextColor(theme::TEXT),
                                 ));
-                                line.spawn(small_button(
+                                spawn_small(
+                                    line,
                                     fonts,
                                     label,
                                     OptionsAction::Rebind(*original),
                                     waiting == Some(*original),
-                                ));
+                                )
+                                .insert(Node {
+                                    min_width: px(52),
+                                    height: px(27),
+                                    padding: UiRect::new(px(14), px(12), px(0), px(0)),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    flex_shrink: 0.0,
+                                    ..default()
+                                });
                             });
                     }
                 });
         }
     });
-    ui.spawn(menu_button(
-        fonts,
-        texts.get("options.keys.reset"),
-        OptionsAction::ResetKeys,
-        true,
-    ));
 }
 
-/// Une ligne : l'intitulé à gauche, les commandes à droite.
+/// Filet entre deux lignes d'options.
+const ROW_RULE: Color = Color::srgba(0.42, 0.45, 0.49, 0.22);
+
+/// Une ligne : l'intitulé à gauche, les commandes à droite ; `rule` : un filet dessous.
 fn row(
     ui: &mut ChildSpawnerCommands,
     fonts: &UiFonts,
     label: String,
+    rule: bool,
     controls: impl FnOnce(&mut ChildSpawnerCommands),
 ) {
-    ui.spawn(Node {
-        width: px(640),
-        height: px(48),
-        align_items: AlignItems::Center,
-        justify_content: JustifyContent::SpaceBetween,
-        ..default()
-    })
+    ui.spawn((
+        Node {
+            width: px(ROW_WIDTH),
+            height: px(46),
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::SpaceBetween,
+            border: UiRect::bottom(px(if rule { 1.0 } else { 0.0 })),
+            ..default()
+        },
+        BorderColor::all(ROW_RULE),
+    ))
     .with_children(|line| {
         line.spawn((Text::new(label), fonts.body(19.0), TextColor(theme::TEXT)));
         line.spawn(Node {
@@ -424,13 +476,14 @@ fn row(
     });
 }
 
+/// Une valeur réglée (volume, sensibilité) : un relevé à chasse fixe, centré entre − et +.
 fn value_text(fonts: &UiFonts, text: String) -> impl Bundle {
     (
         Text::new(text),
-        fonts.body(18.0),
-        TextColor(theme::TEXT),
+        fonts.mono(17.0),
+        TextColor(theme::SCREEN),
         Node {
-            width: px(70),
+            width: px(76),
             justify_content: JustifyContent::Center,
             ..default()
         },
@@ -438,40 +491,52 @@ fn value_text(fonts: &UiFonts, text: String) -> impl Bundle {
     )
 }
 
-fn toggle(fonts: &UiFonts, texts: &Texts, action: OptionsAction, on: bool) -> impl Bundle {
+fn toggle(
+    parent: &mut ChildSpawnerCommands,
+    fonts: &UiFonts,
+    texts: &Texts,
+    action: OptionsAction,
+    on: bool,
+) {
     let key = if on { "options.on" } else { "options.off" };
-    small_button(fonts, texts.get(key), action, on)
+    spawn_small(parent, fonts, texts.get(key), action, on);
 }
 
-/// Petit bouton ; `selected` : bordure d'accent (choix courant, touche en attente).
-fn small_button(
+/// Petit bouton à cadre (le même que les boutons des menus, en plus petit). `selected` (choix
+/// courant, touche en attente) : cadre allumé en ambre. Il n'est alors pas marqué
+/// [`MenuButton`] : le survol, qui rend le cadre éteint en sortant, ne l'éteint pas.
+fn spawn_small<'a>(
+    parent: &'a mut ChildSpawnerCommands,
     fonts: &UiFonts,
     label: String,
     action: OptionsAction,
     selected: bool,
-) -> impl Bundle {
-    (
-        MenuButton,
+) -> EntityCommands<'a> {
+    let frame = fonts.frame(if selected {
+        Frame::ButtonHover
+    } else {
+        Frame::Button
+    });
+    let mut button = parent.spawn((
         Button,
         ActivateOnPress,
         action,
         Node {
-            min_width: px(44),
+            min_width: px(48),
             height: px(34),
-            padding: UiRect::horizontal(px(12)),
+            // À gauche : la languette du cadre.
+            padding: UiRect::new(px(15), px(12), px(0), px(0)),
             justify_content: JustifyContent::Center,
             align_items: AlignItems::Center,
-            border: UiRect::all(px(if selected { 2.0 } else { 1.0 })),
             ..default()
         },
-        BorderColor::all(if selected {
-            theme::ACCENT
-        } else {
-            theme::BUTTON_BORDER
-        }),
-        BackgroundColor(theme::BUTTON),
+        frame,
         children![(Text::new(label), fonts.body(17.0), TextColor(theme::TEXT))],
-    )
+    ));
+    if !selected {
+        button.insert(MenuButton);
+    }
+    button
 }
 
 /// Le bouton « Retour » de l'écran des options (scénarios de l'autopilote).

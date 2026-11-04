@@ -392,3 +392,26 @@ pub fn fullscreen_backdrop() -> impl Bundle {
         )),
     )
 }
+
+/// La vignette des écrans pleins seule, d'une opacité donnée : une carte de chargement posée
+/// sur le fondu au noir des transitions apparaît avec lui (`transition`).
+pub fn backdrop_gradient(alpha: f32) -> BackgroundGradient {
+    BackgroundGradient::from(RadialGradient::new(
+        UiPosition::CENTER,
+        RadialGradientShape::FarthestCorner,
+        vec![
+            ColorStop::percent(BACKDROP.with_alpha(alpha), 0),
+            ColorStop::percent(BACKDROP_EDGE.with_alpha(alpha), 100),
+        ],
+    ))
+}
+
+/// Ombre portée courte d'un texte posé sur la vue 3D (date, étiquettes, repères) : lisible sur
+/// un fond clair sans le flou ni le décalage de 4 px de l'ombre par défaut, qui dédoublait les
+/// lettres.
+pub fn label_shadow() -> TextShadow {
+    TextShadow {
+        offset: Vec2::splat(1.0),
+        color: Color::srgba(0.0, 0.0, 0.0, 0.85),
+    }
+}

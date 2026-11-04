@@ -22,7 +22,7 @@ use crate::sector::ActiveSector;
 use crate::ship::ShipMotion;
 use crate::space::{SpacePosition, SpaceRotation};
 use crate::state::{ControlMode, ViewLevel};
-use crate::ui::theme::UiFonts;
+use crate::ui::theme::{self, Frame, UiFonts};
 use crate::views::WorldLabel;
 
 const SCOPE: DespawnOnExit<ViewLevel> = DespawnOnExit(ViewLevel::Global);
@@ -264,26 +264,47 @@ pub fn spawn_ship(
             },
         ))
         .id();
-    let color = match side {
-        Side::Raiders => Color::srgb(1.0, 0.35, 0.25),
-        _ => Color::srgb(0.55, 0.8, 1.0),
-    };
+    let color = side_color(side);
+    // L'étiquette : le nom, puis le relevé (distance, état) à chasse fixe, sur deux lignes
+    // étroites plutôt qu'une longue (les coques d'un raid sont proches à l'écran). Le cadre de
+    // relevé (équerres cyan) ne s'allume que sur la cible verrouillée (`update_markers`).
+    let mut frame = fonts.frame(Frame::Readout);
+    frame.color = Color::NONE;
     commands.spawn((
         SCOPE,
         ShipMarker(entity),
         WorldLabel::Follow(entity),
-        Text::new(name),
-        fonts.body(13.0),
-        TextColor(color),
+        Pickable::IGNORE,
         Node {
             position_type: PositionType::Absolute,
+            flex_direction: FlexDirection::Column,
+            padding: UiRect::axes(px(9), px(5)),
             ..default()
         },
+        frame,
         if delay > 0.0 {
             Visibility::Hidden
         } else {
             Visibility::Inherited
         },
+        children![
+            (
+                MarkerName,
+                Text::new(name),
+                fonts.body(13.0),
+                TextColor(color),
+                theme::label_shadow(),
+                Pickable::IGNORE,
+            ),
+            (
+                MarkerReadout,
+                Text::new(""),
+                fonts.mono(12.0),
+                TextColor(color),
+                theme::label_shadow(),
+                Pickable::IGNORE,
+            ),
+        ],
     ));
     Some(entity)
 }
@@ -291,6 +312,25 @@ pub fn spawn_ship(
 /// L'étiquette d'une coque (nom, distance, état).
 #[derive(Component)]
 pub struct ShipMarker(pub Entity);
+
+/// Le nom d'une coque, première ligne de son étiquette.
+#[derive(Component)]
+pub struct MarkerName;
+
+/// Le relevé d'une coque (distance, état), seconde ligne de son étiquette.
+#[derive(Component)]
+pub struct MarkerReadout;
+
+/// Couleur d'une étiquette selon le camp (la cible verrouillée passe en ambre).
+fn side_color(side: Side) -> Color {
+    match side {
+        Side::Raiders => Color::srgb(1.0, 0.35, 0.25),
+        _ => Color::srgb(0.55, 0.8, 1.0),
+    }
+}
+
+/// Couleur de l'étiquette de la cible verrouillée.
+const LOCKED_COLOR: Color = Color::srgb(1.0, 0.85, 0.3);
 
 /// L'orientation qui regarde dans `dir` (avant −Z, haut +Y).
 pub fn look_rotation(dir: DVec3) -> DQuat {
@@ -987,48 +1027,61 @@ pub fn sync_player_hull(
     }
 }
 
-/// Les étiquettes des coques : nom, distance, état.
+/// Les étiquettes des coques : nom, distance, état ; la cible verrouillée s'encadre.
+#[allow(clippy::type_complexity)]
 pub fn update_markers(
     texts: Res<Texts>,
     sector: Option<Res<ActiveSector>>,
     origin: Query<&SpacePosition, Without<ShipMarker>>,
     ships: Query<(&Combatant, &SpacePosition)>,
     target: Res<PlayerTarget>,
-    mut markers: Query<(&ShipMarker, &mut Text, &mut TextColor)>,
+    mut markers: Query<(&ShipMarker, &Children, &mut ImageNode)>,
+    mut names: Query<&mut TextColor, (With<MarkerName>, Without<MarkerReadout>)>,
+    mut readouts: Query<(&mut Text, &mut TextColor), (With<MarkerReadout>, Without<MarkerName>)>,
 ) {
     let Some(here) = sector.and_then(|s| origin.get(s.root).ok()).map(|p| p.0) else {
         return;
     };
-    for (marker, mut text, mut color) in &mut markers {
+    for (marker, children, mut frame) in &mut markers {
         let Ok((c, p)) = ships.get(marker.0) else {
             continue;
         };
         let km = p.0.distance(here) / 1000.0;
         let locked = target.0 == Some(marker.0);
-        let label = texts.format(
+        let readout = texts.format(
             if locked {
                 "combat.marker.locked"
             } else {
                 "combat.marker"
             },
             &[
-                ("name", &texts.get(&c.def.name_key)),
                 ("distance", &texts.number(km, 1)),
                 ("hull", &texts.number(c.hull.integrity() * 100.0, 0)),
             ],
         );
-        if text.0 != label {
-            text.0 = label;
-        }
         let wanted = if locked {
-            Color::srgb(1.0, 0.85, 0.3)
-        } else if c.side == Side::Raiders {
-            Color::srgb(1.0, 0.35, 0.25)
+            LOCKED_COLOR
         } else {
-            Color::srgb(0.55, 0.8, 1.0)
+            side_color(c.side)
         };
-        if color.0 != wanted {
-            color.0 = wanted;
+        let frame_color = if locked { Color::WHITE } else { Color::NONE };
+        if frame.color != frame_color {
+            frame.color = frame_color;
+        }
+        for child in children.iter() {
+            if let Ok(mut color) = names.get_mut(child)
+                && color.0 != wanted
+            {
+                color.0 = wanted;
+            }
+            if let Ok((mut text, mut color)) = readouts.get_mut(child) {
+                if text.0 != readout {
+                    text.0.clone_from(&readout);
+                }
+                if color.0 != wanted {
+                    color.0 = wanted;
+                }
+            }
         }
     }
 }

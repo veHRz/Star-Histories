@@ -456,6 +456,9 @@ fn label(fonts: &UiFonts, name: &str, target: Entity) -> impl Bundle {
         Text::new(name),
         fonts.body(14.0),
         TextColor(theme::TEXT),
+        // Ombre courte : le nom reste lisible devant un astre éclairé ou la bande galactique.
+        theme::label_shadow(),
+        Pickable::IGNORE,
         Node {
             position_type: PositionType::Absolute,
             ..default()

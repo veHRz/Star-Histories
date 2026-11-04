@@ -28,7 +28,7 @@ use crate::sector::ActiveSector;
 use crate::space::{SpacePosition, SpaceRotation};
 use crate::state::{AppState, ViewLevel};
 use crate::ui::hud::Notice;
-use crate::ui::theme::UiFonts;
+use crate::ui::theme::{self, UiFonts};
 use crate::voyage::Location;
 use space::{AiMode, AiPilot, Combatant, PlayerHit, ShipLost, Side};
 
@@ -479,8 +479,23 @@ fn shake_camera(
 #[derive(Component)]
 struct DeathScreen;
 
+/// La jauge qui se remplit jusqu'au retour au menu.
+#[derive(Component)]
+struct DeathGauge;
+
+/// Durée de l'écran de mort avant le retour au menu principal (s).
+const DEATH_SECONDS: f32 = 5.0;
+/// Largeur de la jauge de l'écran de mort (px).
+const DEATH_GAUGE_WIDTH: f32 = 360.0;
+const GAUGE_MIN_SCALE: f32 = 0.001;
+
 /// La mort : un écran, puis le menu principal ; la partie est perdue (pas encore de
 /// sauvegarde).
+///
+/// Habillage (M8) : l'écran d'appareil des menus, passé au rouge d'alarme (équerres, titre en
+/// capitales, filet), et une jauge qui se remplit jusqu'au retour au menu : le joueur voit que
+/// le jeu n'est pas figé.
+#[allow(clippy::too_many_arguments)]
 fn tick_death(
     mut commands: Commands,
     time: Res<Time>,
@@ -488,6 +503,7 @@ fn tick_death(
     fonts: Option<Res<UiFonts>>,
     death: Option<ResMut<Death>>,
     screens: Query<Entity, With<DeathScreen>>,
+    mut gauges: Query<&mut UiTransform, With<DeathGauge>>,
     mut next: ResMut<NextState<AppState>>,
 ) {
     let Some(mut death) = death else {
@@ -496,37 +512,84 @@ fn tick_death(
     if screens.is_empty()
         && let Some(fonts) = fonts
     {
-        commands.spawn((
-            DeathScreen,
-            DespawnOnExit(AppState::InGame),
-            GlobalZIndex(50),
-            Node {
-                position_type: PositionType::Absolute,
-                width: percent(100),
-                height: percent(100),
-                flex_direction: FlexDirection::Column,
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                row_gap: px(12),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.85)),
-            children![
-                (
-                    Text::new(texts.get("combat.death.title")),
-                    fonts.title(40.0),
-                    TextColor(Color::srgb(0.9, 0.25, 0.2)),
-                ),
-                (
+        commands
+            .spawn((
+                Name::new("Écran de mort"),
+                DeathScreen,
+                DespawnOnExit(AppState::InGame),
+                GlobalZIndex(50),
+                Pickable::IGNORE,
+                Node {
+                    position_type: PositionType::Absolute,
+                    width: percent(100),
+                    height: percent(100),
+                    flex_direction: FlexDirection::Column,
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                // Voile presque noir, à peine rougi : la vue s'éteint.
+                BackgroundColor(Color::srgba(0.035, 0.008, 0.008, 0.88)),
+            ))
+            .with_children(|screen| {
+                theme::spawn_corner_marks(screen, 28.0, 44.0, theme::DANGER.with_alpha(0.55));
+                screen.spawn(theme::heading(
+                    &fonts,
+                    &texts.get("combat.death.title"),
+                    40.0,
+                    theme::DANGER,
+                ));
+                // Le filet des titres, au rouge d'alarme.
+                screen.spawn((
+                    Node {
+                        width: px(DEATH_GAUGE_WIDTH + 80.0),
+                        height: px(1),
+                        margin: UiRect::new(px(0), px(0), px(14), px(22)),
+                        ..default()
+                    },
+                    BackgroundColor(theme::DANGER.with_alpha(0.45)),
+                ));
+                screen.spawn((
                     Text::new(texts.get("combat.death.hint")),
                     fonts.body(18.0),
-                    TextColor(crate::ui::theme::TEXT_DIM),
-                ),
-            ],
-        ));
+                    TextColor(theme::TEXT_DIM),
+                ));
+                screen.spawn((
+                    Node {
+                        width: px(DEATH_GAUGE_WIDTH),
+                        height: px(4),
+                        margin: UiRect::top(px(16)),
+                        overflow: Overflow::clip(),
+                        ..default()
+                    },
+                    BackgroundColor(theme::RULE),
+                    children![(
+                        DeathGauge,
+                        Node {
+                            width: percent(100),
+                            height: percent(100),
+                            ..default()
+                        },
+                        BackgroundColor(theme::DANGER),
+                        // Vide au départ ; `UiTransform` : pas de remise en page à chaque image.
+                        UiTransform {
+                            scale: Vec2::new(GAUGE_MIN_SCALE, 1.0),
+                            ..default()
+                        },
+                        Pickable::IGNORE,
+                    )],
+                ));
+            });
     }
     death.timer += time.delta_secs();
-    if death.timer > 5.0 {
+    // La jauge se remplit depuis la gauche : mise à l'échelle autour du centre, recalée.
+    // Jamais une échelle nulle : la transformation du nœud doit rester inversible.
+    let k = (death.timer / DEATH_SECONDS).clamp(GAUGE_MIN_SCALE, 1.0);
+    for mut gauge in &mut gauges {
+        gauge.scale = Vec2::new(k, 1.0);
+        gauge.translation = Val2::px(-(1.0 - k) * DEATH_GAUGE_WIDTH / 2.0, 0.0);
+    }
+    if death.timer > DEATH_SECONDS {
         // La partie est perdue : la quitter l'efface (`state::forget_game`), une nouvelle partie
         // repart de zéro ou d'une sauvegarde (en Homme de fer, il n'en reste aucune).
         commands.queue(crate::save::erase_ironman);

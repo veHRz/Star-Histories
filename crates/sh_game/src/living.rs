@@ -15,26 +15,30 @@ use sh_core::{Id, StellarDate};
 use sh_data::{Fleet, Place};
 use sh_sim::{EventKind, SimEvent, SimWorld};
 
-use crate::clock::{GameClock, format_date};
+use crate::clock::{GameClock, HUD_CORNER_WIDTH, HudCorner, format_date};
 use crate::data::{Data, Texts};
 use crate::state::{AppState, ViewLevel};
-use crate::ui::theme::{self, UiFonts};
+use crate::ui::theme::{self, Frame, UiFonts};
 use crate::voyage::Location;
 
 pub struct LivingWorldPlugin;
 
 impl Plugin for LivingWorldPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(AppState::InGame), (start_world, spawn_news).chain())
-            .add_systems(
-                Update,
-                (follow_clock, observe_location, show_news)
-                    .chain()
-                    // Hors partie, il n'y a pas de vue à suivre.
-                    .run_if(in_state(AppState::InGame))
-                    .run_if(resource_exists::<LivingWorld>)
-                    .run_if(resource_exists::<GameClock>),
-            );
+        // Le fil des nouvelles se range sous la date : la colonne qui les porte doit exister.
+        app.add_systems(
+            OnEnter(AppState::InGame),
+            (start_world, spawn_news.after(crate::clock::spawn_date)).chain(),
+        )
+        .add_systems(
+            Update,
+            (follow_clock, observe_location, show_news)
+                .chain()
+                // Hors partie, il n'y a pas de vue à suivre.
+                .run_if(in_state(AppState::InGame))
+                .run_if(resource_exists::<LivingWorld>)
+                .run_if(resource_exists::<GameClock>),
+        );
     }
 }
 
@@ -330,27 +334,49 @@ pub fn market_board(texts: &Texts, data: &Data, world: &LivingWorld, system: &Id
     }
 }
 
+/// La plaquette du fil des nouvelles (cachée sur la carte, qui a son propre panneau).
 #[derive(Component)]
 struct NewsTicker;
 
-fn spawn_news(mut commands: Commands, fonts: Res<UiFonts>) {
-    commands.spawn((
-        Name::new("Fil des nouvelles"),
-        NewsTicker,
-        DespawnOnExit(AppState::InGame),
-        Text::new(""),
-        fonts.body(13.0),
-        TextColor(theme::TEXT_DIM),
-        TextShadow::default(),
-        TextLayout::justify(Justify::Right),
-        Node {
-            position_type: PositionType::Absolute,
-            right: px(22),
-            top: px(44),
-            max_width: px(520),
-            ..default()
-        },
-    ));
+#[derive(Component)]
+struct NewsText;
+
+/// Le fil se range dans la colonne du coin haut droit, sous la date (`clock::HudCorner`, créée
+/// juste avant : voir l'ordre dans le plugin).
+fn spawn_news(mut commands: Commands, fonts: Res<UiFonts>, corner: Query<Entity, With<HudCorner>>) {
+    let mut node = Node {
+        max_width: px(HUD_CORNER_WIDTH),
+        // Large à gauche : la barre ambre de la plaquette.
+        padding: UiRect::new(px(14), px(12), px(6), px(7)),
+        ..default()
+    };
+    let corner = corner.iter().next();
+    if corner.is_none() {
+        // Sans la colonne (ne devrait pas arriver), le fil se place seul, sous la date.
+        node.position_type = PositionType::Absolute;
+        node.right = px(20);
+        node.top = px(60);
+    }
+    let plate = commands
+        .spawn((
+            Name::new("Fil des nouvelles"),
+            NewsTicker,
+            DespawnOnExit(AppState::InGame),
+            Pickable::IGNORE,
+            node,
+            fonts.frame(Frame::Plate),
+            children![(
+                NewsText,
+                Text::new(""),
+                fonts.body(14.0),
+                TextColor(theme::TEXT_DIM),
+                Pickable::IGNORE,
+            )],
+        ))
+        .id();
+    if let Some(corner) = corner {
+        commands.entity(plate).insert(ChildOf(corner));
+    }
 }
 
 fn show_news(
@@ -358,19 +384,19 @@ fn show_news(
     data: Res<Data>,
     view: Res<State<ViewLevel>>,
     knowledge: Res<PlayerKnowledge>,
-    mut ticker: Query<(&mut Text, &mut Visibility), With<NewsTicker>>,
+    mut plates: Query<&mut Node, With<NewsTicker>>,
+    mut ticker: Query<&mut Text, With<NewsText>>,
 ) {
-    // Le fil des nouvelles, à bord et à quai (la carte a son propre panneau).
+    // Le fil des nouvelles, à bord et à quai (la carte a son propre panneau). Caché, il rend sa
+    // place dans la colonne : le panneau du tutoriel remonte sous la date.
     let shown = matches!(view.get(), ViewLevel::Global | ViewLevel::Sector);
-    for (mut text, mut visibility) in &mut ticker {
-        let wanted = if shown {
-            Visibility::Inherited
-        } else {
-            Visibility::Hidden
-        };
-        if *visibility != wanted {
-            *visibility = wanted;
+    let display = if shown { Display::Flex } else { Display::None };
+    for mut node in &mut plates {
+        if node.display != display {
+            node.display = display;
         }
+    }
+    for mut text in &mut ticker {
         if knowledge.is_changed() || text.0.is_empty() {
             let lines = latest_news(&texts, &data, &knowledge, NEWS_SHOWN);
             if text.0 != lines {
