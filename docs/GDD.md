@@ -40,7 +40,7 @@ Les **départs préconfigurés** par faction et par rôle (`_context/futur.md`) 
 - **Espèce** : humain en v1 (l'Empire réserve de fait les hautes responsabilités aux humains, §4.1 : jouer un non-humain changera beaucoup de choses, c'est pour plus tard).
 - **Compétences** (progression par l'usage, sans classes) : Tir, Combat rapproché, Pilotage, Navigation (calcul des sauts), Ingénierie (réparations, modules), Médecine, Commerce, Négociation, Intimidation, Discrétion, Piratage, Commandement.
 - **Traits** gagnés par les actes (proposition) : « Parole tenue », « Traître notoire », « Ami des Jaskari », « Bourreau »… Ils modifient les dialogues et les réactions.
-- **Mort** : à pied ou dans l'espace, la mort est réelle (chargement de sauvegarde). Mode « Homme de fer » (sauvegarde unique) en option plus tard.
+- **Mort** : à pied ou dans l'espace, la mort est réelle : on recharge une sauvegarde (libre, rapide F5 / F9, automatique à l'arrivée). Mode « Homme de fer » (Q7) : une seule sauvegarde, automatique, effacée à la mort.
 
 ### 3.3 Argent
 

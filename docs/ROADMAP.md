@@ -3,7 +3,7 @@
 > Suis les jalons **dans l'ordre**. Coche chaque tâche (`[x]`) dans le commit qui la termine. Un jalon est fini quand **tous ses critères « Fini quand »** sont vérifiés (tests, autopilote, captures regardées). Push à la fin de chaque jalon.
 > Tu peux découper une tâche, en ajouter, en réordonner à l'intérieur d'un jalon : note-le dans `docs/JOURNAL.md`. Changer l'ordre des jalons ou leur périmètre : demande à l'auteur.
 
-État (04/11/2026) : **M0 terminé ; M1 à M6 faits**, critères fonctionnels vérifiés par l'autopilote et les tests, sous Linux puis sous Windows (`tools/check.ps1` vert). **Les critères de performance de M1, M2 et M6 sont mesurés sur la machine de référence et ne sont pas tenus** : ≈ 30 i/s en Moyen 1080p partout, limite du GPU (détails dans `docs/JOURNAL.md`, mesures rejouables par `tools/perf.ps1`). La passe de performance ouvre M7.
+État (04/11/2026, soir) : **M0 terminé ; M1 à M7 faits** sur le poste Windows, critères vérifiés par l'autopilote (`tools/check.ps1` vert) et mesurés sur la machine de référence : après la passe de performance de M7, le préréglage Moyen tient **≈ 60 à 83 i/s en 1080p** (vaisseau, vol, combat à 10 coques, abordages ; `tools/perf.ps1`). Reste le dernier critère de M7 : **le test de l'auteur**.
 
 ---
 
@@ -41,7 +41,7 @@ But : marcher dans son vaisseau, à la première personne, sans aucun chargement
 - [x] Streaming de cellules Locale ↔ Sectorielle : chargement asynchrone anticipé, hystérésis, portes comme portes de chargement, budget par frame.
 - [x] Éclairage d'intérieur performant : lightmaps précalculées dans Blender (Cycles), lumières sans ombres dynamiques dans les cellules cuites ; collisions en cuboïdes (plus d'enveloppes convexes à l'instanciation).
 - [x] Mesures sur UHD 770 en release, préréglage Moyen (faites : objectif non atteint, voir `docs/JOURNAL.md`).
-- [x] Nouvelles mesures sur UHD 770 en release, préréglage Moyen, après les lightmaps (faites le 04/11/2026 : objectif non atteint, voir `docs/JOURNAL.md`).
+- [x] Nouvelles mesures sur UHD 770 en release, préréglage Moyen, après les lightmaps (04/11/2026 : non atteint, ≈ 31 i/s ; **atteint après la passe de M7** : 83 i/s, aucune frame > 33 ms, voir `docs/JOURNAL.md`).
 
 **Fini quand** : on parcourt tout le vaisseau du sas au cockpit, portes comprises ; aucune frame > 33 ms pendant les transitions de cellules (mesuré par l'autopilote) ; ≥ 60 i/s en Moyen ; captures regardées et propres.
 
@@ -59,7 +59,7 @@ But : décoller d'Hexis, voler dans le système, revenir s'amarrer.
 - [x] Amarrage / désamarrage : transition Globale ↔ Sectorielle, chargement masqué par la séquence.
 - [x] Spatioport d'Hexis (un quartier, Sectorielle) en version brute : arrivée du sas, un bureau, un marché, une taverne (contenu proposé, consigné).
 
-- [x] Mesures sur UHD 770 en release, préréglage Moyen : `fly_ship` et `port_loop` (vol près d'Hexis, transitions) (faites le 04/11/2026 : objectif non atteint, voir `docs/JOURNAL.md`).
+- [x] Mesures sur UHD 770 en release, préréglage Moyen : `fly_ship` et `port_loop` (04/11/2026 : non atteint ; **atteint après la passe de M7** : 63 à 66 i/s, quelques pics aux amarrages, voir `docs/JOURNAL.md`).
 
 **Fini quand** : boucle complète quai → cockpit → vol → amarrage → quai, sans écran de chargement visible entre l'intérieur du vaisseau et l'espace ; performance tenue en vol près de la planète.
 
@@ -116,7 +116,7 @@ But : des combats courts, brutaux, sans boucliers.
 - [x] Combat spatial : sections de coque et blindage, canons magnétiques, missiles et torpilles, contre-mesures, effets à l'intérieur du vaisseau, IA de pilotes.
 - [x] Rencontre : raid de pirates de la Ligue dans le système Cygnara, issu de la simulation.
 - [x] Dégâts persistants et réparation (chantier d'Hexis).
-- [x] Mesures sur UHD 770 en release, préréglage Moyen : `raid_win` (10 coques) et abordages (faites le 04/11/2026 : objectif non atteint, voir `docs/JOURNAL.md`).
+- [x] Mesures sur UHD 770 en release, préréglage Moyen : `raid_win` (10 coques) et abordages (04/11/2026 : non atteint ; **atteint après la passe de M7** : 61 i/s en combat, ≈ 80 i/s à pied, voir `docs/JOURNAL.md`).
 
 **Fini quand** : on peut gagner, fuir ou perdre un raid ; les dégâts persistent jusqu'à réparation ; performance tenue pendant un combat à 10 vaisseaux.
 
@@ -126,12 +126,12 @@ But : des combats courts, brutaux, sans boucliers.
 
 But : 30 à 60 minutes jouables, de la nouvelle partie à la sauvegarde.
 
-- [ ] Passe de performance (en premier : les critères de M1, M2 et M6 ne sont pas tenus, ≈ 30 i/s en Moyen 1080p, limite du GPU) : temps GPU par passe de rendu, puis réglages et préréglages ; viser ≥ 60 i/s en Moyen sur UHD 770 (`tools/perf.ps1`).
-- [ ] Sauvegarde / chargement complets (simulation, joueur, lieu, versionnage du format).
-- [ ] Options (graphismes, son, contrôles remappables, sensibilité), préréglages validés sur UHD 770.
-- [ ] Audio : musiques, ambiances, effets (sources CC0 ou générées, consignées dans `assets/CREDITS.md`).
-- [ ] Codex (informations publiques), aides contextuelles, tutoriel léger.
-- [ ] Stabilité ; build release ; script d'empaquetage (exécutable + assets dans une archive).
+- [x] Passe de performance : temps GPU par passe (`SH_GPU_TIMINGS`), puis préréglages mesurés en A/B (lumières des cellules cuites, filtrage et taille des ombres, vitrages, échelle de rendu 0,8 en Moyen) : ≥ 60 i/s en Moyen 1080p sur UHD 770 (`tools/perf.ps1`).
+- [x] Sauvegarde / chargement complets (simulation, joueur, lieu, versionnage du format).
+- [x] Options (graphismes, son, contrôles remappables, sensibilité), préréglages validés sur UHD 770.
+- [x] Audio : musiques, ambiances, effets (sources CC0 ou générées, consignées dans `assets/CREDITS.md`).
+- [x] Codex (informations publiques), aides contextuelles, tutoriel léger.
+- [x] Stabilité ; build release ; script d'empaquetage (exécutable + assets dans une archive).
 
 **Fini quand** : une partie complète de la tranche se joue sans bug bloquant, à ≥ 60 i/s en Moyen sur la machine de référence ; l'auteur l'a testée.
 
