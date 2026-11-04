@@ -10,13 +10,13 @@ use bevy::anti_alias::fxaa::Fxaa;
 use bevy::anti_alias::smaa::Smaa;
 use bevy::camera::{CameraOutputMode, Hdr, RenderTarget};
 use bevy::light::cluster::GlobalClusterSettings;
-use bevy::light::{CascadeShadowConfigBuilder, DirectionalLightShadowMap};
+use bevy::light::{CascadeShadowConfigBuilder, DirectionalLightShadowMap, ShadowFilteringMethod};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
 use bevy::render::render_resource::{BlendState, TextureFormat};
 use bevy::render::view::Msaa;
 use bevy::window::PrimaryWindow;
-use sh_data::{AntiAliasing, GraphicsPreset, PresetLevel};
+use sh_data::{AntiAliasing, GraphicsPreset, PresetLevel, ShadowFilter};
 
 use crate::data::Data;
 use crate::ui::UiCamera;
@@ -107,6 +107,10 @@ fn configure_cameras(
         let mut camera = commands.entity(entity);
         // Le MSAA coûte trop cher sur GPU intégré : anticrénelage en post-traitement.
         camera.insert((Msaa::Off, Hdr));
+        camera.insert(match p.shadow_filter {
+            ShadowFilter::Hardware2x2 => ShadowFilteringMethod::Hardware2x2,
+            ShadowFilter::Gaussian => ShadowFilteringMethod::Gaussian,
+        });
         camera.remove::<(Fxaa, Smaa, Bloom)>();
         match p.anti_aliasing {
             AntiAliasing::Off => {}

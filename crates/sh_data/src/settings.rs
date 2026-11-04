@@ -43,6 +43,15 @@ pub enum AntiAliasing {
     Smaa,
 }
 
+/// Filtrage des ombres : `Hardware2x2` lit un échantillon par pixel, `Gaussian` neuf (bords
+/// plus doux, nettement plus cher sur GPU intégré).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ShadowFilter {
+    Hardware2x2,
+    #[default]
+    Gaussian,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GraphicsPreset {
     /// Résolution de rendu de la scène 3D relative à la fenêtre (0,5 à 1). L'interface reste nette.
@@ -55,11 +64,18 @@ pub struct GraphicsPreset {
     pub shadow_cascades: u8,
     /// Distance maximale des ombres, en mètres.
     pub shadow_max_distance: f32,
+    #[serde(default)]
+    pub shadow_filter: ShadowFilter,
     /// Lumières ponctuelles ombrées en même temps, au plus (cellules sans lightmap seulement).
     pub max_shadowed_point_lights: u8,
     /// Éclairage précalculé des intérieurs (lightmaps) : sans lui, tout l'éclairage est
     /// dynamique (comparaisons de performance, `SH_BAKED_LIGHTING=0`).
     pub baked_lighting: bool,
+    /// Lumières dynamiques dans les cellules à lightmap : leur diffus est déjà cuit, elles
+    /// n'ajoutent que reflets et éclairage des objets mobiles (portes, personnages). Sur GPU
+    /// intégré, chaque pixel les évalue toutes : c'est le poste le plus cher (mesures de M7).
+    #[serde(default)]
+    pub baked_cell_lights: bool,
     pub bloom: bool,
     pub anti_aliasing: AntiAliasing,
     /// Distance d'affichage maximale des détails (mètres), pour les `VisibilityRange`.

@@ -150,6 +150,10 @@ fn on_instance_ready(
     let sector_quality = cell.is_some_and(|c| c.quality == Quality::Sector);
     let layer = layer.map_or(Layer::Static, |l| l.0);
     let lightmap = cell.and_then(|c| assets.for_cell(c));
+    let cell_lights = assets
+        .settings
+        .as_ref()
+        .is_some_and(|s| s.preset.baked_cell_lights);
     let mut stats = (0, 0, 0);
 
     if let Some((image, exposure)) = &lightmap {
@@ -211,7 +215,10 @@ fn on_instance_ready(
                 };
                 stats.0 += 1;
             }
-        } else if name.starts_with("LIGHT_") && !sector_quality {
+        } else if name.starts_with("LIGHT_")
+            && !sector_quality
+            && (lightmap.is_none() || cell_lights)
+        {
             let v = extras(gltf_extras);
             let color = v
                 .get("color")

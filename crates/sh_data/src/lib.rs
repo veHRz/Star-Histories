@@ -53,7 +53,7 @@ pub use sector::{
 };
 pub use settings::{
     AntiAliasing, ClockSettings, FlightSettings, GraphicsPreset, GraphicsPresets, Handling,
-    PresetLevel, SpaceSettings, SystemScale,
+    PresetLevel, ShadowFilter, SpaceSettings, SystemScale,
 };
 pub use ships::{Formation, FormationsFile, ShipClass, ShipClassesFile};
 pub use sim::{CalendarKind, Rails, SimSettings};

@@ -37,6 +37,16 @@ impl Plugin for AutopilotPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<FrameStats>()
             .add_systems(Last, (record_frame_time, report_on_exit).chain());
+        if std::env::var_os("SH_GPU_TIMINGS").is_some() {
+            app.add_plugins(bevy::render::diagnostic::RenderDiagnosticsPlugin)
+                .init_resource::<GpuTimings>()
+                .add_systems(
+                    Last,
+                    (record_gpu_timings, report_gpu_timings)
+                        .chain()
+                        .after(record_frame_time),
+                );
+        }
 
         // Bevy bride à 60 Hz une fenêtre sans focus (`WinitSettings::game`) ; une fenêtre lancée
         // par l'autopilote n'a souvent pas le focus : ses frames rapides seraient comptées 16,7 ms.
@@ -211,6 +221,48 @@ fn report_on_exit(mut exits: MessageReader<AppExit>, stats: Res<FrameStats>) {
         stats.over_33ms,
         stats.count
     );
+}
+
+/// `SH_GPU_TIMINGS=1` : temps GPU moyen de chaque passe de rendu (requêtes d'horodatage,
+/// Vulkan et DX12), cumulé depuis la fin du chargement et journalisé à la sortie. Sur l'UHD 770,
+/// certaines passes (le bloom) comptent aussi des attentes : comparer, pas additionner.
+#[derive(Resource, Default)]
+struct GpuTimings(std::collections::BTreeMap<String, (f64, u32)>);
+
+fn record_gpu_timings(
+    store: Res<bevy::diagnostic::DiagnosticsStore>,
+    stats: Res<FrameStats>,
+    mut timings: ResMut<GpuTimings>,
+) {
+    if stats.since_loaded <= WARMUP_FRAMES {
+        return;
+    }
+    for diagnostic in store.iter() {
+        let path = diagnostic.path().as_str();
+        if !path.ends_with("elapsed_gpu") {
+            continue;
+        }
+        if let Some(value) = diagnostic.measurement().map(|m| m.value) {
+            let entry = timings.0.entry(path.to_owned()).or_default();
+            entry.0 += value;
+            entry.1 += 1;
+        }
+    }
+}
+
+fn report_gpu_timings(mut exits: MessageReader<AppExit>, timings: Res<GpuTimings>) {
+    if exits.read().next().is_none() {
+        return;
+    }
+    let mut passes: Vec<(&String, f64)> = timings
+        .0
+        .iter()
+        .map(|(path, (total, n))| (path, total / f64::from((*n).max(1))))
+        .collect();
+    passes.sort_by(|a, b| b.1.total_cmp(&a.1));
+    for (path, ms) in passes {
+        info!("temps GPU : {ms:6.2} ms  {path}");
+    }
 }
 
 fn env_u32(name: &str) -> Option<u32> {
