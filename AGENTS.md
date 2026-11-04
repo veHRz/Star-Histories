@@ -99,6 +99,7 @@
 | `cargo t` | Tous les tests du workspace |
 | `cargo fmt` | Formatage |
 | `cargo build --release` | Build optimisé (à utiliser pour **mesurer** les performances) |
+| `powershell -ExecutionPolicy Bypass -File tools/package.ps1` (`tools/package.sh`) | Build distribuable (`--features dist` : pas de console sous Windows) + assets + notice, dans `target/dist/` |
 
 Ces alias sont dans `.cargo/config.toml`. Ils activent tous `star_histories/dev` : **ne lance pas `cargo build` ou `cargo test` sans cette feature** pendant le développement, sinon Cargo recompile tout Bevy avec un autre jeu de features (plusieurs minutes perdues). Ordres de grandeur mesurés : compilation complète de Bevy ≈ 13 min, premier `cargo lint` ≈ 2,5 min, recompilation du jeu seul quelques secondes. Lance les compilations longues en arrière-plan.
 
@@ -114,6 +115,11 @@ Le jeu lit des variables d'environnement (`crates/sh_game/src/dev.rs`) :
 | `SH_START=<vue>[:<lieu>]` | Démarre directement dans une vue : `galaxy`, `global:<lieu>` (ex. `global:hexis`), `sector:<lieu>` (ex. `sector:test`) ; `new` = nouvelle partie, exactement comme le bouton du menu (aux commandes, système du départ) ; `menu` = menu principal. Lieu inconnu = arrêt en erreur |
 | `SH_PRESET=<préréglage>` | Préréglage graphique : `low`, `medium` (défaut) ou `high` |
 | `SH_WINDOW=<L>x<H>` / `fullscreen` | Taille de la fenêtre (défaut 1600×900), ou plein écran sans bordure : les mesures de la machine de référence se font en `fullscreen` (1080p) |
+| `SH_GPU_TIMINGS=1` | Temps GPU moyen de chaque passe de rendu, journalisé à la sortie (à comparer entre deux réglages : sur l'UHD 770, certaines passes comptent aussi des attentes) |
+| `SH_USER_DIR=<dossier>` | Dossier des sauvegardes et réglages. Sans lui, l'autopilote utilise `target/autopilot-user` : jamais le dossier du joueur. Les réglages du joueur ne sont pas lus quand l'autopilote pilote |
+| `SH_AUDIO=1`, `SH_TIPS=1` | L'autopilote est muet et sans conseils par défaut (il tourne pendant que l'auteur travaille ; captures propres) |
+| `SH_KEYS=KeyE:KeyF,…` | Remappage imposé (vérification des touches et des aides) |
+| `SH_PAUSE=1` / `load`, `SH_OPTIONS=1` / `keys`, `SH_TERMINAL=codex` / `fiche` / `journal` | Ouvre le menu de pause (ou sa liste de sauvegardes), les options (ou les touches) au menu principal, un écran du terminal : captures |
 | `SH_SHOW_FPS=1` | Garde l'affichage FPS pendant une capture (masqué par défaut pour des images propres ; feature `dev`) |
 | `SH_GPU_CLUSTERING=1` | Réactive le clustering GPU des lumières (cassé sur UHD 770, voir §4) |
 | `SH_BAKED_LIGHTING=0` | Ignore les lightmaps : éclairage des intérieurs entièrement dynamique (comparaisons de performance) |
@@ -122,6 +128,7 @@ Le jeu lit des variables d'environnement (`crates/sh_game/src/dev.rs`) :
 | `SH_ARRIVAL=<objet>,<distance>` | Vue Globale : arrivée près d'un autre objet (station, structure, astre), à cette distance en mètres |
 | `SH_SCENARIO=walk_ship` | Parcours scripté du vaisseau du joueur (sas → cockpit), avec mesure du temps de frame |
 | `SH_SCENARIO=menu_return` | Avec `SH_START=new` : Échap vers le menu principal, puis « Nouvelle partie », qui doit repartir de zéro (une partie quittée est effacée, `state::forget_game`) |
+| `SH_SCENARIO=save_load` | Avec `SH_USER_DIR` et `SH_START=new` (en vol) ou `sector:hexis_spaceport` (à quai) : sauvegarder, tout changer (argent, position du vaisseau), recharger, retrouver argent, date, vue et pose. `SH_START=load:<fichier>` démarre sur une sauvegarde |
 | `SH_DAYS=N` | La partie commence N jours après le jour 1 de 425at ; le monde vivant rattrape (captures des nouvelles, des flottes connues) |
 | `SH_ROUTE=<système>`, `SH_HOVER=<système>` | Vue Galaxie : itinéraire posé depuis la position du vaisseau, survol simulé (captures du panneau et de l'infobulle) |
 | `SH_SCENARIO=voyage` | Avec `SH_START=global:hexis` : Hexis → Cygnara par Portail, retour par hyperespace, durées vérifiées (critère de M3) |
@@ -183,6 +190,10 @@ Pièges rencontrés dans ce dépôt (M0) :
 - **Lightmaps (M1)** : composant `bevy::pbr::Lightmap { image, .. }` sur chaque entité maillage qui a un 2e jeu d'UV (`Mesh::ATTRIBUTE_UV_1`, TEXCOORD_1 du glTF : il faut donc aussi un TEXCOORD_0) ; la valeur lue est multipliée par `StandardMaterial::lightmap_exposure` puis par la couleur diffuse. `PointLight::affects_lightmapped_mesh_diffuse: false` évite de compter deux fois la lumière cuite (le spéculaire reste dynamique) ; `GlobalAmbientLight::affects_lightmapped_meshes` idem pour l'ambiante. Le chargeur EXR de Bevy produit du `Rgba32Float` (non filtrable sur tous les GPU) : les lightmaps sont des **PNG sRGB normalisés** (`tools/blender/lightmap.py`).
 - **avian3d 0.8** : `MoveAndSlide` (paramètre système) fait le « collide and slide » d'un contrôleur cinématique ; dans `ShapeHitData`, `normal1` est la normale de la surface touchée. Un collider sans corps rigide s'attache au `RigidBody` ancêtre le plus proche.
 - **Fenêtre sans focus bridée à 60 Hz (mesures de M6)** : le réglage par défaut (`WinitSettings::game()`) ralentit la boucle quand la fenêtre n'a pas le focus, ce qui est le cas d'une fenêtre lancée par un agent. Les frames rapides étaient alors comptées ≈ 16,7 ms (« calé sur 60 Hz ») et le vrai coût était masqué. L'autopilote passe en `WinitSettings::continuous()` dès qu'une de ses variables est posée (`dev.rs`).
+- **Conditions d'un groupe chaîné (M7)** : `(a, b, c).chain().run_if(cond)` évalue `cond` **une fois**, avant `a`. Si une ressource disparaît en cours de groupe (commandes appliquées entre deux systèmes), les suivants plantent faute de ressource. D'où l'effacement d'une partie dans `OnExit(AppState::InGame)` (`state::forget_game`), hors d'`Update`.
+- **Liaisons de `bevy_enhanced_input` (M7)** : `Binding` est un composant **immuable** sur une entité de liaison (relation `BindingOf`) ; on remappe en réinsérant un `Binding` neuf (`options::apply_keys`).
+- **Coût des lumières sur l'UHD 770 (M7)** : la passe opaque évalue toutes les `PointLight` de la grappe, par pixel ; une dizaine de lumières de cellule y coûtait 15 ms en 1080p. Dans une cellule à lightmap, elles ne servent qu'aux reflets : `baked_cell_lights` les supprime en Bas et Moyen. Le filtrage d'ombre `Gaussian` (9 lectures) coûte nettement plus que `Hardware2x2`. Une prépasse de profondeur **ralentit** (pas de surcharge à éviter). Les lumières ne filtrent pas par maillage (`RenderLayers` par vue seulement) : sans ombres, le soleil traverse les parois.
+- **Son (M7)** : Bevy ne lit par défaut que l'OGG Vorbis ; la feature `wav` (lecteur `hound`) est activée pour les sons générés par `tools/sh_audio`. Le volume d'une boucle passe par son `AudioSink` (`AudioSinkPlayback::set_volume`).
 
 Quand une API te surprend, cherche un exemple : `rg -l "NomDeLApi" .reference/bevy-0.20.1/examples`.
 
@@ -208,6 +219,8 @@ tools/
   fonts/                   conversion de la police Inter (fournie avec Blender) en TTF
   check.ps1 / check.sh     vérification complète (Windows / Linux) : fmt --check, lint, tests, import à jour, fumée de chaque SH_START
   perf.ps1 / perf.sh       mesures de performance en release : scénarios des critères, résumé dans target/perf/
+  package.ps1 / package.sh build distribuable, assets et notice (package/LISEZMOI.txt) dans une archive
+  sh_audio/                sons du jeu (WAV) par synthèse déterministe, sans échantillon extérieur
   setup-linux.sh           installation d'un poste Linux (paquets, LFS, sources de Bevy, addon MCP)
 assets/
   data/canon/              données transcrites du canon (chaque entrée cite sa section source)
@@ -219,7 +232,7 @@ art/                       sources .blend (LFS), même arborescence que assets/m
 docs/                      conception, feuille de route, registres
 ```
 
-État après M1 : tout ce qui précède existe (`tools/blender/`, `art/` et `assets/models/` depuis M1 ; lightmaps dans `assets/textures/lightmaps/`). Modules de `sh_game` : `state` (états), `loading`, `data`, `clock` (horloge du monde), `ui` (thème, menu, HUD, bandeau de pilotage), `input` (contextes), `views` (Galaxie : carte ; Globale : système à l'échelle, ciel, astres, cache procédural ; Sectorielle de test), `space` (origine flottante, référentiel du vaisseau), `sector` (secteurs, streaming, portes, glTF), `player` (à pied), `interaction`, `ship` (pilotage), `transition` (amarrage, départ, voyage), `voyage` (carte, itinéraires), `living` (pont avec `sh_sim` : nouvelles, marchés, connaissance du joueur), `career` (fiche du capitaine, échéances, livraison en orbite, épaves), `ui::terminal` (dialogues, contrats, marché, fiche, journal, chantier), `combat` (raids, `combat::space` : coques, tirs, IA de pilotes ; `combat::foot` : armes portatives, PNJ à couvert), `ui::combat_hud`, `graphics`, `dev` (autopilote, scénarios), `dev_tools` (feature `dev`). `sh_sim` : `world` (monde vivant, `SimCommand`), `events`, `travel`, `career` (capitaine, contrats, réputations, grades, dette), `combat` (coques à sections, impacts, raids). `sh_data` : `dialogue` (dialogues en données).
+État après M1 : tout ce qui précède existe (`tools/blender/`, `art/` et `assets/models/` depuis M1 ; lightmaps dans `assets/textures/lightmaps/`). Modules de `sh_game` : `state` (états), `loading`, `data`, `clock` (horloge du monde), `ui` (thème, menu, HUD, bandeau de pilotage), `input` (contextes), `views` (Galaxie : carte ; Globale : système à l'échelle, ciel, astres, cache procédural ; Sectorielle de test), `space` (origine flottante, référentiel du vaisseau), `sector` (secteurs, streaming, portes, glTF), `player` (à pied), `interaction`, `ship` (pilotage), `transition` (amarrage, départ, voyage), `voyage` (carte, itinéraires), `living` (pont avec `sh_sim` : nouvelles, marchés, connaissance du joueur), `career` (fiche du capitaine, échéances, livraison en orbite, épaves), `ui::terminal` (dialogues, contrats, marché, fiche, journal, chantier), `combat` (raids, `combat::space` : coques, tirs, IA de pilotes ; `combat::foot` : armes portatives, PNJ à couvert), `ui::combat_hud`, `graphics`, `dev` (autopilote, scénarios), `dev_tools` (feature `dev`), et depuis M7 : `save` (sauvegardes versionnées, Homme de fer), `options` (réglages du joueur, remappage), `audio` (musiques, ambiances, effets observés), `codex` (fiches publiques découvertes), `tips` (conseils de première fois), `ui::pause`, `ui::options`. `sh_sim` : `world` (monde vivant, `SimCommand`), `events`, `travel`, `career` (capitaine, contrats, réputations, grades, dette), `combat` (coques à sections, impacts, raids). `sh_data` : `dialogue` (dialogues en données).
 
 ### 5.2 Règles de dépendance
 
