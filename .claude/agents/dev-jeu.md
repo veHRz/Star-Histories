@@ -27,8 +27,11 @@ identifiants en anglais.
   une ressource propre à une partie s'efface dans `state::forget_game`.
 - **Compilation seulement** : tu peux lancer `cargo lint` (alias du dépôt, jamais `cargo build`
   ou `cargo test` sans la feature `dev`, qui recompileraient tout Bevy). Tu ne lances **pas**
-  `cargo t`, ni le jeu, ni `tools/check.*`, ni `tools/perf.*` : l'orchestrateur teste tout à la fin.
-  Si `cargo lint` attend le verrou du dossier `target/`, patiente : un autre travail compile.
+  `cargo t`, ni le jeu (`cargo dev`), ni `tools/check.*`, ni `tools/perf.*` : l'orchestrateur
+  teste tout à la fin. Si `cargo lint` attend le verrou du dossier `target/`, patiente : un autre
+  travail compile.
+- Sous Windows, l'outil PowerShell est Windows PowerShell 5.1 : pas de `&&` (utilise `;`) ; si
+  `cargo` est introuvable, ajoute `$env:USERPROFILE\.cargo\bin` au `PATH`.
 - **Pas de `git`.** L'orchestrateur commite après revue.
 - Si ton lot mérite un scénario d'autopilote (`crates/sh_game/src/dev.rs`) pour être prouvé,
   écris-le si l'orchestrateur te l'a attribué, sinon décris-le précisément.

@@ -28,6 +28,13 @@ français (commentaires, rapports), identifiants de code en anglais.
   - Linux : `blender --background --factory-startup --python <script> -- <args>`
   N'utilise **pas** le Blender ouvert ni le MCP (une seule instance pour tout le monde). Lance les
   traitements longs (bakes) en arrière-plan et attends-les sans scruter en boucle.
+  - Sous Windows, l'outil PowerShell est Windows PowerShell 5.1 : pas de `&&` (utilise `;` ou
+    `if ($?) { … }`) ; l'outil Bash est Git Bash. Pas de Python système : pour un utilitaire, le
+    Python de Blender (`--python-expr`, numpy y est disponible).
+  - **Un seul bake Cycles à la fois dans ton lot** (au plus deux sur la machine, tous lots
+    confondus) ; `SH_BAKE_SAMPLES=64` pendant l'itération.
+  - Redirige la sortie de Blender vers un fichier journal dans `target/art-previews/<ton lot>/`
+    et lis-en la fin : la console de Blender est bavarde.
 - **Pas de tests du jeu** : tu ne lances ni `cargo`, ni le jeu, ni `tools/check.*`, ni
   `tools/perf.*`. L'orchestrateur intègre et teste tout à la fin de la vague.
 - **Pas de `git`** (ni commit, ni add, ni checkout) : l'orchestrateur commite après revue.
@@ -38,6 +45,11 @@ français (commentaires, rapports), identifiants de code en anglais.
   (couleur sRGB, normale, ORM) avant l'export ; le glTF n'exporte pas les nœuds procéduraux.
   Textures 1K par défaut, 2K pour les pièces maîtresses. UV0 pour les textures, le 2e jeu d'UV
   (`lightmap`) reste aux lightmaps.
+- **Contrat de nommage des textures** (relu par le jeu) : `<matériau>_color.png` et
+  `<matériau>_emissive.png` sont chargées en sRGB, `<matériau>_normal.png` (espace tangent,
+  convention OpenGL comme le glTF) et `<matériau>_orm.png` (R occlusion, G rugosité, B métal) en
+  linéaire. Les textures partagées vivent dans `assets/textures/materials/` et les modèles les
+  référencent par chemin relatif (glTF séparé), sans copie.
 - **Conventions du jeu intactes** : `_col` (pavés simples), `LIGHT_`, `INTERACT_`, `SOCKET_`,
   `CELL_`, `PORTAL_`, `SPAWN_`, grille de 2 m, dimensions des portes et des cellules : collisions,
   portes et scénarios de l'autopilote ne doivent pas bouger.
