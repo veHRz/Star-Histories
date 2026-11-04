@@ -323,7 +323,7 @@ pub fn spawn_fighter(
         ChildOf(entity),
         FighterModel,
         WorldAssetRoot(
-            asset_server.load(GltfAssetLabel::Scene(0).from_asset("models/characters/pirate.glb")),
+            asset_server.load(GltfAssetLabel::Scene(0).from_asset("models/characters/pirate.gltf")),
         ),
         Transform::default(),
     ));
