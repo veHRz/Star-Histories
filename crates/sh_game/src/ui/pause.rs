@@ -2,6 +2,9 @@
 //! principal. Le temps du jeu est suspendu (`Time<Virtual>`) : horloge du monde, physique,
 //! combats. Il se ferme au relâchement d'Échap, comme le terminal : le contexte rendu ne voit
 //! pas la touche encore enfoncée.
+//!
+//! Habillage (M8) : voile sombre sur la vue figée, équerres aux coins, titre en capitales sur
+//! un filet, boutons dans le même panneau à pans coupés que le menu principal.
 
 use bevy::prelude::*;
 use bevy::ui::InteractionDisabled;
@@ -15,10 +18,10 @@ use crate::input::Pause;
 use crate::save::{GameMode, SaveKind, list_saves, save_now};
 use crate::state::{AppState, ControlMode};
 use crate::transition::Sequence;
-use crate::ui::menu::spawn_save_list;
+use crate::ui::menu::{panel_node, spawn_save_list};
 use crate::ui::options::OptionsScreen;
 use crate::ui::terminal::Terminal;
-use crate::ui::theme::{self, UiFonts, menu_button};
+use crate::ui::theme::{self, Frame, UiFonts, menu_button};
 
 pub struct PausePlugin;
 
@@ -233,45 +236,48 @@ fn render(
                 align_items: AlignItems::Center,
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.02, 0.025, 0.035, 0.82)),
+            // Voile sombre : la vue reste devinée derrière, le jeu est figé.
+            BackgroundColor(Color::srgba(0.015, 0.018, 0.024, 0.80)),
         ))
         .id();
     let screen = paused.screen;
     commands.entity(root).with_children(|menu| {
+        theme::spawn_corner_marks(menu, 28.0, 44.0, theme::SCREEN_DIM);
         let title = match screen {
             PauseScreen::Main => "pause.title",
             PauseScreen::Load => "menu.load",
         };
-        menu.spawn((
-            Text::new(texts.get(title)),
-            fonts.title(40.0),
-            TextColor(theme::TEXT),
-            Node {
-                margin: UiRect::bottom(px(24)),
-                ..default()
-            },
+        menu.spawn(theme::heading(&fonts, &texts.get(title), 40.0, theme::TEXT));
+        menu.spawn(theme::rule(
+            px(420),
+            UiRect::new(px(0), px(0), px(12), px(22)),
         ));
+        let mut panel = menu.spawn((panel_node(UiRect::ZERO), fonts.frame(Frame::Panel)));
         match screen {
             PauseScreen::Main => {
                 let free_saves = !mode.ironman;
-                for (key, action, enabled) in [
-                    ("pause.resume", PauseAction::Resume, true),
-                    ("pause.save", PauseAction::Save, free_saves),
-                    ("pause.load", PauseAction::Load, free_saves),
-                    ("menu.options", PauseAction::Options, true),
-                    ("pause.quit", PauseAction::Quit, true),
-                ] {
-                    let mut button =
-                        menu.spawn(menu_button(&fonts, texts.get(key), action, enabled));
-                    if !enabled {
-                        button.insert(InteractionDisabled);
+                panel.with_children(|panel| {
+                    for (key, action, enabled) in [
+                        ("pause.resume", PauseAction::Resume, true),
+                        ("pause.save", PauseAction::Save, free_saves),
+                        ("pause.load", PauseAction::Load, free_saves),
+                        ("menu.options", PauseAction::Options, true),
+                        ("pause.quit", PauseAction::Quit, true),
+                    ] {
+                        let mut button =
+                            panel.spawn(menu_button(&fonts, texts.get(key), action, enabled));
+                        if !enabled {
+                            button.insert(InteractionDisabled);
+                        }
                     }
-                }
+                });
                 let hint = if mode.ironman {
                     "pause.hint_ironman"
                 } else {
                     "pause.hint"
                 };
+                // Sous le panneau, hors du cadre : la consigne est longue et ne doit pas
+                // l'élargir.
                 menu.spawn((
                     Text::new(texts.get(hint)),
                     fonts.body(16.0),
@@ -283,13 +289,25 @@ fn render(
                 ));
             }
             PauseScreen::Load => {
-                spawn_save_list(menu, &texts, &data, &fonts, &list_saves());
-                menu.spawn(menu_button(
-                    &fonts,
-                    texts.get("menu.back"),
-                    PauseAction::Back,
-                    true,
-                ));
+                panel.with_children(|panel| {
+                    spawn_save_list(panel, &texts, &data, &fonts, &list_saves());
+                    panel
+                        .spawn(menu_button(
+                            &fonts,
+                            texts.get("menu.back"),
+                            PauseAction::Back,
+                            true,
+                        ))
+                        .insert(Node {
+                            width: px(400),
+                            height: px(52),
+                            margin: UiRect::top(px(20)),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            padding: UiRect::horizontal(px(18)),
+                            ..default()
+                        });
+                });
             }
         }
     });

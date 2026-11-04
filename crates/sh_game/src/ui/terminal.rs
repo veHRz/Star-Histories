@@ -6,6 +6,9 @@
 //! choix à la souris ou aux touches 1 à 9, Échap pour fermer. Le contenu d'un écran est une
 //! [`Page`] calculée sans `World` ([`page`]) ; l'autopilote choisit par l'action, pas par le
 //! texte ([`TerminalChoice`]).
+//!
+//! Habillage (M8) : un panneau d'appareil à pans coupés (`theme::Frame::Panel`), titre sur un
+//! filet, voyants, choix en boutons à languette, numéros de touche à chasse fixe.
 
 use bevy::picking::events::{PointerOut, PointerOver};
 use bevy::prelude::*;
@@ -28,7 +31,7 @@ use crate::input::{Back, OpenCodex, OpenJournal, OpenSheet};
 use crate::living::{LivingWorld, PlayerKnowledge, display_name, latest_news};
 use crate::state::{AppState, ControlMode, ViewLevel};
 use crate::ui::hud::Notice;
-use crate::ui::theme::{self, UiFonts};
+use crate::ui::theme::{self, Frame, UiFonts};
 use crate::voyage::Location;
 
 pub struct TerminalPlugin;
@@ -1078,6 +1081,10 @@ struct TerminalUi;
 #[derive(Component, Clone, Copy)]
 struct ChoiceButton(usize);
 
+/// Un choix grisé : il ne s'allume pas au survol.
+#[derive(Component)]
+struct DisabledChoice;
+
 #[allow(clippy::too_many_arguments)]
 fn render(
     mut commands: Commands,
@@ -1138,78 +1145,156 @@ fn render(
                 padding: UiRect::top(percent(7)),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.35)),
+            // Voile léger : la console et la pièce restent visibles autour du panneau.
+            BackgroundColor(theme::OVERLAY.with_alpha(0.42)),
         ))
         .id();
     let panel = commands
         .spawn((
             ChildOf(root),
             Node {
-                width: px(820),
+                width: px(860),
                 max_width: percent(94),
                 max_height: percent(58),
                 flex_direction: FlexDirection::Column,
-                padding: UiRect::all(px(20)),
+                // Retrait sur les quatre côtés : les filets, la coupe ambre (en haut à gauche) et
+                // la coupe du bas à droite restent dégagés, consigne comprise.
+                padding: UiRect::new(
+                    px(Frame::Panel.inner() + 8.0),
+                    px(Frame::Panel.inner() + 4.0),
+                    px(Frame::Panel.inner()),
+                    px(Frame::Panel.inner()),
+                ),
                 row_gap: px(6),
-                overflow: Overflow::clip_y(),
-                border: UiRect::all(px(1)),
+                overflow: Overflow::clip(),
                 ..default()
             },
-            BorderColor::all(theme::BUTTON_BORDER),
-            BackgroundColor(theme::PANEL),
+            fonts.frame(Frame::Panel),
         ))
         .id();
+    // En-tête : le titre de l'écran (sa casse : noms canon, dates), les voyants de l'appareil.
     commands.spawn((
         ChildOf(panel),
-        Text::new(fresh.title.clone()),
-        fonts.title(24.0),
-        TextColor(theme::ACCENT),
+        Node {
+            flex_direction: FlexDirection::Row,
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::SpaceBetween,
+            column_gap: px(16),
+            flex_shrink: 0.0,
+            ..default()
+        },
+        children![
+            (
+                Text::new(fresh.title.clone()),
+                fonts.title(24.0),
+                TextColor(theme::ACCENT),
+            ),
+            theme::status_lights(),
+        ],
     ));
     commands.spawn((
         ChildOf(panel),
+        theme::rule(percent(100), UiRect::new(px(0), px(0), px(2), px(6))),
+    ));
+    // Le corps et les choix : la seule partie qui rétrécit (et se coupe) quand la page dépasse
+    // la hauteur permise ; l'en-tête et la consigne restent toujours entiers dans le cadre.
+    let content = commands
+        .spawn((
+            ChildOf(panel),
+            Node {
+                flex_direction: FlexDirection::Column,
+                row_gap: px(6),
+                flex_shrink: 1.0,
+                min_height: px(0),
+                overflow: Overflow::clip_y(),
+                ..default()
+            },
+        ))
+        .id();
+    commands.spawn((
+        ChildOf(content),
         Text::new(fresh.body.clone()),
         fonts.body(16.0),
         TextColor(theme::TEXT),
         Node {
             margin: UiRect::bottom(px(8)),
+            flex_shrink: 0.0,
             ..default()
         },
     ));
     for (i, c) in fresh.choices.iter().enumerate() {
-        let color = if c.enabled {
-            theme::TEXT
+        let (color, number_color) = if c.enabled {
+            (theme::TEXT, theme::ACCENT)
         } else {
-            theme::TEXT_DISABLED
+            (theme::TEXT_DISABLED, theme::TEXT_DISABLED)
         };
+        // Le numéro de la touche, à chasse fixe dans une colonne : les libellés s'alignent.
         let number = if i < DIGITS.len() {
-            format!("{}. ", i + 1)
+            (i + 1).to_string()
         } else {
             String::new()
         };
-        commands.spawn((
-            ChildOf(panel),
+        let mut frame = fonts.frame(Frame::Button);
+        if !c.enabled {
+            frame.color = Color::srgba(1.0, 1.0, 1.0, 0.45);
+        }
+        let mut row = commands.spawn((
+            ChildOf(content),
             Button,
             ActivateOnPress,
             ChoiceButton(i),
             Node {
-                padding: UiRect::axes(px(12), px(5)),
-                border: UiRect::all(px(1)),
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                column_gap: px(10),
+                // À gauche : la languette du cadre.
+                padding: UiRect::new(px(16), px(12), px(6), px(6)),
+                flex_shrink: 0.0,
                 ..default()
             },
-            BorderColor::all(theme::BUTTON_BORDER),
-            BackgroundColor(theme::BUTTON),
-            children![(
-                Text::new(format!("{number}{}", c.label)),
-                fonts.body(16.0),
-                TextColor(color)
-            )],
+            frame,
+            children![
+                (
+                    Text::new(number),
+                    fonts.mono(16.0),
+                    TextColor(number_color),
+                    Node {
+                        min_width: px(14),
+                        ..default()
+                    },
+                ),
+                (
+                    Text::new(c.label.clone()),
+                    fonts.body(16.0),
+                    TextColor(color)
+                ),
+            ],
         ));
+        if !c.enabled {
+            // Un choix grisé reste cliquable (la page explique le refus) mais ne s'allume pas.
+            row.insert(DisabledChoice);
+        }
     }
     commands.spawn((
         ChildOf(panel),
+        Node {
+            width: percent(100),
+            height: px(1),
+            margin: UiRect::top(px(6)),
+            flex_shrink: 0.0,
+            ..default()
+        },
+        BackgroundColor(theme::RULE),
+    ));
+    commands.spawn((
+        ChildOf(panel),
         Text::new(texts.get("terminal.hint")),
-        fonts.body(13.0),
+        fonts.body(14.0),
         TextColor(theme::TEXT_DIM),
+        Node {
+            flex_shrink: 0.0,
+            ..default()
+        },
     ));
     term.page = Some(fresh);
 }
@@ -1224,14 +1309,25 @@ fn on_choice_button(
     }
 }
 
-fn on_hover(event: On<PointerOver>, mut buttons: Query<&mut BackgroundColor, With<ChoiceButton>>) {
-    if let Ok(mut color) = buttons.get_mut(event.entity) {
-        *color = theme::BUTTON_HOVER.into();
+fn on_hover(
+    event: On<PointerOver>,
+    fonts: Res<UiFonts>,
+    mut buttons: Query<
+        (Option<&mut ImageNode>, Option<&mut BackgroundColor>),
+        (With<ChoiceButton>, Without<DisabledChoice>),
+    >,
+) {
+    if let Ok((image, background)) = buttons.get_mut(event.entity) {
+        theme::set_hovered(&fonts, true, image, background);
     }
 }
 
-fn on_unhover(event: On<PointerOut>, mut buttons: Query<&mut BackgroundColor, With<ChoiceButton>>) {
-    if let Ok(mut color) = buttons.get_mut(event.entity) {
-        *color = theme::BUTTON.into();
+fn on_unhover(
+    event: On<PointerOut>,
+    fonts: Res<UiFonts>,
+    mut buttons: Query<(Option<&mut ImageNode>, Option<&mut BackgroundColor>), With<ChoiceButton>>,
+) {
+    if let Ok((image, background)) = buttons.get_mut(event.entity) {
+        theme::set_hovered(&fonts, false, image, background);
     }
 }

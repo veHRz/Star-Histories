@@ -1,17 +1,21 @@
 //! Menu principal : Continuer (la dernière sauvegarde), Nouvelle partie (libre ou Homme de
 //! fer), Charger, Options, Quitter. La liste des sauvegardes sert aussi au menu de pause.
+//!
+//! Habillage (M8) : écran d'appareil (équerres aux coins, vignette), titre en capitales
+//! espacées sur un filet, boutons dans un panneau à pans coupés (`theme`).
 
 use std::path::PathBuf;
 
 use bevy::picking::events::{PointerOut, PointerOver};
 use bevy::prelude::*;
+use bevy::text::LetterSpacing;
 use bevy::ui::InteractionDisabled;
 use bevy::ui_widgets::Activate;
 
 use crate::data::{Data, Texts};
 use crate::save::{GameMode, SaveEntry, list_saves, request_load};
 use crate::state::{AppState, CurrentPlace, EnterGame, ViewLevel};
-use crate::ui::theme::{self, MenuButton, UiFonts, menu_button};
+use crate::ui::theme::{self, Frame, MenuButton, UiFonts, menu_button};
 
 pub struct MenuPlugin;
 
@@ -54,6 +58,10 @@ pub struct LoadButton(pub PathBuf);
 /// Sauvegardes affichées au plus dans une liste.
 const SAVES_SHOWN: usize = 8;
 
+/// Équerres des écrans pleins : retrait depuis le bord, longueur des branches.
+const CORNER_INSET: f32 = 28.0;
+const CORNER_LENGTH: f32 = 44.0;
+
 fn spawn_main_menu(mut commands: Commands, texts: Res<Texts>, fonts: Res<UiFonts>) {
     let has_save = !list_saves().is_empty();
     let root = commands
@@ -64,51 +72,74 @@ fn spawn_main_menu(mut commands: Commands, texts: Res<Texts>, fonts: Res<UiFonts
         ))
         .id();
     commands.entity(root).with_children(|menu| {
-        menu.spawn((
-            Text::new(texts.get("app.title")),
-            fonts.title(64.0),
-            TextColor(theme::TEXT),
+        theme::spawn_corner_marks(menu, CORNER_INSET, CORNER_LENGTH, theme::SCREEN_DIM);
+        menu.spawn(theme::heading(
+            &fonts,
+            &texts.get("app.title"),
+            64.0,
+            theme::TEXT,
         ));
+        menu.spawn(theme::rule(
+            px(520),
+            UiRect::new(px(0), px(0), px(14), px(12)),
+        ));
+        // L'accroche garde sa casse (« 425at » est une notation canon) : seulement espacée.
         menu.spawn((
             Text::new(texts.get("menu.tagline")),
             fonts.body(18.0),
+            LetterSpacing::Px(3.0),
             TextColor(theme::ACCENT),
-            Node {
-                margin: UiRect::bottom(px(48)),
-                ..default()
-            },
         ));
-        let mut continue_button = menu.spawn(menu_button(
-            &fonts,
-            texts.get("menu.continue"),
-            MenuAction::Continue,
-            has_save,
-        ));
-        if !has_save {
-            continue_button.insert(InteractionDisabled);
-        }
-        for (key, action) in [
-            ("menu.new_game", MenuAction::NewGame),
-            ("menu.new_game_ironman", MenuAction::NewGameIronman),
-        ] {
-            menu.spawn(menu_button(&fonts, texts.get(key), action, true));
-        }
-        let mut load_button = menu.spawn(menu_button(
-            &fonts,
-            texts.get("menu.load"),
-            MenuAction::Load,
-            has_save,
-        ));
-        if !has_save {
-            load_button.insert(InteractionDisabled);
-        }
-        for (key, action) in [
-            ("menu.options", MenuAction::Options),
-            ("menu.quit", MenuAction::Quit),
-        ] {
-            menu.spawn(menu_button(&fonts, texts.get(key), action, true));
-        }
+        menu.spawn((
+            Name::new("Commandes"),
+            panel_node(UiRect::top(px(44))),
+            fonts.frame(Frame::Panel),
+        ))
+        .with_children(|panel| {
+            let mut continue_button = panel.spawn(menu_button(
+                &fonts,
+                texts.get("menu.continue"),
+                MenuAction::Continue,
+                has_save,
+            ));
+            if !has_save {
+                continue_button.insert(InteractionDisabled);
+            }
+            for (key, action) in [
+                ("menu.new_game", MenuAction::NewGame),
+                ("menu.new_game_ironman", MenuAction::NewGameIronman),
+            ] {
+                panel.spawn(menu_button(&fonts, texts.get(key), action, true));
+            }
+            let mut load_button = panel.spawn(menu_button(
+                &fonts,
+                texts.get("menu.load"),
+                MenuAction::Load,
+                has_save,
+            ));
+            if !has_save {
+                load_button.insert(InteractionDisabled);
+            }
+            for (key, action) in [
+                ("menu.options", MenuAction::Options),
+                ("menu.quit", MenuAction::Quit),
+            ] {
+                panel.spawn(menu_button(&fonts, texts.get(key), action, true));
+            }
+        });
     });
+}
+
+/// Le nœud d'un panneau de menu (cadre `Frame::Panel` à poser avec) : colonne centrée, marges
+/// intérieures assez larges pour laisser voir la coupe ambre et les rivets.
+pub fn panel_node(margin: UiRect) -> Node {
+    Node {
+        flex_direction: FlexDirection::Column,
+        align_items: AlignItems::Center,
+        padding: UiRect::axes(px(30), px(24)),
+        margin,
+        ..default()
+    }
 }
 
 /// La liste des sauvegardes, la plus récente en premier.
@@ -124,6 +155,10 @@ pub fn spawn_save_list(
             Text::new(texts.get("menu.load.empty")),
             fonts.body(18.0),
             TextColor(theme::TEXT_DIM),
+            Node {
+                margin: UiRect::vertical(px(12)),
+                ..default()
+            },
         ));
     }
     for entry in saves.iter().take(SAVES_SHOWN) {
@@ -140,7 +175,7 @@ pub fn spawn_save_list(
                 margin: UiRect::vertical(px(4)),
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
-                border: UiRect::all(px(1)),
+                padding: UiRect::horizontal(px(18)),
                 ..default()
             });
     }
@@ -161,31 +196,37 @@ fn spawn_load_screen(
         ))
         .id();
     commands.entity(root).with_children(|menu| {
-        menu.spawn((
-            Text::new(texts.get("menu.load")),
-            fonts.title(40.0),
-            TextColor(theme::TEXT),
-            Node {
-                margin: UiRect::bottom(px(24)),
-                ..default()
-            },
-        ));
-        spawn_save_list(menu, &texts, &data, &fonts, &saves);
-        menu.spawn(menu_button(
+        theme::spawn_corner_marks(menu, CORNER_INSET, CORNER_LENGTH, theme::SCREEN_DIM);
+        menu.spawn(theme::heading(
             &fonts,
-            texts.get("menu.back"),
-            MenuAction::Back,
-            true,
-        ))
-        .insert(Node {
-            width: px(400),
-            height: px(52),
-            margin: UiRect::top(px(24)),
-            justify_content: JustifyContent::Center,
-            align_items: AlignItems::Center,
-            border: UiRect::all(px(1)),
-            ..default()
-        });
+            &texts.get("menu.load"),
+            40.0,
+            theme::TEXT,
+        ));
+        menu.spawn(theme::rule(
+            px(420),
+            UiRect::new(px(0), px(0), px(12), px(22)),
+        ));
+        menu.spawn((panel_node(UiRect::ZERO), fonts.frame(Frame::Panel)))
+            .with_children(|panel| {
+                spawn_save_list(panel, &texts, &data, &fonts, &saves);
+                panel
+                    .spawn(menu_button(
+                        &fonts,
+                        texts.get("menu.back"),
+                        MenuAction::Back,
+                        true,
+                    ))
+                    .insert(Node {
+                        width: px(400),
+                        height: px(52),
+                        margin: UiRect::top(px(20)),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        padding: UiRect::horizontal(px(18)),
+                        ..default()
+                    });
+            });
     });
 }
 
@@ -231,17 +272,26 @@ fn on_load_button(event: On<Activate>, mut commands: Commands, buttons: Query<&L
     }
 }
 
+/// Survol de tout bouton de menu (menus, pause, options) : cadre allumé ou fond d'accent.
 fn on_hover(
     event: On<PointerOver>,
-    mut buttons: Query<&mut BackgroundColor, (With<MenuButton>, Without<InteractionDisabled>)>,
+    fonts: Res<UiFonts>,
+    mut buttons: Query<
+        (Option<&mut ImageNode>, Option<&mut BackgroundColor>),
+        (With<MenuButton>, Without<InteractionDisabled>),
+    >,
 ) {
-    if let Ok(mut color) = buttons.get_mut(event.entity) {
-        *color = theme::BUTTON_HOVER.into();
+    if let Ok((image, background)) = buttons.get_mut(event.entity) {
+        theme::set_hovered(&fonts, true, image, background);
     }
 }
 
-fn on_unhover(event: On<PointerOut>, mut buttons: Query<&mut BackgroundColor, With<MenuButton>>) {
-    if let Ok(mut color) = buttons.get_mut(event.entity) {
-        *color = theme::BUTTON.into();
+fn on_unhover(
+    event: On<PointerOut>,
+    fonts: Res<UiFonts>,
+    mut buttons: Query<(Option<&mut ImageNode>, Option<&mut BackgroundColor>), With<MenuButton>>,
+) {
+    if let Ok((image, background)) = buttons.get_mut(event.entity) {
+        theme::set_hovered(&fonts, false, image, background);
     }
 }

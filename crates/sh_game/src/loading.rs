@@ -1,5 +1,6 @@
 //! Démarrage et chargement : `Boot` prépare l'interface, `Loading` lit et valide les données
-//! sur un fil de calcul, sans bloquer l'affichage de l'écran de chargement.
+//! sur un fil de calcul, sans bloquer l'affichage de l'écran de chargement (titre en capitales,
+//! jauge à curseur ambre qui va et vient : la durée n'est pas mesurable).
 
 use std::sync::Arc;
 
@@ -69,41 +70,92 @@ fn start_loading(mut commands: Commands) {
     commands.insert_resource(LoadTask(task));
 }
 
+/// Les points de suspension animés, dans un segment à chasse fixe : trois caractères toujours
+/// (points puis espaces), le libellé centré ne bouge pas.
 #[derive(Component)]
 struct LoadingDots;
 
+/// Le curseur qui parcourt la jauge (chargement sans progression mesurable : il va et vient).
+#[derive(Component)]
+struct LoadingSweep;
+
+/// Jauge de chargement : largeur de la piste et du curseur, en pixels d'interface.
+const TRACK_WIDTH: f32 = 360.0;
+const SWEEP_WIDTH: f32 = 72.0;
+
 fn spawn_loading_screen(mut commands: Commands, texts: Res<Texts>, fonts: Res<UiFonts>) {
-    commands.spawn((
-        DespawnOnExit(AppState::Loading),
-        theme::fullscreen_backdrop(),
-        children![
-            (
-                Text::new(texts.get("app.title")),
-                fonts.title(48.0),
-                TextColor(theme::TEXT),
-            ),
-            (
-                Text::new(texts.get("loading.title")),
-                fonts.body(20.0),
+    let root = commands
+        .spawn((
+            DespawnOnExit(AppState::Loading),
+            theme::fullscreen_backdrop(),
+        ))
+        .id();
+    commands.entity(root).with_children(|screen| {
+        theme::spawn_corner_marks(screen, 28.0, 44.0, theme::SCREEN_DIM);
+        screen.spawn(theme::heading(
+            &fonts,
+            &texts.get("app.title"),
+            48.0,
+            theme::TEXT,
+        ));
+        screen.spawn(theme::rule(
+            px(TRACK_WIDTH + 80.0),
+            UiRect::new(px(0), px(0), px(14), px(28)),
+        ));
+        screen.spawn((
+            Text::new(theme::caps(&texts.get("loading.title"))),
+            fonts.heading(20.0),
+            TextColor(theme::TEXT_DIM),
+            children![(
+                TextSpan::new("   "),
+                fonts.mono(20.0),
                 TextColor(theme::TEXT_DIM),
                 LoadingDots,
+            )],
+        ));
+        // La piste et son curseur ambre : le curseur glisse par `UiTransform` (pas de
+        // recalcul de la mise en page à chaque image).
+        screen.spawn((
+            Node {
+                width: px(TRACK_WIDTH),
+                height: px(4),
+                margin: UiRect::top(px(14)),
+                overflow: Overflow::clip(),
+                ..default()
+            },
+            BackgroundColor(theme::RULE),
+            children![(
+                LoadingSweep,
                 Node {
-                    margin: UiRect::top(px(24)),
+                    width: px(SWEEP_WIDTH),
+                    height: percent(100),
                     ..default()
                 },
-            ),
-        ],
-    ));
+                BackgroundColor(theme::ACCENT),
+                UiTransform::default(),
+            )],
+        ));
+    });
 }
 
 fn animate_loading_dots(
     time: Res<Time>,
-    texts: Res<Texts>,
-    mut dots: Query<&mut Text, With<LoadingDots>>,
+    mut dots: Query<&mut TextSpan, With<LoadingDots>>,
+    mut sweep: Query<&mut UiTransform, With<LoadingSweep>>,
 ) {
     let count = (time.elapsed_secs() * 3.0) as usize % 4;
+    let wanted = format!("{:<3}", ".".repeat(count));
     for mut text in &mut dots {
-        text.0 = format!("{}{}", texts.get("loading.title"), ".".repeat(count));
+        // Seulement quand le nombre de points change : un texte réécrit est remis en page.
+        if text.0 != wanted {
+            text.0 = wanted.clone();
+        }
+    }
+    // Aller-retour doux sur la piste.
+    let phase = 0.5 - 0.5 * (time.elapsed_secs() * 2.2).cos();
+    let x = phase * (TRACK_WIDTH - SWEEP_WIDTH);
+    for mut transform in &mut sweep {
+        transform.translation = Val2::px(x, 0.0);
     }
 }
 

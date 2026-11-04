@@ -1,4 +1,4 @@
-//! Interface : thème, caméra d'interface, menus.
+//! Interface : thème (polices, cadres « futur usé »), caméra d'interface, menus, HUD.
 
 use bevy::asset::AssetId;
 use bevy::camera::visibility::RenderLayers;
@@ -105,5 +105,7 @@ fn setup_fonts(
     }
     commands.insert_resource(theme::UiFonts {
         title: asset_server.load(theme::FONT_TITLE),
+        mono: asset_server.load(theme::FONT_MONO),
+        skin: theme::UiSkin::load(&asset_server),
     });
 }

@@ -1,5 +1,6 @@
 //! Bandeau de pilotage (GDD §7), visible aux commandes : vitesse, mode de vol, astre le plus
-//! proche. Il remplacera plus tard un affichage diégétique sur les consoles du cockpit.
+//! proche, invite d'amarrage. Habillage (M8) : relevé d'instrument à équerres cyan, chiffres à
+//! chasse fixe. Il remplacera plus tard un affichage diégétique sur les consoles du cockpit.
 
 use bevy::prelude::*;
 
@@ -9,7 +10,7 @@ use crate::ship::{FlightMode, PilotIntent, ShipMotion, SurfaceBody, nearest_surf
 use crate::space::SpacePosition;
 use crate::state::{ControlMode, ViewLevel};
 use crate::transition::DockBeacon;
-use crate::ui::theme::{self, UiFonts};
+use crate::ui::theme::{self, Frame, UiFonts};
 
 pub struct FlightHudPlugin;
 
@@ -37,9 +38,8 @@ enum FlightLine {
 }
 
 fn spawn_flight_hud(mut commands: Commands, fonts: Res<UiFonts>) {
-    let line = |kind: FlightLine, size: f32, color: Color| {
-        (kind, Text::new(""), fonts.body(size), TextColor(color))
-    };
+    // Un relevé d'instrument : vitesse en chiffres à chasse fixe (ils ne dansent pas quand la
+    // valeur change), mode en capitales ambre, distances en cyan d'écran.
     commands.spawn((
         Name::new("Bandeau de pilotage"),
         FlightHud,
@@ -49,18 +49,48 @@ fn spawn_flight_hud(mut commands: Commands, fonts: Res<UiFonts>) {
             position_type: PositionType::Absolute,
             left: percent(50),
             bottom: px(28),
+            min_width: px(280),
             flex_direction: FlexDirection::Column,
             align_items: AlignItems::Center,
-            padding: UiRect::axes(px(18), px(8)),
+            padding: UiRect::new(px(22), px(22), px(10), px(12)),
             ..default()
         },
         UiTransform::from_translation(Val2::percent(-50.0, 0.0)),
-        BackgroundColor(theme::PANEL),
+        fonts.frame(Frame::Readout),
         children![
-            line(FlightLine::Speed, 26.0, theme::TEXT),
-            line(FlightLine::Mode, 15.0, theme::ACCENT),
-            line(FlightLine::Nearest, 14.0, theme::TEXT_DIM),
-            line(FlightLine::Dock, 15.0, theme::TEXT),
+            (
+                FlightLine::Speed,
+                Text::new(""),
+                fonts.mono(28.0),
+                TextColor(theme::TEXT)
+            ),
+            (
+                FlightLine::Mode,
+                Text::new(""),
+                fonts.heading(15.0),
+                TextColor(theme::ACCENT)
+            ),
+            (
+                Node {
+                    width: percent(100),
+                    height: px(1),
+                    margin: UiRect::vertical(px(6)),
+                    ..default()
+                },
+                BackgroundColor(theme::SCREEN_DIM),
+            ),
+            (
+                FlightLine::Nearest,
+                Text::new(""),
+                fonts.mono(15.0),
+                TextColor(theme::SCREEN)
+            ),
+            (
+                FlightLine::Dock,
+                Text::new(""),
+                fonts.body(16.0),
+                TextColor(theme::TEXT)
+            ),
         ],
     ));
 }
@@ -142,10 +172,11 @@ fn update_flight_hud(
                 ],
             )
         });
+    let mode_text = theme::caps(&texts.get(mode_key));
     for (line, mut text) in &mut lines {
         let wanted = match line {
             FlightLine::Speed => &speed_text,
-            FlightLine::Mode => &texts.get(mode_key),
+            FlightLine::Mode => &mode_text,
             FlightLine::Nearest => &nearest_text,
             FlightLine::Dock => &dock_text,
         };
