@@ -48,6 +48,20 @@ impl Plugin for AutopilotPlugin {
                 pause_shot.run_if(resource_exists::<crate::sector::ActiveSector>),
             );
         }
+        // `SH_OPTIONS=1|keys` : l'écran des options (ou sa page des touches) au menu principal.
+        if let Ok(value) = std::env::var("SH_OPTIONS") {
+            let keys = value.trim() == "keys";
+            app.add_systems(
+                OnEnter(AppState::MainMenu),
+                move |mut commands: Commands| {
+                    if keys {
+                        crate::ui::options::open_keys(&mut commands);
+                    } else {
+                        crate::ui::options::open(&mut commands);
+                    }
+                },
+            );
+        }
         if std::env::var_os("SH_GPU_TIMINGS").is_some() {
             app.add_plugins(bevy::render::diagnostic::RenderDiagnosticsPlugin)
                 .init_resource::<GpuTimings>()

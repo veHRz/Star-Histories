@@ -249,6 +249,7 @@ fn read_pilot_input(
     roll: Single<&Action<Roll>>,
     boost: Single<&Action<Boost>>,
     mut intent: ResMut<PilotIntent>,
+    settings: Res<crate::options::UserSettings>,
 ) {
     if scripted.0 {
         return;
@@ -257,7 +258,7 @@ fn read_pilot_input(
         *intent = PilotIntent::default();
         return;
     }
-    let steer: Vec2 = ***steer;
+    let steer: Vec2 = ***steer * settings.look_scale();
     *intent = PilotIntent {
         thrust: ***thrust,
         turn: Vec2::new(steer.x, -steer.y) / MOUSE_FULL_TURN,

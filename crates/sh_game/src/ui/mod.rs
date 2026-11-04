@@ -11,6 +11,7 @@ pub mod combat_hud;
 pub mod flight_hud;
 pub mod hud;
 pub mod menu;
+pub mod options;
 pub mod pause;
 pub mod terminal;
 pub mod theme;
@@ -26,6 +27,7 @@ impl Plugin for UiPlugin {
             combat_hud::CombatHudPlugin,
             terminal::TerminalPlugin,
             pause::PausePlugin,
+            options::OptionsUiPlugin,
         ))
         .add_systems(Startup, (setup_fonts, spawn_ui_camera))
         .add_systems(PreUpdate, learn_key_labels);

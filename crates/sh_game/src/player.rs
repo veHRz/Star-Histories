@@ -213,6 +213,7 @@ fn read_input(
     jump: Query<&Action<Jump>>,
     sprint: Query<&Action<Sprint>>,
     crouch: Query<&Action<Crouch>>,
+    settings: Res<crate::options::UserSettings>,
 ) {
     if scripted.0 {
         return;
@@ -224,7 +225,7 @@ fn read_input(
     let get_vec2 = |q: &Query<&Action<Move>>| q.iter().next().map_or(Vec2::ZERO, |a| **a);
     intent.movement = get_vec2(&movement).clamp_length_max(1.0);
     let look: Vec2 = look.iter().next().map_or(Vec2::ZERO, |a| **a);
-    intent.look = look * MOUSE_SENSITIVITY;
+    intent.look = look * MOUSE_SENSITIVITY * settings.look_scale();
     intent.jump = jump.iter().next().is_some_and(|a| **a);
     intent.sprint = sprint.iter().next().is_some_and(|a| **a);
     intent.crouch = crouch.iter().next().is_some_and(|a| **a);

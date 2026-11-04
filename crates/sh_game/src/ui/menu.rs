@@ -20,7 +20,6 @@ impl Plugin for MenuPlugin {
         app.add_sub_state::<MenuScreen>()
             .add_systems(OnEnter(MenuScreen::Main), spawn_main_menu)
             .add_systems(OnEnter(MenuScreen::Load), spawn_load_screen)
-            .add_systems(OnEnter(MenuScreen::Options), spawn_options)
             .add_observer(on_activate)
             .add_observer(on_load_button)
             .add_observer(on_hover)
@@ -34,7 +33,6 @@ pub enum MenuScreen {
     #[default]
     Main,
     Load,
-    Options,
 }
 
 /// Ce que fait un bouton de menu.
@@ -191,31 +189,6 @@ fn spawn_load_screen(
     });
 }
 
-fn spawn_options(mut commands: Commands, texts: Res<Texts>, fonts: Res<UiFonts>) {
-    commands.spawn((
-        Name::new("Options"),
-        DespawnOnExit(MenuScreen::Options),
-        theme::fullscreen_backdrop(),
-        children![
-            (
-                Text::new(texts.get("menu.options")),
-                fonts.title(40.0),
-                TextColor(theme::TEXT),
-            ),
-            (
-                Text::new(texts.get("menu.options.empty")),
-                fonts.body(18.0),
-                TextColor(theme::TEXT_DIM),
-                Node {
-                    margin: UiRect::vertical(px(32)),
-                    ..default()
-                },
-            ),
-            menu_button(&fonts, texts.get("menu.back"), MenuAction::Back, true),
-        ],
-    ));
-}
-
 fn on_activate(
     event: On<Activate>,
     mut commands: Commands,
@@ -243,7 +216,7 @@ fn on_activate(
             }
         }
         MenuAction::Load => screen.set(MenuScreen::Load),
-        MenuAction::Options => screen.set(MenuScreen::Options),
+        MenuAction::Options => crate::ui::options::open(&mut commands),
         MenuAction::Back => screen.set(MenuScreen::Main),
         MenuAction::Quit => {
             exit.write(AppExit::Success);

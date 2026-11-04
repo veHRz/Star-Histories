@@ -16,6 +16,7 @@ use crate::save::{GameMode, SaveKind, list_saves, save_now};
 use crate::state::{AppState, ControlMode};
 use crate::transition::Sequence;
 use crate::ui::menu::spawn_save_list;
+use crate::ui::options::OptionsScreen;
 use crate::ui::terminal::Terminal;
 use crate::ui::theme::{self, UiFonts, menu_button};
 
@@ -27,7 +28,10 @@ impl Plugin for PausePlugin {
             .add_observer(on_activate)
             .add_systems(
                 Update,
-                (close_on_escape, render)
+                (
+                    close_on_escape.run_if(not(resource_exists::<OptionsScreen>)),
+                    render,
+                )
                     .chain()
                     .run_if(resource_exists::<Paused>),
             )
@@ -57,6 +61,7 @@ enum PauseAction {
     Resume,
     Save,
     Load,
+    Options,
     Back,
     Quit,
 }
@@ -169,6 +174,7 @@ fn on_activate(
             });
         }
         PauseAction::Load => paused.screen = PauseScreen::Load,
+        PauseAction::Options => crate::ui::options::open(&mut commands),
         PauseAction::Back => paused.screen = PauseScreen::Main,
         PauseAction::Quit => {
             // Homme de fer : la partie se sauvegarde en partant.
@@ -236,6 +242,7 @@ fn render(
                     ("pause.resume", PauseAction::Resume, true),
                     ("pause.save", PauseAction::Save, free_saves),
                     ("pause.load", PauseAction::Load, free_saves),
+                    ("menu.options", PauseAction::Options, true),
                     ("pause.quit", PauseAction::Quit, true),
                 ] {
                     let mut button =

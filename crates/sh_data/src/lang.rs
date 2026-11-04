@@ -19,6 +19,10 @@ pub struct Lang {
     /// AZERTY). Remplies par le jeu ([`Lang::set_key`]), jamais lues dans le fichier.
     #[serde(skip)]
     pub keys: BTreeMap<String, String>,
+    /// Touches remappées par le joueur (options) : `KeyE` → `KeyF`. Les jetons citent la touche
+    /// d'origine, l'étiquette affichée est celle de la touche choisie.
+    #[serde(skip)]
+    pub remaps: BTreeMap<String, String>,
 }
 
 /// Les dispositions de clavier connues (`gameplay/keyboard.ron`).
@@ -44,6 +48,7 @@ impl Lang {
     /// L'étiquette d'une touche physique (nom `KeyCode`) : celle de la disposition, sinon le
     /// nom de la langue (`key.Space`), sinon la lettre ou le chiffre de sa position.
     pub fn key_label(&self, code: &str) -> String {
+        let code = self.remaps.get(code).map_or(code, String::as_str);
         if let Some(label) = self.keys.get(code) {
             return label.clone();
         }
@@ -173,6 +178,9 @@ mod tests {
         assert!(!lang.set_key("KeyA", "Q"));
         assert_eq!(lang.get("aide"), "ZQSD, Espace : bouger [sic]");
         assert_eq!(lang.key_label("Digit1"), "1");
+        // Remappée par le joueur : le jeton d'origine affiche la touche choisie.
+        lang.remaps.insert("KeyW".into(), "KeyA".into());
+        assert_eq!(lang.get("aide"), "QQSD, Espace : bouger [sic]");
     }
 
     #[test]

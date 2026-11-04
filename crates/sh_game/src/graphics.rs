@@ -79,8 +79,15 @@ fn level_from_env() -> Option<PresetLevel> {
     }
 }
 
-fn init_settings(mut commands: Commands, data: Res<Data>) {
-    let level = level_from_env().unwrap_or_default();
+fn init_settings(
+    mut commands: Commands,
+    data: Res<Data>,
+    user: Option<Res<crate::options::UserSettings>>,
+) {
+    // `SH_PRESET` (autopilote) l'emporte sur le choix du joueur.
+    let level = level_from_env()
+        .or(user.map(|u| u.preset))
+        .unwrap_or_default();
     let mut preset = data.graphics.get(level).clone();
     // `SH_BAKED_LIGHTING=0` : tout l'éclairage en dynamique, pour comparer les deux voies.
     if let Ok(v) = std::env::var("SH_BAKED_LIGHTING") {

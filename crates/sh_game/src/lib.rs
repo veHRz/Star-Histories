@@ -19,6 +19,7 @@ pub mod input;
 pub mod interaction;
 pub mod living;
 pub mod loading;
+pub mod options;
 pub mod player;
 pub mod save;
 pub mod sector;
@@ -74,6 +75,7 @@ impl Plugin for StarHistoriesPlugin {
             career::CareerPlugin,
             combat::CombatPlugin,
             save::SavePlugin,
+            options::OptionsPlugin,
         ));
         #[cfg(feature = "dev")]
         app.add_plugins(dev_tools::DevToolsPlugin);
