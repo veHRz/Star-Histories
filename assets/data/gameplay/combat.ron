@@ -33,7 +33,7 @@
         // Corvette « de facture pirate » (§2.4) : assemblée, rapide, mal blindée.
         "pirate_corvette": (
             name_key: "hull.pirate_corvette",
-            model: "models/space/pirate_corvette.glb",
+            model: "models/space/pirate_corvette.gltf",
             radius: 16.0,
             length: 70.0,
             max_speed: 290.0,
@@ -52,7 +52,7 @@
         // Corvette de l'Union (classe conventionnée, §2.4), de la Flotte de défense.
         "ugl_corvette": (
             name_key: "hull.ugl_corvette",
-            model: "models/space/ugl_corvette.glb",
+            model: "models/space/ugl_corvette.gltf",
             radius: 18.0,
             length: 90.0,
             max_speed: 260.0,
