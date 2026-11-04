@@ -160,6 +160,9 @@ pub struct Firearm {
     /// Relèvement de la visée par coup (degrés).
     pub recoil_deg: f64,
     pub range: f64,
+    /// Modèle vu à la première personne quand l'arme est en main (chemin sous `assets/`).
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

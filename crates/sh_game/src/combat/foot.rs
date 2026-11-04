@@ -43,6 +43,7 @@ impl Plugin for FootCombatPlugin {
                     arm_player,
                     spawn_boarders,
                     player_firearm,
+                    held_weapon,
                     perceive,
                     decide,
                     walk,
@@ -500,6 +501,55 @@ fn player_firearm(
         at: eye,
         radius: 30.0,
     });
+}
+
+/// L'arme en main, vue à la première personne (enfant de la caméra).
+#[derive(Component)]
+struct HeldWeapon;
+
+/// Position de repos de l'arme dans le repère de la caméra : en bas à droite, assez près pour
+/// rester dans la capsule du joueur (rayon 0,3 m) et ne pas traverser les cloisons.
+const HELD_REST: Vec3 = Vec3::new(0.15, -0.19, -0.28);
+
+/// Montre l'arme du joueur quand elle est en main (des hostiles debout), avec un recul à
+/// chaque coup et l'arme baissée pendant le rechargement.
+fn held_weapon(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    arms: Option<Res<PlayerArms>>,
+    fighters: Query<&Fighter>,
+    camera: Single<Entity, With<PlayerCamera>>,
+    mut held: Query<(Entity, &mut Transform), With<HeldWeapon>>,
+) {
+    let model = arms
+        .as_ref()
+        .filter(|a| a.health > 0.0 && hostiles_present(&fighters))
+        .and_then(|a| a.weapon.model.clone());
+    let Some(model) = model else {
+        for (entity, _) in &held {
+            commands.entity(entity).despawn();
+        }
+        return;
+    };
+    let Some(arms) = arms else {
+        return;
+    };
+    let Ok((_, mut transform)) = held.single_mut() else {
+        commands.spawn((
+            Name::new("Arme en main"),
+            HeldWeapon,
+            WorldAssetRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset(model))),
+            Transform::from_translation(HELD_REST),
+            ChildOf(*camera),
+        ));
+        return;
+    };
+    // Recul : l'arme part en arrière et se relève juste après le coup, puis revient.
+    let period = (1.0 / arms.weapon.rate as f32).max(0.05);
+    let kick = (arms.cooldown / period).clamp(0.0, 1.0);
+    let lowered = if arms.reload > 0.0 { 1.0 } else { 0.0 };
+    transform.translation = HELD_REST + Vec3::new(0.0, -0.12 * lowered, 0.05 * kick);
+    transform.rotation = Quat::from_rotation_x(0.18 * kick - 0.5 * lowered);
 }
 
 /// Perception : vue (ligne dégagée, portée) et ouïe (bruits) ; l'alerte se propage.

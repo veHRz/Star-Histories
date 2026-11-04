@@ -70,7 +70,7 @@
         ),
     },
     firearms: {
-        "pistol": (name_key: "firearm.pistol", damage: 40.0, penetration: 22.0, rate: 3.0, magazine: 12, reserve: 48, reload_seconds: 1.6, speed: 380.0, spread_deg: 0.6, recoil_deg: 1.8, range: 80.0),
+        "pistol": (name_key: "firearm.pistol", damage: 40.0, penetration: 22.0, rate: 3.0, magazine: 12, reserve: 48, reload_seconds: 1.6, speed: 380.0, spread_deg: 0.6, recoil_deg: 1.8, range: 80.0, model: Some("models/characters/weapons/mag_pistol.gltf")),
         "rifle": (name_key: "firearm.rifle", damage: 24.0, penetration: 28.0, rate: 6.0, magazine: 30, reserve: 120, reload_seconds: 2.4, speed: 620.0, spread_deg: 1.1, recoil_deg: 0.9, range: 150.0),
     },
     armors: {
