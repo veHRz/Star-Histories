@@ -30,10 +30,16 @@ impl Plugin for LoadingPlugin {
     }
 }
 
-/// Où aller une fois les données chargées : le menu principal, ou directement une vue
-/// (autopilote `SH_START`).
-#[derive(Resource, Clone, Debug, Default)]
-pub struct StartRequest(pub Option<EnterGame>);
+/// Où aller une fois les données chargées : le menu principal, ou directement une nouvelle
+/// partie ou une vue (autopilote `SH_START`).
+#[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
+pub enum StartRequest {
+    #[default]
+    Menu,
+    /// Comme le bouton « Nouvelle partie » (le lieu dépend des données).
+    NewGame,
+    Direct(EnterGame),
+}
 
 #[derive(Resource)]
 struct LoadTask(Task<Result<GameData, String>>);
@@ -136,7 +142,12 @@ fn finish_loading(
         data.factions.factions.len(),
     );
 
-    match &start.0 {
+    let request = match &*start {
+        StartRequest::Menu => None,
+        StartRequest::NewGame => Some(EnterGame::new_game(&data)),
+        StartRequest::Direct(request) => Some(request.clone()),
+    };
+    match request {
         Some(request) => {
             if let Some(id) = &request.place
                 && id != "test"

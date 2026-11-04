@@ -30,6 +30,8 @@ impl Plugin for LivingWorldPlugin {
                 Update,
                 (follow_clock, observe_location, show_news)
                     .chain()
+                    // Hors partie, il n'y a pas de vue à suivre.
+                    .run_if(in_state(AppState::InGame))
                     .run_if(resource_exists::<LivingWorld>)
                     .run_if(resource_exists::<GameClock>),
             );

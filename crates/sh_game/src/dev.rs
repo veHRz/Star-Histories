@@ -4,7 +4,8 @@
 //! panique, d'en récupérer une capture et des mesures, sans intervention humaine :
 //!
 //! - `SH_START=<vue>[:<lieu>]` : démarre directement dans une vue (`galaxy`, `global:hexis`,
-//!   `sector:test`) ou sur le menu (`menu`), sans passer par le menu principal.
+//!   `sector:test`), dans une nouvelle partie comme le bouton du menu (`new`) ou sur le menu
+//!   (`menu`), sans passer par le menu principal.
 //! - `SH_EXIT_AFTER_FRAMES=N` : quitte proprement après N frames.
 //! - `SH_SCREENSHOT=chemin.png` : enregistre une capture puis quitte.
 //! - `SH_SCREENSHOT_FRAME=N` : frame de la capture (défaut : 90, le temps que la scène se charge).
@@ -23,7 +24,7 @@ use bevy::winit::WinitSettings;
 
 use crate::data::Data;
 use crate::loading::StartRequest;
-use crate::state::{EnterGame, ViewLevel};
+use crate::state::{AppState, EnterGame, ViewLevel};
 
 /// Frames d'attente maximale après la demande de capture avant d'abandonner.
 const SCREENSHOT_TIMEOUT_FRAMES: u32 = 600;
@@ -48,7 +49,7 @@ impl Plugin for AutopilotPlugin {
 
         match std::env::var("SH_START").ok().as_deref().map(parse_start) {
             Some(Ok(request)) => {
-                app.insert_resource(StartRequest(request));
+                app.insert_resource(request);
             }
             Some(Err(message)) => {
                 // L'erreur sera visible au démarrage : on refuse plutôt que de deviner.
@@ -87,11 +88,14 @@ impl Plugin for AutopilotPlugin {
     }
 }
 
-/// `galaxy`, `global:hexis`, `sector:test`, `menu` → demande de démarrage.
-pub fn parse_start(value: &str) -> Result<Option<EnterGame>, String> {
+/// `galaxy`, `global:hexis`, `sector:test`, `new`, `menu` → demande de démarrage.
+pub fn parse_start(value: &str) -> Result<StartRequest, String> {
     let value = value.trim();
     if value.is_empty() || value == "menu" {
-        return Ok(None);
+        return Ok(StartRequest::Menu);
+    }
+    if value == "new" {
+        return Ok(StartRequest::NewGame);
     }
     let (view, place) = match value.split_once(':') {
         Some((view, place)) => (
@@ -101,9 +105,11 @@ pub fn parse_start(value: &str) -> Result<Option<EnterGame>, String> {
         None => (value, None),
     };
     let view = ViewLevel::from_key(view.trim()).ok_or_else(|| {
-        format!("SH_START : vue inconnue « {view} » (galaxy, global:<lieu>, sector:<lieu>, menu)")
+        format!(
+            "SH_START : vue inconnue « {view} » (galaxy, global:<lieu>, sector:<lieu>, new, menu)"
+        )
     })?;
-    Ok(Some(EnterGame { view, place }))
+    Ok(StartRequest::Direct(EnterGame { view, place }))
 }
 
 #[derive(Resource)]
@@ -265,25 +271,26 @@ mod tests {
 
     #[test]
     fn lecture_de_sh_start() {
-        assert_eq!(parse_start("menu"), Ok(None));
-        assert_eq!(parse_start(""), Ok(None));
+        assert_eq!(parse_start("menu"), Ok(StartRequest::Menu));
+        assert_eq!(parse_start(""), Ok(StartRequest::Menu));
+        assert_eq!(parse_start(" new "), Ok(StartRequest::NewGame));
         assert_eq!(
             parse_start("galaxy"),
-            Ok(Some(EnterGame {
+            Ok(StartRequest::Direct(EnterGame {
                 view: ViewLevel::Galaxy,
                 place: None
             }))
         );
         assert_eq!(
             parse_start("global:hexis"),
-            Ok(Some(EnterGame {
+            Ok(StartRequest::Direct(EnterGame {
                 view: ViewLevel::Global,
                 place: Some("hexis".into())
             }))
         );
         assert_eq!(
             parse_start(" sector:test "),
-            Ok(Some(EnterGame {
+            Ok(StartRequest::Direct(EnterGame {
                 view: ViewLevel::Sector,
                 place: Some("test".into())
             }))
@@ -676,6 +683,11 @@ impl Plugin for ScenarioPlugin {
         let Ok(name) = std::env::var("SH_SCENARIO") else {
             return;
         };
+        // Ce scénario passe par le menu principal, où les étapes ordinaires ne jouent pas.
+        if name == "menu_return" {
+            app.add_systems(Update, menu_return);
+            return;
+        }
         let (steps, flight) = match name.as_str() {
             "walk_ship" => (WALK_SHIP, None),
             "fly_ship" => (FLY_SHIP_WALK, Some(FlightCheck::default())),
@@ -703,7 +715,7 @@ impl Plugin for ScenarioPlugin {
                 | "firefight_lose"
         ) {
             error!(
-                "SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage, contract_loop, raid_win, raid_flee, raid_lose, firefight, firefight_lose)"
+                "SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage, contract_loop, raid_win, raid_flee, raid_lose, firefight, firefight_lose, menu_return)"
             );
             app.add_systems(Startup, |mut exit: MessageWriter<AppExit>| {
                 exit.write(AppExit::error());
@@ -736,6 +748,71 @@ impl Plugin for ScenarioPlugin {
                 .before(crate::player::PlayerSystems)
                 .run_if(scenario_can_run),
         );
+    }
+}
+
+/// `menu_return` (avec `SH_START=new`) : Échap ramène au menu principal, puis « Nouvelle partie »
+/// repart de zéro. Au menu, le monde vivant ne doit plus tourner (il plantait, faute de vue).
+#[allow(clippy::too_many_arguments)]
+fn menu_return(
+    time: Res<Time<Real>>,
+    state: Res<State<AppState>>,
+    data: Option<Res<Data>>,
+    mut career: Option<ResMut<crate::career::Career>>,
+    mut app_state: ResMut<NextState<AppState>>,
+    mut view: ResMut<NextState<ViewLevel>>,
+    mut place: ResMut<crate::state::CurrentPlace>,
+    mut phase: Local<(u8, f32, f32)>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    let (step, since, total) = &mut *phase;
+    *since += time.delta_secs();
+    *total += time.delta_secs();
+    let in_game = *state.get() == AppState::InGame;
+    match *step {
+        // En jeu : on vide le compte, puis Échap (comme `views::on_pause`).
+        0 if in_game && *since > 3.0 => {
+            let Some(career) = career.as_mut() else {
+                return;
+            };
+            career.credits.cents = 0;
+            app_state.set(AppState::MainMenu);
+            info!("scénario menu_return : Échap, retour au menu principal");
+            (*step, *since) = (1, 0.0);
+        }
+        // Au menu, quelques secondes, puis comme le bouton « Nouvelle partie ».
+        1 if !in_game && *since > 2.0 => {
+            let Some(data) = data else {
+                return;
+            };
+            EnterGame::new_game(&data).apply(&mut app_state, &mut view, &mut place);
+            info!("scénario menu_return : nouvelle partie");
+            (*step, *since) = (2, 0.0);
+        }
+        // De nouveau en jeu : le compte est celui du départ, pas celui de la partie quittée.
+        2 if in_game && *since > 3.0 => {
+            let expected = data
+                .as_ref()
+                .and_then(|d| d.start())
+                .map(|s| s.credits * 100);
+            let credits = career.as_ref().map(|c| c.credits.cents);
+            if credits.is_some() && credits == expected {
+                info!("scénario menu_return terminé : la nouvelle partie repart de zéro");
+            } else {
+                error!(
+                    "scénario menu_return : la nouvelle partie garde l'ancienne (compte {credits:?}, attendu {expected:?})"
+                );
+                exit.write(AppExit::error());
+                return;
+            }
+            exit.write(AppExit::Success);
+            *step = 3;
+        }
+        _ if *total > 90.0 => {
+            error!("scénario menu_return : bloqué à l'étape {step}");
+            exit.write(AppExit::error());
+        }
+        _ => {}
     }
 }
 

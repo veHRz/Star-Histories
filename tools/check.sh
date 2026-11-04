@@ -42,7 +42,7 @@ step "cargo t" cargo t
 step "import du canon à jour" cargo run -q -p sh_import -- --check
 
 # Chaque point d'entrée de l'autopilote doit démarrer, charger les données et quitter sans panique.
-for start in menu galaxy global:hexis sector:test sector:player_ship sector:hexis_spaceport; do
+for start in menu new galaxy global:hexis sector:test sector:player_ship sector:hexis_spaceport; do
     step "fumée SH_START=${start}" \
         run_game "ERROR|panicked|donn.{1,3}es charg|temps de frame" SH_START="$start" SH_EXIT_AFTER_FRAMES=150
 done
@@ -50,6 +50,10 @@ done
 # La voie d'éclairage entièrement dynamique (sans lightmaps) reste disponible pour comparer.
 step "fumée sector:player_ship sans lightmaps" \
     run_game "ERROR|panicked|temps de frame" SH_START=sector:player_ship SH_BAKED_LIGHTING=0 SH_EXIT_AFTER_FRAMES=150
+
+# Nouvelle partie, Échap vers le menu principal, puis nouvelle partie repartie de zéro.
+step "scénario menu_return" \
+    run_game "ERROR|panicked|menu_return" SH_START=new SH_SCENARIO=menu_return
 
 # Parcours scripté du vaisseau du joueur, du sas au cockpit, toutes portes franchies.
 step "scénario walk_ship" \

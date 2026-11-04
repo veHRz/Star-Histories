@@ -26,7 +26,7 @@ Step "cargo t" { cargo t }
 Step "import du canon à jour" { cargo run -q -p sh_import -- --check }
 
 # Chaque point d'entrée de l'autopilote doit démarrer, charger les données et quitter sans panique.
-$starts = @("menu", "galaxy", "global:hexis", "sector:test", "sector:player_ship", "sector:hexis_spaceport")
+$starts = @("menu", "new", "galaxy", "global:hexis", "sector:test", "sector:player_ship", "sector:hexis_spaceport")
 foreach ($start in $starts) {
     Step "fumée SH_START=$start" {
         $env:SH_START = $start
@@ -48,6 +48,17 @@ Step "fumée sector:player_ship sans lightmaps" {
     $code = $LASTEXITCODE
     Remove-Item Env:SH_START, Env:SH_BAKED_LIGHTING, Env:SH_EXIT_AFTER_FRAMES
     $log | Select-String -Pattern "ERROR|panicked|temps de frame" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
+# Nouvelle partie, Échap vers le menu principal, puis nouvelle partie repartie de zéro.
+Step "scénario menu_return" {
+    $env:SH_START = "new"
+    $env:SH_SCENARIO = "menu_return"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_START, Env:SH_SCENARIO -ErrorAction SilentlyContinue
+    $log | Select-String -Pattern "ERROR|panicked|menu_return" | ForEach-Object { "   $_" }
     $global:LASTEXITCODE = $code
 }
 

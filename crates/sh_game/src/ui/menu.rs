@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use bevy::ui::InteractionDisabled;
 use bevy::ui_widgets::{Activate, ActivateOnPress, Button};
 
-use crate::data::Texts;
+use crate::data::{Data, Texts};
 use crate::state::{AppState, CurrentPlace, EnterGame, ViewLevel};
 use crate::ui::theme::{self, UiFonts};
 
@@ -39,15 +39,6 @@ pub enum MenuAction {
     Options,
     Back,
     Quit,
-}
-
-/// Où commence une nouvelle partie : à bord du vaisseau du joueur (P1, P12). L'amarrage à Hexis
-/// arrive avec M2.
-fn new_game() -> EnterGame {
-    EnterGame {
-        view: ViewLevel::Sector,
-        place: Some("player_ship".into()),
-    }
 }
 
 fn menu_button(fonts: &UiFonts, label: String, action: MenuAction, enabled: bool) -> impl Bundle {
@@ -161,13 +152,16 @@ fn on_activate(
     mut app_state: ResMut<NextState<AppState>>,
     mut view: ResMut<NextState<ViewLevel>>,
     mut place: ResMut<CurrentPlace>,
+    data: Res<Data>,
     mut exit: MessageWriter<AppExit>,
 ) {
     let Ok(action) = actions.get(event.entity) else {
         return;
     };
     match action {
-        MenuAction::NewGame => new_game().apply(&mut app_state, &mut view, &mut place),
+        MenuAction::NewGame => {
+            EnterGame::new_game(&data).apply(&mut app_state, &mut view, &mut place);
+        }
         MenuAction::Continue => {}
         MenuAction::Options => screen.set(MenuScreen::Options),
         MenuAction::Back => screen.set(MenuScreen::Main),

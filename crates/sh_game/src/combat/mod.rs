@@ -527,22 +527,8 @@ fn tick_death(
     }
     death.timer += time.delta_secs();
     if death.timer > 5.0 {
-        // La partie est perdue : tout ce qu'elle tenait s'efface, une nouvelle partie repart
-        // de zéro.
-        commands.queue(|world: &mut World| {
-            world.remove_resource::<Death>();
-            world.remove_resource::<Raid>();
-            world.remove_resource::<Career>();
-            world.remove_resource::<LivingWorld>();
-            world.remove_resource::<crate::living::PlayerKnowledge>();
-            world.remove_resource::<GameClock>();
-            world.remove_resource::<Location>();
-            world.remove_resource::<crate::voyage::ShipFuel>();
-            world.remove_resource::<crate::voyage::ResumeFlight>();
-            world.remove_resource::<foot::PlayerArms>();
-            world.insert_resource(MissionLog::default());
-            world.insert_resource(crate::interaction::Inventory::default());
-        });
+        // La partie est perdue : la quitter l'efface (`state::forget_game`), une nouvelle partie
+        // repart de zéro.
         next.set(AppState::MainMenu);
         info!("mort du joueur : retour au menu principal");
     }

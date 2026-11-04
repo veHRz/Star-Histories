@@ -24,6 +24,10 @@ impl Plugin for StatePlugin {
                     mode.set(ControlMode::Menu);
                 },
             )
+            // Sans sauvegarde, quitter la partie (Échap, mort) l'abandonne. L'effacer pendant la
+            // transition d'état, et non au milieu d'`Update`, évite qu'un groupe de systèmes déjà
+            // autorisé à tourner trouve ses ressources disparues en cours de route.
+            .add_systems(OnExit(AppState::InGame), forget_game)
             .add_systems(Update, log_transitions);
     }
 }
@@ -94,6 +98,15 @@ pub struct EnterGame {
 }
 
 impl EnterGame {
+    /// Une nouvelle partie (menu « Nouvelle partie », `SH_START=new`) : aux commandes, dans le
+    /// système du départ (P1) ; la vue Globale co-charge le vaisseau du joueur.
+    pub fn new_game(data: &sh_data::GameData) -> Self {
+        EnterGame {
+            view: ViewLevel::Global,
+            place: data.start().map(|s| s.system.as_str().to_owned()),
+        }
+    }
+
     /// Applique la demande : les deux états changent au même frame, la sous-vue démarre
     /// directement sur la bonne valeur (pas de passage par la vue par défaut).
     pub fn apply(
@@ -106,6 +119,23 @@ impl EnterGame {
         app_state.set(AppState::InGame);
         view.set(self.view);
     }
+}
+
+/// Efface la partie quittée : tout ce qu'elle tenait disparaît, et l'entrée en jeu suivante
+/// recrée monde, horloge et carrière.
+fn forget_game(world: &mut World) {
+    world.remove_resource::<crate::combat::Death>();
+    world.remove_resource::<crate::combat::Raid>();
+    world.remove_resource::<crate::career::Career>();
+    world.remove_resource::<crate::living::LivingWorld>();
+    world.remove_resource::<crate::living::PlayerKnowledge>();
+    world.remove_resource::<crate::clock::GameClock>();
+    world.remove_resource::<crate::voyage::Location>();
+    world.remove_resource::<crate::voyage::ShipFuel>();
+    world.remove_resource::<crate::voyage::ResumeFlight>();
+    world.remove_resource::<crate::combat::foot::PlayerArms>();
+    world.insert_resource(crate::career::MissionLog::default());
+    world.insert_resource(crate::interaction::Inventory::default());
 }
 
 fn log_transitions(
