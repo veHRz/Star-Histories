@@ -6,6 +6,7 @@
 //! Ordre d'un jour : flottes (arrivées, réparations, patrouilles, errances) → économie (stocks,
 //! pénuries) → convois et raids → escarmouches → stabilité → projets → calendrier.
 
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -30,7 +31,7 @@ struct Context {
     fleet_names: BTreeMap<Id<Fleet>, (String, bool)>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SystemState {
     pub stock: BTreeMap<String, f64>,
     pub economy: Economy,
@@ -57,7 +58,7 @@ pub enum SimCommand {
     FleetLosses { fleet: Id<Fleet>, condition: f64 },
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Mission {
     Station,
     Patrol { route: Vec<Id<Place>>, next: usize },
@@ -65,7 +66,7 @@ pub enum Mission {
     Wander,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FleetState {
     pub name: String,
     pub faction: Option<Id<Faction>>,
@@ -79,14 +80,14 @@ pub struct FleetState {
     dwell: u32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProjectState {
     pub name: String,
     pub progress: f64,
     pub secret: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct Delivery {
     to: Id<Place>,
     commodity: String,
@@ -107,12 +108,51 @@ pub struct SimWorld {
     ctx: Option<Arc<Context>>,
 }
 
+/// L'état d'un monde à sauvegarder : tout ce qui a bougé depuis le départ. Les constantes tirées
+/// des données (positions, rails, réglages) se reconstruisent au chargement. Le générateur ne
+/// tire jamais dans son flux principal (seulement dans des sous-flux datés) : la graine suffit.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WorldSave {
+    seed: u64,
+    date: StellarDate,
+    systems: BTreeMap<Id<Place>, SystemState>,
+    fleets: BTreeMap<Id<Fleet>, FleetState>,
+    projects: BTreeMap<String, ProjectState>,
+    deliveries: Vec<Delivery>,
+    history: Vec<SimEvent>,
+}
+
 /// Jours de stock visés pour une marchandise consommée.
 const TARGET_DAYS: f64 = 30.0;
 /// Jours de stock au départ de la partie.
 const START_DAYS: f64 = 60.0;
 
 impl SimWorld {
+    /// L'état à sauvegarder.
+    pub fn save(&self) -> WorldSave {
+        WorldSave {
+            seed: self.rng.seed(),
+            date: self.date,
+            systems: self.systems.clone(),
+            fleets: self.fleets.clone(),
+            projects: self.projects.clone(),
+            deliveries: self.deliveries.clone(),
+            history: self.history.clone(),
+        }
+    }
+
+    /// Le monde d'une sauvegarde : les constantes viennent des données du jeu courant.
+    pub fn restore(data: &GameData, save: WorldSave) -> Self {
+        let mut world = Self::from_data(data, Some(save.seed));
+        world.date = save.date;
+        world.systems = save.systems;
+        world.fleets = save.fleets;
+        world.projects = save.projects;
+        world.deliveries = save.deliveries;
+        world.history = save.history;
+        world
+    }
+
     /// Un monde vide au premier jour de `start`, tiré de la graine `seed`.
     pub fn new(seed: u64, start: StellarDate) -> Self {
         Self {

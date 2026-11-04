@@ -55,6 +55,12 @@ step "fumée sector:player_ship sans lightmaps" \
 step "scénario menu_return" \
     run_game "ERROR|panicked|menu_return" SH_START=new SH_SCENARIO=menu_return
 
+# Sauvegarde puis chargement, en vol et à quai : argent, date, vue et pose du vaisseau retrouvés.
+for start in new sector:hexis_spaceport; do
+    step "scénario save_load (${start})" \
+        run_game "ERROR|panicked|save_load termin" SH_USER_DIR=target/test-user SH_START="$start" SH_SCENARIO=save_load
+done
+
 # Parcours scripté du vaisseau du joueur, du sas au cockpit, toutes portes franchies.
 step "scénario walk_ship" \
     run_game "ERROR|panicked|sc.{1,3}nario" SH_START=sector:player_ship SH_SCENARIO=walk_ship

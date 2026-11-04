@@ -38,6 +38,8 @@ pub enum StartRequest {
     Menu,
     /// Comme le bouton « Nouvelle partie » (le lieu dépend des données).
     NewGame,
+    /// Une sauvegarde du dossier du joueur, par son nom de fichier.
+    Load(String),
     Direct(EnterGame),
 }
 
@@ -145,6 +147,21 @@ fn finish_loading(
     let request = match &*start {
         StartRequest::Menu => None,
         StartRequest::NewGame => Some(EnterGame::new_game(&data)),
+        StartRequest::Load(name) => {
+            // Le chargement passe par le menu principal, comme depuis l'interface.
+            let path = crate::save::saves_dir().join(name);
+            match crate::save::read_save(&path) {
+                Ok(save) => {
+                    commands.insert_resource(crate::save::PendingLoad(Box::new(save)));
+                }
+                Err(err) => {
+                    error!("SH_START : sauvegarde {} illisible : {err}", path.display());
+                    exit.write(AppExit::error());
+                    return;
+                }
+            }
+            None
+        }
         StartRequest::Direct(request) => Some(request.clone()),
     };
     match request {

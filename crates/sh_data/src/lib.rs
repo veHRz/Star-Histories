@@ -12,6 +12,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use ron::extensions::Extensions;
+use serde::Serialize;
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 
@@ -135,11 +136,46 @@ pub enum DataError {
         #[source]
         source: Box<ron::error::SpannedError>,
     },
+    #[error("écriture de {path} impossible : {source}")]
+    Write {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("{path} : {source}")]
+    Serialize {
+        path: PathBuf,
+        #[source]
+        source: ron::Error,
+    },
 }
 
 /// Options RON communes : `Some(x)` peut s'écrire `x` dans les fichiers écrits à la main.
 pub fn ron_options() -> ron::Options {
     ron::Options::default().with_default_extension(Extensions::IMPLICIT_SOME)
+}
+
+/// Écrit une valeur en RON lisible (sauvegardes, réglages du joueur). L'écriture passe par un
+/// fichier voisin renommé ensuite : une coupure en cours d'écriture ne laisse jamais un fichier
+/// tronqué à la place de l'ancien.
+pub fn write_ron<T: Serialize>(path: &Path, value: &T) -> Result<(), DataError> {
+    let text =
+        ron::ser::to_string_pretty(value, ron::ser::PrettyConfig::new()).map_err(|source| {
+            DataError::Serialize {
+                path: path.to_owned(),
+                source,
+            }
+        })?;
+    let write_err = |source| DataError::Write {
+        path: path.to_owned(),
+        source,
+    };
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).map_err(write_err)?;
+    }
+    let partial = path.with_extension("ron.part");
+    fs::write(&partial, text).map_err(write_err)?;
+    fs::rename(&partial, path).map_err(write_err)
 }
 
 /// Lit et désérialise un fichier RON.

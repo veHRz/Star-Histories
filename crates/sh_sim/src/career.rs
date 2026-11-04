@@ -8,6 +8,7 @@
 //! La trahison d'un contrat (détourner sa cargaison) est toujours détectée : la cargaison est
 //! enregistrée par Hexa-Corp, qui « traque les mauvais payeurs » (§6.5).
 
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 use sh_core::{Credits, Id, StellarDate, Wuro};
@@ -17,7 +18,7 @@ use sh_data::{CareerRules, Faction, GameData, Place, Ranks};
 use crate::SimWorld;
 use crate::travel::{hyperspace_plan, portal_plan};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum ContractKind {
     /// CT : transport.
     Transport,
@@ -38,7 +39,7 @@ impl ContractKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContractState {
     Active,
     Done,
@@ -46,7 +47,7 @@ pub enum ContractState {
     Betrayed,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Contract {
     pub id: String,
     pub kind: ContractKind,
@@ -62,7 +63,7 @@ pub struct Contract {
     pub towed: bool,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Loan {
     pub lender: Id<Faction>,
     pub balance: Credits,
@@ -155,7 +156,7 @@ pub const WORD_KEPT: &str = "word_kept";
 pub const NOTORIOUS_TRAITOR: &str = "notorious_traitor";
 pub const BAD_PAYER: &str = "bad_payer";
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Captain {
     pub credits: Credits,
     pub wuro: Wuro,

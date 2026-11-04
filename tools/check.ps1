@@ -62,6 +62,20 @@ Step "scénario menu_return" {
     $global:LASTEXITCODE = $code
 }
 
+# Sauvegarde puis chargement, en vol et à quai : argent, date, vue et pose du vaisseau retrouvés.
+foreach ($start in @("new", "sector:hexis_spaceport")) {
+    Step "scénario save_load ($start)" {
+        $env:SH_USER_DIR = "target/test-user"
+        $env:SH_START = $start
+        $env:SH_SCENARIO = "save_load"
+        $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+        $code = $LASTEXITCODE
+        Remove-Item Env:SH_USER_DIR, Env:SH_START, Env:SH_SCENARIO -ErrorAction SilentlyContinue
+        $log | Select-String -Pattern "ERROR|panicked|save_load termin" | ForEach-Object { "   $_" }
+        $global:LASTEXITCODE = $code
+    }
+}
+
 # Parcours scripté du vaisseau du joueur, du sas au cockpit, toutes portes franchies.
 Step "scénario walk_ship" {
     $env:SH_START = "sector:player_ship"

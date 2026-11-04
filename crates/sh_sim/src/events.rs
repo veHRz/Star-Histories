@@ -8,10 +8,11 @@
 //! Il n'existe aucun type d'événement pour l'Essaim, un vaisseau capitale ou une désassimilation :
 //! les interdits durs de la v1 (AGENTS.md §7.2) sont impossibles par construction.
 
+use serde::{Deserialize, Serialize};
 use sh_core::{Id, StellarDate};
 use sh_data::{Faction, Fleet, Place};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum EventKind {
     /// Une flotte arrive dans un lieu.
     FleetArrived { fleet: Id<Fleet>, at: Id<Place> },
@@ -57,7 +58,7 @@ pub enum EventKind {
     UglCampaign { at: Id<Place> },
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SimEvent {
     pub date: StellarDate,
     pub kind: EventKind,

@@ -16,7 +16,7 @@ pub use career::{
     Captain, CareerError, Contract, ContractKind, ContractState, Loan, Outcome, contract_offers,
 };
 pub use events::{EventKind, SimEvent};
-pub use world::{FleetState, Mission, SimCommand, SimWorld};
+pub use world::{FleetState, Mission, SimCommand, SimWorld, WorldSave};
 
 #[cfg(test)]
 mod tests {

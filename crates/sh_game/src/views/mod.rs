@@ -4,12 +4,10 @@
 
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use bevy_enhanced_input::prelude::*;
 
 use crate::data::Texts;
 use crate::graphics::WorldCamera;
-use crate::input::Pause;
-use crate::state::{AppState, ControlMode};
+use crate::state::ControlMode;
 use crate::ui::theme::{self, UiFonts};
 
 pub mod galaxy;
@@ -29,20 +27,8 @@ impl Plugin for ViewsPlugin {
             sector::SectorViewPlugin,
             procedural::ProceduralPlugin,
         ))
-        .add_observer(on_pause)
         // GlobalTransform de la caméra du frame précédent : un frame de retard, invisible.
         .add_systems(Update, place_labels);
-    }
-}
-
-/// Échap en partie : retour au menu principal (le vrai menu de pause viendra avec M7).
-fn on_pause(
-    _: On<Start<Pause>>,
-    state: Res<State<AppState>>,
-    mut next: ResMut<NextState<AppState>>,
-) {
-    if *state.get() == AppState::InGame {
-        next.set(AppState::MainMenu);
     }
 }
 

@@ -4,8 +4,9 @@
 //! panique, d'en récupérer une capture et des mesures, sans intervention humaine :
 //!
 //! - `SH_START=<vue>[:<lieu>]` : démarre directement dans une vue (`galaxy`, `global:hexis`,
-//!   `sector:test`), dans une nouvelle partie comme le bouton du menu (`new`) ou sur le menu
-//!   (`menu`), sans passer par le menu principal.
+//!   `sector:test`), dans une nouvelle partie comme le bouton du menu (`new`), dans une
+//!   sauvegarde du dossier du joueur (`load:<fichier>`) ou sur le menu (`menu`).
+//! - `SH_USER_DIR=<dossier>` : dossier des sauvegardes et réglages (jamais ceux du joueur).
 //! - `SH_EXIT_AFTER_FRAMES=N` : quitte proprement après N frames.
 //! - `SH_SCREENSHOT=chemin.png` : enregistre une capture puis quitte.
 //! - `SH_SCREENSHOT_FRAME=N` : frame de la capture (défaut : 90, le temps que la scène se charge).
@@ -37,6 +38,16 @@ impl Plugin for AutopilotPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<FrameStats>()
             .add_systems(Last, (record_frame_time, report_on_exit).chain());
+        // `SH_PAUSE=1|load` : le menu de pause (ou sa liste de sauvegardes), pour les captures.
+        if let Ok(value) = std::env::var("SH_PAUSE") {
+            app.insert_resource(PauseShot {
+                load: value.trim() == "load",
+            })
+            .add_systems(
+                Update,
+                pause_shot.run_if(resource_exists::<crate::sector::ActiveSector>),
+            );
+        }
         if std::env::var_os("SH_GPU_TIMINGS").is_some() {
             app.add_plugins(bevy::render::diagnostic::RenderDiagnosticsPlugin)
                 .init_resource::<GpuTimings>()
@@ -106,6 +117,9 @@ pub fn parse_start(value: &str) -> Result<StartRequest, String> {
     }
     if value == "new" {
         return Ok(StartRequest::NewGame);
+    }
+    if let Some(name) = value.strip_prefix("load:") {
+        return Ok(StartRequest::Load(name.trim().to_owned()));
     }
     let (view, place) = match value.split_once(':') {
         Some((view, place)) => (
@@ -223,6 +237,26 @@ fn report_on_exit(mut exits: MessageReader<AppExit>, stats: Res<FrameStats>) {
     );
 }
 
+#[derive(Resource)]
+struct PauseShot {
+    load: bool,
+}
+
+/// Ouvre le menu de pause trois secondes après l'entrée à bord.
+fn pause_shot(
+    mut commands: Commands,
+    time: Res<Time<Real>>,
+    shot: Res<PauseShot>,
+    mut since: Local<f32>,
+) {
+    let before = *since;
+    *since += time.delta_secs();
+    if before <= 3.0 && *since > 3.0 {
+        let load = shot.load;
+        commands.queue(move |world: &mut World| crate::ui::pause::open(world, load));
+    }
+}
+
 /// `SH_GPU_TIMINGS=1` : temps GPU moyen de chaque passe de rendu (requêtes d'horodatage,
 /// Vulkan et DX12), cumulé depuis la fin du chargement et journalisé à la sortie. Sur l'UHD 770,
 /// certaines passes (le bloom) comptent aussi des attentes : comparer, pas additionner.
@@ -263,6 +297,18 @@ fn report_gpu_timings(mut exits: MessageReader<AppExit>, timings: Res<GpuTimings
     for (path, ms) in passes {
         info!("temps GPU : {ms:6.2} ms  {path}");
     }
+}
+
+/// L'autopilote pilote-t-il cette partie (démarrage direct, scénario, capture, sortie) ?
+pub fn autopilot_active() -> bool {
+    [
+        "SH_START",
+        "SH_SCENARIO",
+        "SH_SCREENSHOT",
+        "SH_EXIT_AFTER_FRAMES",
+    ]
+    .iter()
+    .any(|name| std::env::var_os(name).is_some())
 }
 
 fn env_u32(name: &str) -> Option<u32> {
@@ -735,9 +781,14 @@ impl Plugin for ScenarioPlugin {
         let Ok(name) = std::env::var("SH_SCENARIO") else {
             return;
         };
-        // Ce scénario passe par le menu principal, où les étapes ordinaires ne jouent pas.
+        // Ces scénarios passent par le menu principal, où les étapes ordinaires ne jouent pas.
         if name == "menu_return" {
             app.add_systems(Update, menu_return);
+            return;
+        }
+        if name == "save_load" {
+            app.init_resource::<SaveLoadCheck>()
+                .add_systems(Update, save_load);
             return;
         }
         let (steps, flight) = match name.as_str() {
@@ -863,6 +914,115 @@ fn menu_return(
         _ if *total > 90.0 => {
             error!("scénario menu_return : bloqué à l'étape {step}");
             exit.write(AppExit::error());
+        }
+        _ => {}
+    }
+}
+
+/// `save_load` : ce qui a été sauvegardé revient au chargement.
+#[derive(Resource, Default)]
+struct SaveLoadCheck {
+    step: u8,
+    since: f32,
+    total: f32,
+    /// Argent, date, vue et pose du vaisseau (en vol) au moment de la sauvegarde.
+    expected: Option<(
+        i64,
+        sh_core::StellarDate,
+        ViewLevel,
+        Option<sh_core::SpacePos>,
+    )>,
+}
+
+/// La pose du vaisseau du joueur en vue Globale.
+fn ship_pose(world: &World) -> Option<sh_core::SpacePos> {
+    let root = world.get_resource::<crate::sector::ActiveSector>()?.root;
+    world.get::<crate::space::SpacePosition>(root).map(|p| p.0)
+}
+
+/// `save_load` (avec `SH_USER_DIR` et `SH_START=new` ou `sector:hexis_spaceport`) : sauvegarder,
+/// tout changer, recharger, retrouver l'argent, la date, la vue et la pose du vaisseau.
+fn save_load(world: &mut World) {
+    let dt = world.resource::<Time<Real>>().delta_secs();
+    let in_game = *world.resource::<State<AppState>>().get() == AppState::InGame;
+    let ready = in_game
+        && world.contains_resource::<crate::career::Career>()
+        && world.contains_resource::<crate::sector::ActiveSector>();
+    let mut check = world.resource_mut::<SaveLoadCheck>();
+    check.since += dt;
+    check.total += dt;
+    let (step, since, total) = (check.step, check.since, check.total);
+    if total > 120.0 {
+        error!("scénario save_load : bloqué à l'étape {step}");
+        world.write_message(AppExit::error());
+        return;
+    }
+    match step {
+        0 if ready && since > 4.0 => {
+            if let Some(mut career) = world.get_resource_mut::<crate::career::Career>() {
+                career.credits.cents = 432_100;
+            }
+            let date = world.resource::<crate::clock::GameClock>().date;
+            let view = *world.resource::<State<ViewLevel>>().get();
+            // En vol, le vaisseau s'écarte de son point d'arrivée : le chargement doit le
+            // remettre là où il a été sauvegardé, pas là où une arrivée le placerait.
+            if view == ViewLevel::Global
+                && let Some(root) = world
+                    .get_resource::<crate::sector::ActiveSector>()
+                    .map(|s| s.root)
+                && let Some(mut pos) = world.get_mut::<crate::space::SpacePosition>(root)
+            {
+                pos.0 += sh_core::SpacePos::new(1500.0, 0.0, 0.0);
+            }
+            let pose = ship_pose(world).filter(|_| view == ViewLevel::Global);
+            crate::save::save_now(world, crate::save::SaveKind::Manual);
+            let Some(latest) = crate::save::list_saves().into_iter().next() else {
+                error!("scénario save_load : aucune sauvegarde écrite");
+                world.write_message(AppExit::error());
+                return;
+            };
+            info!(
+                "scénario save_load : sauvegarde {} ({view:?})",
+                latest.path.display()
+            );
+            // Tout change avant de recharger : la sauvegarde doit tout rendre.
+            if let Some(mut career) = world.get_resource_mut::<crate::career::Career>() {
+                career.credits.cents = 0;
+            }
+            crate::save::request_load(world, &latest.path);
+            let mut check = world.resource_mut::<SaveLoadCheck>();
+            check.expected = Some((432_100, date, view, pose));
+            (check.step, check.since) = (1, 0.0);
+        }
+        // Le chargement quitte la partie : on attend d'y être revenu.
+        1 if !in_game => {
+            let mut check = world.resource_mut::<SaveLoadCheck>();
+            (check.step, check.since) = (2, 0.0);
+        }
+        2 if ready && since > 3.0 => {
+            let Some((credits, date, view, pose)) = world.resource::<SaveLoadCheck>().expected
+            else {
+                return;
+            };
+            let got_credits = world.resource::<crate::career::Career>().credits.cents;
+            let got_date = world.resource::<crate::clock::GameClock>().date;
+            let got_view = *world.resource::<State<ViewLevel>>().get();
+            let drift = match (pose, ship_pose(world)) {
+                (Some(a), Some(b)) => a.distance(b),
+                _ => 0.0,
+            };
+            if got_credits == credits && got_date == date && got_view == view && drift < 1.0 {
+                info!(
+                    "scénario save_load terminé : argent, date et vue retrouvés ({got_view:?}), vaisseau à {drift:.2} m"
+                );
+                world.write_message(AppExit::Success);
+            } else {
+                error!(
+                    "scénario save_load : rechargé {got_credits} centimes le {got_date:?} en {got_view:?} (écart {drift:.1} m), attendu {credits} le {date:?} en {view:?}"
+                );
+                world.write_message(AppExit::error());
+            }
+            world.resource_mut::<SaveLoadCheck>().step = 3;
         }
         _ => {}
     }

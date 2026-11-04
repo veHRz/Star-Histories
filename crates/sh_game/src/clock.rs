@@ -33,7 +33,7 @@ fn time_flows(view: Option<Res<State<ViewLevel>>>) -> bool {
 }
 
 /// La date du monde, et l'heure du jour en secondes.
-#[derive(Resource, Clone, Debug, PartialEq)]
+#[derive(Resource, Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct GameClock {
     pub date: StellarDate,
     pub seconds: f64,

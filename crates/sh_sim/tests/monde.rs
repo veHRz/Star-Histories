@@ -32,6 +32,25 @@ fn meme_graine_meme_histoire() {
     assert_ne!(a.history(), c.history(), "deux graines, deux histoires");
 }
 
+/// Sauvegarder puis recharger ne change pas l'histoire : le monde rechargé (passé par le texte
+/// RON, comme une vraie sauvegarde) écrit la même suite que celui qui a continué sans pause.
+#[test]
+fn une_sauvegarde_rechargee_continue_la_meme_histoire() {
+    let data = donnees();
+    let mut original = SimWorld::from_data(&data, Some(11));
+    original.advance_days(200);
+    let texte = ron::ser::to_string(&original.save()).unwrap_or_else(|e| panic!("{e}"));
+    let save = sh_data::ron_options()
+        .from_str(&texte)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let mut recharge = SimWorld::restore(&data, save);
+    assert_eq!(recharge.date(), original.date());
+    original.advance_days(300);
+    recharge.advance_days(300);
+    assert_eq!(recharge.history(), original.history());
+    assert!(original.history().len() > 10);
+}
+
 #[test]
 fn deux_ans_en_moins_de_deux_secondes() {
     let data = donnees();

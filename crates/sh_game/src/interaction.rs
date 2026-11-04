@@ -59,7 +59,7 @@ pub struct Target {
 pub struct InteractRequest;
 
 /// Objets portés par le joueur, ramassés à pied (montrés dans la fiche du capitaine).
-#[derive(Resource, Default, Debug)]
+#[derive(Resource, Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Inventory {
     pub items: BTreeMap<String, u32>,
 }

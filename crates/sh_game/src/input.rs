@@ -57,6 +57,16 @@ pub struct Pause;
 #[action_output(bool)]
 pub struct ToggleMap;
 
+/// Sauvegarde rapide (à pied et aux commandes).
+#[derive(InputAction)]
+#[action_output(bool)]
+pub struct QuickSave;
+
+/// Chargement de la sauvegarde rapide.
+#[derive(InputAction)]
+#[action_output(bool)]
+pub struct QuickLoad;
+
 // --- À pied --------------------------------------------------------------------------------
 
 /// Déplacement : x = droite, y = avant.
@@ -245,6 +255,12 @@ fn spawn_contexts(mut commands: Commands) {
             --
             Action::<Pause>::new()
             Bindings [ Binding(KeyCode::Escape) -- Binding(GamepadButton::Start) ]
+            --
+            Action::<QuickSave>::new()
+            Bindings [ Binding(KeyCode::F5) ]
+            --
+            Action::<QuickLoad>::new()
+            Bindings [ Binding(KeyCode::F9) ]
         ]
     });
 
@@ -304,6 +320,12 @@ fn spawn_contexts(mut commands: Commands) {
             --
             Action::<Pause>::new()
             Bindings [ Binding(KeyCode::Escape) -- Binding(GamepadButton::Start) ]
+            --
+            Action::<QuickSave>::new()
+            Bindings [ Binding(KeyCode::F5) ]
+            --
+            Action::<QuickLoad>::new()
+            Bindings [ Binding(KeyCode::F9) ]
         ]
     });
 

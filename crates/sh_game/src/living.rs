@@ -45,15 +45,27 @@ pub struct LivingWorld {
     read: usize,
 }
 
+impl LivingWorld {
+    /// Le monde d'une sauvegarde : `read` événements avaient déjà été relus par le jeu.
+    pub fn restored(sim: SimWorld, read: usize) -> Self {
+        Self { sim, read }
+    }
+
+    /// Événements déjà relus (nouvelles, connaissance du joueur).
+    pub fn read(&self) -> usize {
+        self.read
+    }
+}
+
 /// Une flotte connue du joueur : où, et à quelle date l'information remonte.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct KnownFleet {
     pub at: Id<Place>,
     pub as_of: StellarDate,
 }
 
 /// Ce que le joueur sait des flottes (jamais de flotte secrète).
-#[derive(Resource, Default, Clone, Debug)]
+#[derive(Resource, Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct PlayerKnowledge {
     pub fleets: BTreeMap<Id<Fleet>, KnownFleet>,
     /// Les dernières nouvelles publiques, de la plus ancienne à la plus récente.

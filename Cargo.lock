@@ -5929,6 +5929,7 @@ dependencies = [
  "bevy",
  "bevy-inspector-egui",
  "bevy_enhanced_input",
+ "serde",
  "serde_json",
  "sh_core",
  "sh_data",
@@ -5951,6 +5952,8 @@ dependencies = [
 name = "sh_sim"
 version = "0.1.0"
 dependencies = [
+ "ron",
+ "serde",
  "sh_core",
  "sh_data",
  "thiserror 2.0.21",

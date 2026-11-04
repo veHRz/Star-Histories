@@ -1,0 +1,515 @@
+//! Sauvegarde et chargement (M7 ; Q7 : sauvegarde libre, option Homme de fer).
+//!
+//! Une sauvegarde est un fichier RON versionné ([`FORMAT_VERSION`]) du dossier du joueur
+//! ([`user_dir`]) : le monde simulé sans ses constantes (reconstruites depuis les données), la
+//! fiche du capitaine, l'horloge, le lieu. On sauvegarde à quai ou en vol, jamais en combat ni
+//! pendant une manœuvre. Charger passe par le menu principal : quitter la partie l'efface
+//! (`state::forget_game`), puis les ressources de la sauvegarde remplacent celles qu'une
+//! nouvelle partie aurait créées (monde, horloge et carrière ne se recréent que s'ils manquent).
+//!
+//! Homme de fer : une seule sauvegarde, écrite automatiquement (à quai, à l'arrivée, en quittant)
+//! et effacée à la mort.
+
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use bevy::prelude::*;
+use bevy_enhanced_input::prelude::Start;
+use serde::{Deserialize, Serialize};
+use sh_core::{Id, SpacePos, StellarDate};
+use sh_data::Place;
+use sh_sim::{Captain, SimWorld, WorldSave};
+
+use crate::career::{Career, MissionLog};
+use crate::clock::GameClock;
+use crate::combat::{Death, Raid};
+use crate::data::{Data, Texts};
+use crate::input::{QuickLoad, QuickSave};
+use crate::interaction::Inventory;
+use crate::living::{LivingWorld, PlayerKnowledge};
+use crate::sector::{ActiveSector, Docked};
+use crate::space::{SpacePosition, SpaceRotation};
+use crate::state::{AppState, CurrentPlace, EnterGame, ViewLevel};
+use crate::transition::Sequence;
+use crate::ui::hud::Notice;
+use crate::voyage::{Location, ResumeFlight, ShipFuel};
+
+/// Version du format : une sauvegarde d'une autre version est refusée, jamais devinée.
+pub const FORMAT_VERSION: u32 = 1;
+
+pub struct SavePlugin;
+
+impl Plugin for SavePlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<GameMode>()
+            .add_observer(on_quick_save)
+            .add_observer(on_quick_load)
+            .add_systems(
+                Update,
+                apply_pending_load.run_if(resource_exists::<PendingLoad>),
+            )
+            .add_systems(
+                Update,
+                autosave
+                    .run_if(in_state(AppState::InGame))
+                    .run_if(resource_exists::<Career>),
+            );
+    }
+}
+
+/// La partie en cours : Homme de fer ou non.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GameMode {
+    pub ironman: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SaveKind {
+    Manual,
+    Quick,
+    Auto,
+    Ironman,
+}
+
+impl SaveKind {
+    fn text_key(self) -> &'static str {
+        match self {
+            SaveKind::Manual => "save.kind.manual",
+            SaveKind::Quick => "save.kind.quick",
+            SaveKind::Auto => "save.kind.auto",
+            SaveKind::Ironman => "save.kind.ironman",
+        }
+    }
+}
+
+/// Ce que montre la liste des sauvegardes.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SaveMeta {
+    pub kind: SaveKind,
+    pub date: StellarDate,
+    pub system: Id<Place>,
+    pub docked: bool,
+    /// Secondes depuis l'époque Unix : le classement de la liste.
+    pub saved_at: u64,
+}
+
+/// Où reprend le joueur.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum SavedPlace {
+    /// À quai : le quartier qui accueille le vaisseau (secteur composé).
+    Docked { district: String },
+    /// En vol, aux commandes : la pose du vaisseau dans le système.
+    Space { pos: SpacePos, rot: [f32; 4] },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SaveFile {
+    pub version: u32,
+    pub meta: SaveMeta,
+    pub mode: GameMode,
+    pub world: WorldSave,
+    /// Événements du monde déjà relus par le jeu (nouvelles).
+    pub read: usize,
+    pub knowledge: PlayerKnowledge,
+    pub captain: Captain,
+    pub last_tick: StellarDate,
+    pub missions: MissionLog,
+    pub clock: GameClock,
+    pub fuel: Option<(f64, f64)>,
+    pub inventory: Inventory,
+    pub place: SavedPlace,
+}
+
+/// Une sauvegarde à charger : appliquée au menu principal, une fois la partie quittée.
+#[derive(Resource)]
+pub struct PendingLoad(pub Box<SaveFile>);
+
+/// Une sauvegarde de la liste.
+#[derive(Clone, Debug)]
+pub struct SaveEntry {
+    pub path: PathBuf,
+    pub meta: SaveMeta,
+}
+
+// --- Fichiers ----------------------------------------------------------------------------------
+
+/// Dossier des fichiers du joueur (sauvegardes, réglages) : `SH_USER_DIR` s'il est posé, celui
+/// de l'autopilote quand il pilote (ses parties ne touchent jamais celles du joueur), sinon le
+/// dossier de données de l'utilisateur (`%APPDATA%\StarHistories`,
+/// `~/.local/share/star_histories`).
+pub fn user_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("SH_USER_DIR") {
+        return PathBuf::from(dir);
+    }
+    if crate::dev::autopilot_active() {
+        return PathBuf::from("target/autopilot-user");
+    }
+    if let Some(dir) = std::env::var_os("APPDATA") {
+        return PathBuf::from(dir).join("StarHistories");
+    }
+    if let Some(dir) = std::env::var_os("XDG_DATA_HOME") {
+        return PathBuf::from(dir).join("star_histories");
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        return PathBuf::from(home).join(".local/share/star_histories");
+    }
+    PathBuf::from("user")
+}
+
+pub fn saves_dir() -> PathBuf {
+    user_dir().join("saves")
+}
+
+fn file_name(kind: SaveKind, saved_at: u64) -> String {
+    match kind {
+        SaveKind::Manual => format!("partie-{saved_at}.ron"),
+        SaveKind::Quick => "rapide.ron".into(),
+        SaveKind::Auto => "auto.ron".into(),
+        SaveKind::Ironman => "homme-de-fer.ron".into(),
+    }
+}
+
+fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+/// Lit une sauvegarde ; une autre version du format est refusée.
+pub fn read_save(path: &Path) -> Result<SaveFile, String> {
+    #[derive(Deserialize)]
+    struct Version {
+        version: u32,
+    }
+    // La version d'abord : un format différent ne se lirait pas jusqu'au bout.
+    let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let version: Version = sh_data::ron_options()
+        .from_str(&text)
+        .map_err(|e| e.to_string())?;
+    if version.version != FORMAT_VERSION {
+        return Err(format!("version {}", version.version));
+    }
+    sh_data::ron_options()
+        .from_str(&text)
+        .map_err(|e| e.to_string())
+}
+
+/// Les sauvegardes lisibles, de la plus récente à la plus ancienne.
+pub fn list_saves() -> Vec<SaveEntry> {
+    let Ok(dir) = std::fs::read_dir(saves_dir()) else {
+        return Vec::new();
+    };
+    let mut entries: Vec<SaveEntry> = dir
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "ron"))
+        .filter_map(|path| match read_save(&path) {
+            Ok(save) => Some(SaveEntry {
+                path,
+                meta: save.meta,
+            }),
+            Err(err) => {
+                warn!("sauvegarde ignorée {} : {err}", path.display());
+                None
+            }
+        })
+        .collect();
+    entries.sort_by_key(|e| std::cmp::Reverse(e.meta.saved_at));
+    entries
+}
+
+/// La ligne d'une sauvegarde dans une liste : genre, date, lieu.
+pub fn describe(texts: &Texts, data: &Data, meta: &SaveMeta) -> String {
+    let system = data
+        .galaxy
+        .place_name(&meta.system)
+        .map_or_else(|| meta.system.to_string(), str::to_owned);
+    let place = if meta.docked {
+        texts.format("save.place.docked", &[("place", &system)])
+    } else {
+        system
+    };
+    texts.format(
+        "save.entry",
+        &[
+            ("kind", &texts.get(meta.kind.text_key())),
+            ("date", &crate::clock::format_date(texts, meta.date)),
+            ("place", &place),
+        ],
+    )
+}
+
+// --- Sauvegarder -------------------------------------------------------------------------------
+
+/// Ce qui empêche de sauvegarder maintenant (clé de texte), ou la sauvegarde.
+fn capture(world: &World, kind: SaveKind) -> Result<SaveFile, &'static str> {
+    if world
+        .get_resource::<Raid>()
+        .is_some_and(|r| r.outcome.is_none())
+        || world.contains_resource::<Death>()
+    {
+        return Err("save.refused.combat");
+    }
+    if world.contains_resource::<Sequence>() {
+        return Err("save.refused.transition");
+    }
+    let refused = "save.refused.place";
+    let location = world.get_resource::<Location>().ok_or(refused)?;
+    let view = world.get_resource::<State<ViewLevel>>().map(|s| *s.get());
+    let place = match view {
+        Some(ViewLevel::Global) => {
+            let root = world.get_resource::<ActiveSector>().ok_or(refused)?.root;
+            let pos = world.get::<SpacePosition>(root).ok_or(refused)?.0;
+            let rot = world.get::<SpaceRotation>(root).ok_or(refused)?.0;
+            SavedPlace::Space {
+                pos,
+                rot: rot.to_array(),
+            }
+        }
+        Some(ViewLevel::Sector) => SavedPlace::Docked {
+            district: world
+                .get_resource::<Docked>()
+                .ok_or(refused)?
+                .district
+                .clone(),
+        },
+        _ => return Err(refused),
+    };
+    let living = world.get_resource::<LivingWorld>().ok_or(refused)?;
+    let career = world.get_resource::<Career>().ok_or(refused)?;
+    let clock = world.get_resource::<GameClock>().ok_or(refused)?;
+    Ok(SaveFile {
+        version: FORMAT_VERSION,
+        meta: SaveMeta {
+            kind,
+            date: clock.date,
+            system: location.system.clone(),
+            docked: matches!(place, SavedPlace::Docked { .. }),
+            saved_at: now(),
+        },
+        mode: world
+            .get_resource::<GameMode>()
+            .copied()
+            .unwrap_or_default(),
+        world: living.sim.save(),
+        read: living.read(),
+        knowledge: world
+            .get_resource::<PlayerKnowledge>()
+            .cloned()
+            .unwrap_or_default(),
+        captain: career.captain.clone(),
+        last_tick: career.last_tick(),
+        missions: MissionLog {
+            lines: world
+                .get_resource::<MissionLog>()
+                .map(|l| l.lines.clone())
+                .unwrap_or_default(),
+        },
+        clock: clock.clone(),
+        fuel: world
+            .get_resource::<ShipFuel>()
+            .map(|f| (f.units, f.capacity)),
+        inventory: Inventory {
+            items: world
+                .get_resource::<Inventory>()
+                .map(|i| i.items.clone())
+                .unwrap_or_default(),
+        },
+        place,
+    })
+}
+
+/// Sauvegarde maintenant et l'annonce. En Homme de fer, seules les sauvegardes automatiques
+/// s'écrivent, toujours dans le même fichier.
+pub fn save_now(world: &mut World, kind: SaveKind) {
+    let ironman = world.get_resource::<GameMode>().is_some_and(|m| m.ironman);
+    let kind = match (ironman, kind) {
+        (true, SaveKind::Auto) => SaveKind::Ironman,
+        (true, _) => {
+            notify(world, "save.refused.ironman", &[]);
+            return;
+        }
+        (false, kind) => kind,
+    };
+    let save = match capture(world, kind) {
+        Ok(save) => save,
+        Err(key) => {
+            // Une sauvegarde automatique refusée (combat) se tait : elle reviendra.
+            if kind != SaveKind::Auto && kind != SaveKind::Ironman {
+                notify(world, key, &[]);
+            }
+            return;
+        }
+    };
+    let path = saves_dir().join(file_name(kind, save.meta.saved_at));
+    match sh_data::write_ron(&path, &save) {
+        Ok(()) => {
+            info!("sauvegarde écrite : {}", path.display());
+            let key = match kind {
+                SaveKind::Auto | SaveKind::Ironman => "save.done_auto",
+                _ => "save.done",
+            };
+            notify(world, key, &[]);
+        }
+        Err(err) => {
+            error!("sauvegarde impossible : {err}");
+            notify(world, "save.failed", &[("error", &err.to_string())]);
+        }
+    }
+}
+
+/// La mort efface la sauvegarde Homme de fer.
+pub fn erase_ironman(world: &mut World) {
+    if world.get_resource::<GameMode>().is_some_and(|m| m.ironman) {
+        let path = saves_dir().join(file_name(SaveKind::Ironman, 0));
+        if let Err(err) = std::fs::remove_file(&path)
+            && err.kind() != std::io::ErrorKind::NotFound
+        {
+            error!("sauvegarde Homme de fer non effacée : {err}");
+        }
+    }
+}
+
+fn notify(world: &mut World, key: &str, args: &[(&str, &str)]) {
+    let text = world.resource::<Texts>().format(key, args);
+    world.write_message(Notice(text));
+}
+
+/// Sauvegarde automatique peu après l'arrivée dans une vue (à quai, en vol après un voyage
+/// ou un départ) : le temps que la scène soit en place.
+fn autosave(
+    mut commands: Commands,
+    time: Res<Time<Real>>,
+    view: Option<Res<State<ViewLevel>>>,
+    docked: Option<Res<Docked>>,
+    mut armed: Local<(Option<(ViewLevel, bool)>, f32)>,
+) {
+    let current = view.map(|v| (*v.get(), docked.is_some()));
+    let (seen, timer) = &mut *armed;
+    if current != *seen {
+        *seen = current;
+        *timer = 1.5;
+        return;
+    }
+    if *timer <= 0.0 {
+        return;
+    }
+    *timer -= time.delta_secs();
+    let saveable = matches!(
+        current,
+        Some((ViewLevel::Global, _)) | Some((ViewLevel::Sector, true))
+    );
+    if *timer <= 0.0 && saveable {
+        commands.queue(|world: &mut World| save_now(world, SaveKind::Auto));
+    }
+}
+
+fn on_quick_save(_: On<Start<QuickSave>>, mut commands: Commands) {
+    commands.queue(|world: &mut World| save_now(world, SaveKind::Quick));
+}
+
+fn on_quick_load(_: On<Start<QuickLoad>>, mut commands: Commands) {
+    commands.queue(|world: &mut World| {
+        if world.get_resource::<GameMode>().is_some_and(|m| m.ironman) {
+            notify(world, "save.refused.ironman", &[]);
+            return;
+        }
+        let path = saves_dir().join(file_name(SaveKind::Quick, 0));
+        if path.exists() {
+            request_load(world, &path);
+        } else {
+            notify(world, "load.no_quicksave", &[]);
+        }
+    });
+}
+
+// --- Charger -----------------------------------------------------------------------------------
+
+/// Demande le chargement d'un fichier : la partie en cours est quittée d'abord.
+pub fn request_load(world: &mut World, path: &Path) {
+    match read_save(path) {
+        Ok(save) => {
+            info!("chargement de {}", path.display());
+            world.insert_resource(PendingLoad(Box::new(save)));
+        }
+        Err(err) => {
+            error!("sauvegarde illisible {} : {err}", path.display());
+            notify(world, "load.failed", &[("error", &err)]);
+        }
+    }
+}
+
+/// En jeu, quitte la partie ; au menu, installe la sauvegarde et entre en jeu.
+fn apply_pending_load(world: &mut World) {
+    let state = *world.resource::<State<AppState>>().get();
+    match state {
+        AppState::InGame => {
+            world
+                .resource_mut::<NextState<AppState>>()
+                .set(AppState::MainMenu);
+        }
+        AppState::MainMenu => {
+            let Some(PendingLoad(save)) = world.remove_resource::<PendingLoad>() else {
+                return;
+            };
+            install(world, *save);
+        }
+        _ => {}
+    }
+}
+
+fn install(world: &mut World, save: SaveFile) {
+    let data = world.resource::<Data>().clone();
+    let system = save.meta.system.clone();
+    world.insert_resource(save.mode);
+    world.insert_resource(LivingWorld::restored(
+        SimWorld::restore(&data, save.world),
+        save.read,
+    ));
+    world.insert_resource(save.knowledge);
+    world.insert_resource(Career::restored(save.captain, save.last_tick));
+    world.insert_resource(save.missions);
+    world.insert_resource(save.clock);
+    world.insert_resource(save.inventory);
+    world.insert_resource(Location {
+        system: system.clone(),
+    });
+    if let Some((units, capacity)) = save.fuel {
+        world.insert_resource(ShipFuel { units, capacity });
+    }
+    let request = match save.place {
+        SavedPlace::Space { pos, rot } => {
+            world.insert_resource(ResumeFlight {
+                system: system.clone(),
+                pos,
+                rot: Quat::from_array(rot),
+            });
+            EnterGame {
+                view: ViewLevel::Global,
+                place: Some(system.as_str().to_owned()),
+            }
+        }
+        SavedPlace::Docked { district } => EnterGame {
+            view: ViewLevel::Sector,
+            place: Some(district),
+        },
+    };
+    world.resource_scope(|world, mut app_state: Mut<NextState<AppState>>| {
+        world.resource_scope(|world, mut view: Mut<NextState<ViewLevel>>| {
+            let mut place = world.resource_mut::<CurrentPlace>();
+            request.apply(&mut app_state, &mut view, &mut place);
+        });
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn noms_des_fichiers() {
+        assert_eq!(file_name(SaveKind::Quick, 5), "rapide.ron");
+        assert_eq!(file_name(SaveKind::Manual, 42), "partie-42.ron");
+        assert_eq!(file_name(SaveKind::Ironman, 42), "homme-de-fer.ron");
+    }
+}

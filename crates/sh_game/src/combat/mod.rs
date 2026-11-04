@@ -528,7 +528,8 @@ fn tick_death(
     death.timer += time.delta_secs();
     if death.timer > 5.0 {
         // La partie est perdue : la quitter l'efface (`state::forget_game`), une nouvelle partie
-        // repart de zéro.
+        // repart de zéro ou d'une sauvegarde (en Homme de fer, il n'en reste aucune).
+        commands.queue(crate::save::erase_ironman);
         next.set(AppState::MainMenu);
         info!("mort du joueur : retour au menu principal");
     }

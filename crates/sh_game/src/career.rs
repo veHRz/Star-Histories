@@ -73,12 +73,23 @@ pub struct Career {
     last_tick: StellarDate,
 }
 
+impl Career {
+    /// La fiche d'une sauvegarde.
+    pub fn restored(captain: Captain, last_tick: StellarDate) -> Self {
+        Self { captain, last_tick }
+    }
+
+    pub fn last_tick(&self) -> StellarDate {
+        self.last_tick
+    }
+}
+
 /// Ce qu'une action du joueur a déclenché, à annoncer.
 #[derive(Message, Clone, Debug)]
 pub struct CareerOutcomes(pub Vec<Outcome>);
 
 /// Le journal de missions : ce qui est arrivé, daté, du plus ancien au plus récent.
-#[derive(Resource, Default, Debug)]
+#[derive(Resource, Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MissionLog {
     pub lines: Vec<String>,
 }

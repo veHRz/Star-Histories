@@ -36,6 +36,38 @@ impl UiFonts {
     }
 }
 
+/// Marque les boutons de menu (survol mis en évidence par `ui::menu`).
+#[derive(Component, Default)]
+pub struct MenuButton;
+
+/// Un bouton de menu (menu principal, pause, chargement) portant son action `A`.
+pub fn menu_button<A: Component>(
+    fonts: &UiFonts,
+    label: String,
+    action: A,
+    enabled: bool,
+) -> impl Bundle {
+    let text_color = if enabled { TEXT } else { TEXT_DISABLED };
+    (
+        MenuButton,
+        bevy::ui_widgets::Button,
+        bevy::ui_widgets::ActivateOnPress,
+        action,
+        Node {
+            width: px(400),
+            height: px(52),
+            margin: UiRect::vertical(px(6)),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            border: UiRect::all(px(1)),
+            ..default()
+        },
+        BorderColor::all(BUTTON_BORDER),
+        BackgroundColor(BUTTON),
+        children![(Text::new(label), fonts.body(22.0), TextColor(text_color))],
+    )
+}
+
 /// Un écran plein, fond opaque, contenu centré en colonne.
 pub fn fullscreen_backdrop() -> impl Bundle {
     (

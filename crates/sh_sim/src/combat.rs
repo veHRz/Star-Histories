@@ -11,6 +11,7 @@
 //!   système y tendent une embuscade, plus souvent quand leur flotte est en forme ;
 //!   la flotte de la faction qui tient le système vient à la rescousse si elle y est.
 
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use sh_core::rng::fnv1a;
@@ -20,7 +21,7 @@ use sh_data::{Fleet, GameData, Place, SectionId};
 
 use crate::SimWorld;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SectionState {
     pub armor: f64,
     pub structure: f64,
@@ -34,7 +35,7 @@ impl SectionState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Hull {
     pub sections: BTreeMap<SectionId, SectionState>,
     pub core: f64,
