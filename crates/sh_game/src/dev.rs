@@ -9,6 +9,8 @@
 //! - `SH_SCREENSHOT=chemin.png` : enregistre une capture puis quitte.
 //! - `SH_SCREENSHOT_FRAME=N` : frame de la capture (défaut : 90, le temps que la scène se charge).
 //! - `SH_PRESET=low|medium|high` : préréglage graphique (lu par `graphics`).
+//! - `SH_WINDOW=<L>x<H>|fullscreen` : taille de la fenêtre, ou plein écran sans bordure (les
+//!   mesures de la machine de référence se font en 1080p).
 //!
 //! À la sortie, le temps de frame moyen et maximal est toujours journalisé (hors démarrage).
 
@@ -16,6 +18,8 @@ use std::path::PathBuf;
 
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Capturing, Screenshot, save_to_disk};
+use bevy::window::{MonitorSelection, WindowMode};
+use bevy::winit::WinitSettings;
 
 use crate::data::Data;
 use crate::loading::StartRequest;
@@ -32,6 +36,15 @@ impl Plugin for AutopilotPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<FrameStats>()
             .add_systems(Last, (record_frame_time, report_on_exit).chain());
+
+        // Bevy bride à 60 Hz une fenêtre sans focus (`WinitSettings::game`) ; une fenêtre lancée
+        // par l'autopilote n'a souvent pas le focus : ses frames rapides seraient comptées 16,7 ms.
+        if ["SH_EXIT_AFTER_FRAMES", "SH_SCREENSHOT", "SH_SCENARIO"]
+            .iter()
+            .any(|name| std::env::var_os(name).is_some())
+        {
+            app.insert_resource(WinitSettings::continuous());
+        }
 
         match std::env::var("SH_START").ok().as_deref().map(parse_start) {
             Some(Ok(request)) => {
@@ -198,9 +211,57 @@ fn env_u32(name: &str) -> Option<u32> {
     std::env::var(name).ok()?.trim().parse().ok()
 }
 
+/// Applique `SH_WINDOW` à la fenêtre principale. Appelée avant l'installation du journal :
+/// une valeur illisible est ignorée et renvoyée en erreur, à journaliser par l'appelant.
+pub fn apply_window_env(window: &mut Window) -> Result<(), String> {
+    let Ok(value) = std::env::var("SH_WINDOW") else {
+        return Ok(());
+    };
+    match parse_window(&value) {
+        Some(WindowSetting::Fullscreen) => {
+            window.mode = WindowMode::BorderlessFullscreen(MonitorSelection::Primary);
+        }
+        Some(WindowSetting::Size(width, height)) => window.resolution.set(width, height),
+        None => {
+            return Err(format!(
+                "SH_WINDOW : « {value} » illisible (attendu <L>x<H> ou fullscreen), ignoré"
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, PartialEq)]
+enum WindowSetting {
+    Fullscreen,
+    Size(f32, f32),
+}
+
+fn parse_window(value: &str) -> Option<WindowSetting> {
+    let value = value.trim();
+    if value == "fullscreen" {
+        return Some(WindowSetting::Fullscreen);
+    }
+    let (width, height) = value.split_once('x')?;
+    let width: u16 = width.trim().parse().ok()?;
+    let height: u16 = height.trim().parse().ok()?;
+    (width > 0 && height > 0).then(|| WindowSetting::Size(f32::from(width), f32::from(height)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lecture_de_sh_window() {
+        assert_eq!(parse_window("fullscreen"), Some(WindowSetting::Fullscreen));
+        assert_eq!(
+            parse_window(" 1920x1080 "),
+            Some(WindowSetting::Size(1920.0, 1080.0))
+        );
+        assert_eq!(parse_window("1920"), None);
+        assert_eq!(parse_window("0x1080"), None);
+    }
 
     #[test]
     fn lecture_de_sh_start() {

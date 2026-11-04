@@ -33,18 +33,23 @@ pub struct StarHistoriesPlugin;
 
 impl Plugin for StarHistoriesPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Star Histories".into(),
-                resolution: WindowResolution::new(1600, 900),
-                // Pas de synchronisation verticale forcée : les mesures de l'autopilote doivent
-                // refléter le vrai coût d'une frame. La vsync deviendra une option (M7).
-                present_mode: PresentMode::AutoNoVsync,
-                ..default()
-            }),
+        let mut window = Window {
+            title: "Star Histories".into(),
+            resolution: WindowResolution::new(1600, 900),
+            // Pas de synchronisation verticale forcée : les mesures de l'autopilote doivent
+            // refléter le vrai coût d'une frame. La vsync deviendra une option (M7).
+            present_mode: PresentMode::AutoNoVsync,
             ..default()
-        }))
-        .add_plugins((
+        };
+        let window_env = dev::apply_window_env(&mut window);
+        app.add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(window),
+            ..default()
+        }));
+        if let Err(message) = window_env {
+            warn!("{message}");
+        }
+        app.add_plugins((
             state::StatePlugin,
             clock::ClockPlugin,
             loading::LoadingPlugin,
