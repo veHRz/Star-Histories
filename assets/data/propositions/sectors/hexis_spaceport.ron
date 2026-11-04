@@ -14,7 +14,7 @@
             lod: "models/places/hexis_spaceport/passerelle_lod.gltf",
             min: (-12.200, -0.200, -1.400),
             max: (0.100, 2.800, 1.400),
-            lightmap: (image: "textures/lightmaps/hexis_spaceport/passerelle.png", exposure: 1420.786),
+            lightmap: (image: "textures/lightmaps/hexis_spaceport/passerelle.png", exposure: 1378.975),
         ),
         (
             id: "hall",
@@ -22,7 +22,7 @@
             lod: "models/places/hexis_spaceport/hall_lod.gltf",
             min: (-26.200, -0.200, -7.200),
             max: (-12.200, 5.200, 7.200),
-            lightmap: (image: "textures/lightmaps/hexis_spaceport/hall.png", exposure: 2712.912),
+            lightmap: (image: "textures/lightmaps/hexis_spaceport/hall.png", exposure: 2282.163),
         ),
         (
             id: "bureau",
@@ -30,7 +30,7 @@
             lod: "models/places/hexis_spaceport/bureau_lod.gltf",
             min: (-24.200, -0.200, -13.600),
             max: (-15.800, 3.200, -7.200),
-            lightmap: (image: "textures/lightmaps/hexis_spaceport/bureau.png", exposure: 1079.949),
+            lightmap: (image: "textures/lightmaps/hexis_spaceport/bureau.png", exposure: 1306.566),
         ),
         (
             id: "taverne",
@@ -38,7 +38,7 @@
             lod: "models/places/hexis_spaceport/taverne_lod.gltf",
             min: (-24.200, -0.200, 7.200),
             max: (-15.800, 3.400, 13.600),
-            lightmap: (image: "textures/lightmaps/hexis_spaceport/taverne.png", exposure: 949.052),
+            lightmap: (image: "textures/lightmaps/hexis_spaceport/taverne.png", exposure: 1233.920),
         ),
         (
             id: "marche",
@@ -46,7 +46,7 @@
             lod: "models/places/hexis_spaceport/marche_lod.gltf",
             min: (-40.200, -0.200, -6.200),
             max: (-26.200, 4.700, 6.200),
-            lightmap: (image: "textures/lightmaps/hexis_spaceport/marche.png", exposure: 1362.213),
+            lightmap: (image: "textures/lightmaps/hexis_spaceport/marche.png", exposure: 1311.389),
         ),
     ],
     portals: [
