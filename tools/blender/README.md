@@ -6,7 +6,10 @@ source de vérité.
 
 | Script | Produit |
 |---|---|
-| `common.py` | Bibliothèque : scène vide, matériaux partagés, pavés, cylindres, collisions `_col`, repères, fusion par matériau, export glTF, conversion de repère |
+| `common.py` | Bibliothèque : scène vide, matériaux partagés, pavés, cylindres, collisions `_col`, repères, fusion par matériau, export glTF, conversion de repère. Depuis M8 (lot 0) : `textured_material` (matériau de la bibliothèque, teinte, émissif), `uv_box` (projection boîte à densité constante, `offset` pour décaler chaque travée), `uv_trim` / `trim_band` (bande de la trim sheet), `export_gltf` (glTF séparé, images citées par chemin, tangentes vérifiées), `material_library` |
+| `materials/library.py` | Bibliothèque « futur usé » (lot 0, M8) : 15 matériaux procéduraux (numpy, raccords parfaits, déterministes) cuits dans `assets/textures/materials/<mat>_{color,normal,orm,emissive}.png` ; tables `MATERIALS` (taille de tuile, rôle), `TINTS` (teintes d'identité P6), `TRIMS` (bandes de la trim sheet `trim_ship`). Modules : `texgen`, `surfaces`, `devices`, `trim`, `preview` |
+| `materials/salle_temoin.py` | Salle témoin (coursive + atelier) : `assets/models/materials/salle_temoin/*.gltf`, lightmaps, descripteur `propositions/sectors/salle_temoin.ron` (`SH_START=sector:salle_temoin`, apparitions `entree`, `atelier`) ; `-- --previews` pour ses rendus |
+| `materials/planche.py` | Planche de démonstration des matériaux (`target/art-previews/lot0/planche.png`, `-- --details` pour les gros plans) |
 | `lightmap.py` | Éclairage précalculé : 2e jeu d'UV (`lightmap`) par cellule, bake diffus Cycles (une lampe par `LIGHT_`), PNG sRGB normalisés + exposition écrite dans le descripteur |
 | `kit/ship_interior.py` | Kit d'intérieur de vaisseau (P13) : `assets/models/kit/ship_interior/*.glb`, `art/kit/ship_interior.blend` |
 | `space/hexis_orbitals.py` | Installations orbitales d'Hexis (P15, P18) : `assets/models/space/{l_enclume,portal_hub,shipyard,freighter}.glb`, `art/space/hexis_orbitals.blend` |
@@ -54,3 +57,16 @@ secteurs), puis une capture en jeu (`SH_START=sector:player_ship`, `SH_SPAWN=<id
 
 Repères : 1 unité = 1 m, Z-haut, l'avant d'un objet vers +Y (−Z dans le jeu). Matériaux PBR
 partagés, cherchés par type de nœud (jamais par nom : Blender peut être traduit).
+
+## Textures partagées (M8)
+
+- Les modèles texturés s'exportent en **glTF séparé** (`export_gltf` : `.gltf` + `.bin`) ; leurs
+  images restent dans `assets/textures/materials/`, citées par chemin relatif, jamais copiées.
+  Le jeu (`crates/sh_game/src/materials.rs`) précharge toute la bibliothèque, calcule les
+  mipmaps et règle l'échantillonnage (répétition, anisotrope du préréglage).
+- Contrat de nommage : `_color` et `_emissive` en sRGB, `_normal` (OpenGL) et `_orm` (R occlusion,
+  G rugosité, B métal) en linéaire. Textures sur UV0, lightmap sur le 2e jeu (`lightmap`).
+- Dans une cellule à lightmap en Bas et Moyen, seul le diffus est éclairé (lightmap × couleur ×
+  (1 − métal)) : le métal des ORM est plafonné à 0,55 et 70 % de l'occlusion est recopiée dans la
+  couleur. Les plafonniers (matériaux `sh_light*`) sont remplacés par leurs lampes au bake ; les
+  bandeaux (`sh_band_*`) éclairent dans le bake.

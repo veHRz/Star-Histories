@@ -280,3 +280,372 @@ def to_bevy(v: tuple[float, float, float]) -> tuple[float, float, float]:
 
 def props_json(obj: bpy.types.Object) -> str:
     return json.dumps({k: obj[k] for k in obj.keys() if not k.startswith("_")}, sort_keys=True)
+
+
+# --- Matériaux texturés « futur usé » (M8, lot 0) ------------------------------------------------
+# Bibliothèque : tools/blender/materials/library.py (catalogue MATERIALS, bandes TRIMS, teintes
+# TINTS), textures cuites dans assets/textures/materials/. Les modèles qui s'en servent sont
+# exportés en glTF séparé (`export_gltf`) : leurs images pointent vers ces fichiers par chemin
+# relatif, et Bevy ne charge chaque image qu'une fois, quel que soit le nombre de modèles.
+
+TEXTURES_DIR = ROOT / "assets" / "textures" / "materials"
+UV_TEXTURE = "UVMap"  # 1er jeu d'UV (TEXCOORD_0) : les textures ; le 2e (`lightmap`) est aux lightmaps
+GLTF_OUTPUT_GROUP = "glTF Material Output"  # nom relu par l'exportateur glTF (sortie Occlusion)
+_COLORSPACE = {"color": "sRGB", "emissive": "sRGB", "normal": "Non-Color", "orm": "Non-Color"}
+
+
+def material_library():
+    """Module `library` de la bibliothèque (catalogue, bandes de trim), importé à la demande."""
+    import importlib
+    import sys
+
+    path = str(Path(__file__).resolve().parent / "materials")
+    if path not in sys.path:
+        sys.path.insert(0, path)
+    return importlib.import_module("library")
+
+
+def _socket(sockets, identifier: str):
+    return next(s for s in sockets if s.identifier == identifier)
+
+
+def _gltf_output_group() -> bpy.types.NodeTree:
+    """Groupe de nœuds « glTF Material Output » : l'exportateur glTF de Blender y lit l'occlusion
+    (`io_scene_gltf2/blender/com/material_helpers.py`, `get_socket_from_gltf_material_node`)."""
+    group = bpy.data.node_groups.get(GLTF_OUTPUT_GROUP)
+    if group is not None:
+        return group
+    try:
+        from io_scene_gltf2.blender.com.material_helpers import create_settings_group
+
+        return create_settings_group(GLTF_OUTPUT_GROUP)
+    except ImportError:
+        group = bpy.data.node_groups.new(GLTF_OUTPUT_GROUP, "ShaderNodeTree")
+        group.interface.new_socket("Occlusion", in_out="INPUT", socket_type="NodeSocketFloat")
+        group.nodes.new("NodeGroupInput")
+        group.nodes.new("NodeGroupOutput")
+        return group
+
+
+def _texture_files(maps) -> dict[str, Path]:
+    """Rôle → fichier : `maps` est un nom de la bibliothèque (« panel_painted ») ou un
+    dictionnaire {rôle: chemin} (absolu ou relatif à la racine du dépôt)."""
+    if isinstance(maps, str):
+        files = {role: TEXTURES_DIR / f"{maps}_{role}.png" for role in _COLORSPACE}
+        files = {role: path for role, path in files.items() if path.exists()}
+    else:
+        files = {role: (Path(p) if Path(p).is_absolute() else ROOT / p) for role, p in maps.items()}
+    if "color" not in files or not files["color"].exists():
+        raise FileNotFoundError(f"texture de couleur introuvable pour {maps!r} (lancer materials/library.py)")
+    return files
+
+
+def textured_material(
+    name: str,
+    maps,
+    tint: tuple[float, float, float] = (1.0, 1.0, 1.0),
+    emissive: tuple[float, float, float] | None = None,
+    emissive_strength: float = 1.0,
+    normal_strength: float = 1.0,
+) -> bpy.types.Material:
+    """Matériau PBR alimenté par les textures cuites de la bibliothèque, partagé par nom.
+
+    - `maps` : nom d'un matériau de la bibliothèque (« panel_painted ») ou {rôle: chemin} ;
+    - `tint` : facteur de couleur de base (glTF `baseColorFactor`) ; teintes d'identité dans
+      `library.TINTS` ;
+    - `emissive` : couleur d'émission (facteur glTF), multipliée par `<maps>_emissive.png` s'il
+      existe ; None : pas d'émission. `emissive_strength` > 1 sort en
+      KHR_materials_emissive_strength.
+
+    Faces arrière masquées (`doubleSided: false`) : réserver aux volumes fermés.
+
+    Graphe : nœuds Image sur l'UV `UVMap` (explicite : `lightmap.py` ajoute un 2e jeu), couleur ×
+    teinte (Mix Multiplier : l'exportateur en fait le facteur), Normal Map en espace tangent,
+    ORM → Separate Color : G rugosité, B métal, R occlusion vers le groupe « glTF Material
+    Output ». Les trois canaux viennent de la même image : l'exportateur la garde telle quelle
+    (pas d'ORM recomposé). Nœuds cherchés par type ou par identifiant de prise, jamais par nom.
+    La taille de tuile du catalogue est notée sur le matériau (`sh_tile_m`) pour `uv_box`.
+    """
+    if name in _MATERIALS:
+        return _MATERIALS[name]
+    files = _texture_files(maps)
+    mat = bpy.data.materials.get(name) or bpy.data.materials.new(name)
+    mat.use_nodes = True
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    bsdf = next(n for n in nodes if n.type == "BSDF_PRINCIPLED")
+    out = next(n for n in nodes if n.type == "OUTPUT_MATERIAL")
+    for node in list(nodes):
+        if node not in (bsdf, out):
+            nodes.remove(node)
+    bsdf.location, out.location = (300, 0), (600, 0)
+    uv = nodes.new("ShaderNodeUVMap")
+    uv.uv_map = UV_TEXTURE
+    uv.location = (-900, 0)
+
+    def image(role: str, y: float):
+        node = nodes.new("ShaderNodeTexImage")
+        img = bpy.data.images.load(str(files[role]), check_existing=True)
+        img.colorspace_settings.name = _COLORSPACE[role]
+        node.image = img
+        node.extension = "REPEAT"
+        node.location = (-600, y)
+        links.new(uv.outputs["UV"], node.inputs["Vector"])
+        return node
+
+    def multiply(color_out, factor, y: float):
+        mix = nodes.new("ShaderNodeMix")
+        mix.data_type = "RGBA"
+        mix.blend_type = "MULTIPLY"
+        mix.location = (-250, y)
+        _socket(mix.inputs, "Factor_Float").default_value = 1.0
+        links.new(color_out, _socket(mix.inputs, "A_Color"))
+        _socket(mix.inputs, "B_Color").default_value = (*factor, 1.0)
+        return _socket(mix.outputs, "Result_Color")
+
+    color = image("color", 300)
+    links.new(multiply(color.outputs["Color"], tint, 300), bsdf.inputs["Base Color"])
+    if "normal" in files:
+        normal = image("normal", -300)
+        nmap = nodes.new("ShaderNodeNormalMap")
+        nmap.space = "TANGENT"
+        nmap.uv_map = UV_TEXTURE
+        nmap.inputs["Strength"].default_value = normal_strength
+        nmap.location = (-250, -300)
+        links.new(normal.outputs["Color"], nmap.inputs["Color"])
+        links.new(nmap.outputs["Normal"], bsdf.inputs["Normal"])
+    if "orm" in files:
+        orm = image("orm", 0)
+        sep = nodes.new("ShaderNodeSeparateColor")
+        sep.mode = "RGB"
+        sep.location = (-250, 0)
+        links.new(orm.outputs["Color"], sep.inputs["Color"])
+        links.new(sep.outputs["Green"], bsdf.inputs["Roughness"])
+        links.new(sep.outputs["Blue"], bsdf.inputs["Metallic"])
+        group = nodes.new("ShaderNodeGroup")
+        group.node_tree = _gltf_output_group()
+        group.location = (300, -400)
+        links.new(sep.outputs["Red"], group.inputs["Occlusion"])
+    if emissive is not None:
+        if "emissive" in files:
+            emis = image("emissive", -650)
+            links.new(multiply(emis.outputs["Color"], emissive, -650), bsdf.inputs["Emission Color"])
+        else:
+            bsdf.inputs["Emission Color"].default_value = (*emissive, 1.0)
+        bsdf.inputs["Emission Strength"].default_value = emissive_strength
+    mat.diffuse_color = (*tint, 1.0)
+    # Faces arrière masquées (glTF doubleSided: false) : les pièces sont des volumes fermés,
+    # le GPU n'ombre pas leurs faces cachées.
+    mat.use_backface_culling = True
+    if isinstance(maps, str):
+        spec = material_library().MATERIALS.get(maps, {})
+        mat["sh_library"] = maps
+        mat["sh_tile_m"] = float(spec.get("tile_m", 2.0))
+    _MATERIALS[name] = mat
+    return mat
+
+
+def _uv_layer(mesh: bpy.types.Mesh):
+    """Le 1er jeu d'UV (`UVMap`), créé au besoin, toujours en tête."""
+    if len(mesh.uv_layers) == 0:
+        mesh.uv_layers.new(name=UV_TEXTURE)
+    return mesh.uv_layers[0]
+
+
+def _mesh_arrays(obj: bpy.types.Object):
+    """Sommets par boucle dans le repère « local × échelle + position ramenée dans la rotation
+    de l'objet » : la texture suit la rotation de l'objet (props tournés par le kit) et deux
+    objets de même rotation posés côte à côte raccordent (murs en plusieurs pavés). Normales par
+    face dans le même repère, polygone de chaque boucle."""
+    import numpy as np
+
+    mesh = obj.data
+    loc, rot, scale = obj.matrix_basis.decompose()
+    offset = rot.inverted() @ loc
+    s = np.array(scale, dtype=np.float64)
+    nv, nl, np_ = len(mesh.vertices), len(mesh.loops), len(mesh.polygons)
+    co = np.empty(nv * 3)
+    mesh.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3) * s + np.array(offset)
+    loop_v = np.empty(nl, dtype=np.int64)
+    mesh.loops.foreach_get("vertex_index", loop_v)
+    normals = np.empty(np_ * 3)
+    mesh.polygons.foreach_get("normal", normals)
+    normals = normals.reshape(-1, 3) / np.where(s == 0, 1, s)
+    normals /= np.maximum(np.linalg.norm(normals, axis=1, keepdims=True), 1e-12)
+    totals = np.empty(np_, dtype=np.int64)
+    mesh.polygons.foreach_get("loop_total", totals)
+    loop_poly = np.repeat(np.arange(np_), totals)
+    return co[loop_v], normals, loop_poly
+
+
+def _tile_of(obj: bpy.types.Object) -> float:
+    mats = [m for m in obj.data.materials if m is not None]
+    return float(mats[0].get("sh_tile_m", 2.0)) if mats else 2.0
+
+
+def uv_box(obj: bpy.types.Object, meters_per_tile: float | None = None, offset: tuple[float, float] = (0.0, 0.0)) -> None:
+    """Projection boîte du 1er jeu d'UV, densité constante (tuile de `meters_per_tile` mètres ;
+    None : la taille du catalogue notée sur le matériau, sinon 2 m, soit 512 px/m en 1K).
+
+    Chaque face prend l'axe dominant de sa normale ; les murs gardent V vers le haut (Z), et
+    aucune face n'est vue en miroir (pochoirs lisibles). Marche sur `box` (biseauté ou non),
+    `cylinder` et un maillage fusionné ; à appeler avant `join_by_material` (les UV suivent la
+    fusion) ou après (repère de l'objet fusionné). `offset` (en tuiles) décale la texture :
+    deux travées séparées par une nervure ne montrent plus le même motif au même endroit.
+    """
+    import numpy as np
+
+    mpt = meters_per_tile or _tile_of(obj)
+    p, normals, loop_poly = _mesh_arrays(obj)
+    n = normals[loop_poly]
+    axis = np.argmax(np.abs(n), axis=1)
+    sign = np.sign(n[np.arange(len(n)), axis])
+    u = np.where(axis == 0, sign * p[:, 1], np.where(axis == 1, -sign * p[:, 0], p[:, 0]))
+    v = np.where(axis == 2, sign * p[:, 1], p[:, 2])
+    layer = _uv_layer(obj.data)
+    uv = np.stack([u, v], 1) / mpt + np.array(offset, dtype=np.float64)
+    layer.data.foreach_set("uv", uv.ravel())
+
+
+def trim_band(trim) -> tuple[float, float]:
+    """(v0, v1) d'une bande de la trim sheet : nom de `library.TRIMS` ou couple explicite."""
+    if isinstance(trim, str):
+        return material_library().TRIMS[trim]
+    return float(trim[0]), float(trim[1])
+
+
+def uv_trim(obj: bpy.types.Object, trim, meters_per_tile: float = 2.0, pad_px: float = 2.0, res: int = 1024) -> None:
+    """Pose une bande de trim sheet : U le long de la plus grande dimension de l'objet (à
+    l'échelle : `meters_per_tile` mètres par répétition), V = la bande (`trim` : nom de
+    `library.TRIMS` ou (v0, v1)), rognée de `pad_px` texels pour que le filtrage ne déborde pas
+    sur la bande voisine.
+
+    Faces le long de l'axe : chaque face montre toute la hauteur de la bande, haut de la bande
+    vers le haut (Z) quand c'est possible, jamais en miroir. Cylindre (plus de 8 faces
+    latérales) : la bande fait le tour (V = angle). Bouts : la bande, en projection plane.
+    """
+    import numpy as np
+
+    v0, v1 = trim_band(trim)
+    pad = pad_px / res
+    v0, v1 = v0 + pad, v1 - pad
+    p, normals, loop_poly = _mesh_arrays(obj)
+    span = p.max(axis=0) - p.min(axis=0)
+    ax = int(np.argmax(span))
+    a = np.zeros(3)
+    a[ax] = 1.0
+    others = [i for i in range(3) if i != ax]
+    along = normals @ a
+    side = np.abs(along) <= 0.7
+    zup = np.array([0.0, 0.0, 1.0]) if ax != 2 else np.array([0.0, 1.0, 0.0])
+    uvs = np.zeros((len(p), 2))
+    center = (p.max(axis=0) + p.min(axis=0)) / 2
+    round_ = int(side.sum()) > 8
+    if round_:
+        # Origine des angles sur un sommet : la face qui ferme le tour finit exactement à v1.
+        first = p[np.nonzero(side[loop_poly])[0][0]] - center
+        ang0 = np.arctan2(first[others[1]], first[others[0]])
+    for poly in range(len(normals)):
+        idx = np.nonzero(loop_poly == poly)[0]
+        if idx.size == 0:
+            continue
+        pts = p[idx]
+        nrm = normals[poly]
+        if not side[poly]:
+            b, c = pts[:, others[0]], pts[:, others[1]]
+            lo, hi = c.min(), c.max()
+            uvs[idx, 0] = b / meters_per_tile
+            uvs[idx, 1] = v0 + (c - lo) / max(hi - lo, 1e-9) * (v1 - v0)
+            continue
+        if round_:
+            rel = pts - center
+            ang = (np.arctan2(rel[:, others[1]], rel[:, others[0]]) - ang0 + 1e-6) % (2 * np.pi) - 1e-6
+            if ang.max() - ang.min() > np.pi:
+                ang = np.where(ang < np.pi, ang + 2 * np.pi, ang)
+            uvs[idx, 0] = pts[:, ax] / meters_per_tile
+            uvs[idx, 1] = v0 + np.clip(ang / (2 * np.pi), 0.0, 1.0) * (v1 - v0)
+            continue
+        up = np.cross(nrm, a)
+        up /= max(np.linalg.norm(up), 1e-12)
+        if up @ zup < -1e-6:
+            up = -up
+        right = np.cross(up, nrm)
+        across = pts @ up
+        lo, hi = across.min(), across.max()
+        uvs[idx, 0] = (pts @ right) / meters_per_tile
+        uvs[idx, 1] = v0 + (across - lo) / max(hi - lo, 1e-9) * (v1 - v0)
+    layer = _uv_layer(obj.data)
+    layer.data.foreach_set("uv", uvs.ravel())
+
+
+def export_gltf(rel_path: str, objects: list[bpy.types.Object]) -> Path:
+    """Comme `export_glb`, mais en glTF séparé (`.gltf` + `.bin` du même nom), tangentes
+    comprises, images **non copiées** : chaque `images[].uri` est relative au `.gltf` et pointe
+    vers la bibliothèque (`assets/textures/materials/`). Lève une erreur si une image est
+    embarquée, copiée à côté du modèle, recomposée par l'exportateur ou introuvable."""
+    import json as _json
+    from urllib.parse import unquote
+
+    path = ROOT / rel_path
+    if path.suffix != ".gltf":
+        raise ValueError(f"export_gltf attend un chemin en .gltf : {rel_path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    before = set(path.parent.iterdir())
+    bpy.ops.object.select_all(action="DESELECT")
+    # Blender ne calcule pas d'espace tangent sur un n-gone (bouchons de `cylinder`) et
+    # l'exportateur abandonne alors les tangentes de tout le maillage : triangulation des
+    # seuls n-gones, le temps de l'export (modificateur appliqué par export_apply, puis retiré).
+    triangulated = []
+    for obj in objects:
+        obj.hide_set(False)
+        obj.select_set(True)
+        if obj.type == "MESH" and any(len(p.vertices) > 4 for p in obj.data.polygons):
+            mod = obj.modifiers.new("sh_triangulate_ngons", "TRIANGULATE")
+            mod.min_vertices = 5
+            triangulated.append((obj, mod))
+    try:
+        bpy.ops.export_scene.gltf(
+            filepath=str(path),
+            export_format="GLTF_SEPARATE",
+            use_selection=True,
+            export_extras=True,
+            export_yup=True,
+            export_apply=True,
+            export_cameras=False,
+            export_lights=False,
+            export_materials="EXPORT",
+            export_keep_originals=True,
+            export_tangents=True,
+        )
+    finally:
+        for obj, mod in triangulated:
+            obj.modifiers.remove(mod)
+    data = _json.loads(path.read_text(encoding="utf-8"))
+    normal_mapped = {i for i, mat in enumerate(data.get("materials", [])) if "normalTexture" in mat}
+    for mesh in data.get("meshes", []):
+        for prim in mesh.get("primitives", []):
+            if prim.get("material") in normal_mapped and "TANGENT" not in prim.get("attributes", {}):
+                raise RuntimeError(f"{rel_path} : {mesh.get('name')} sans tangentes malgré une carte de normales")
+    library = TEXTURES_DIR.resolve()
+    for image in data.get("images", []):
+        uri = image.get("uri")
+        if not uri or "bufferView" in image:
+            raise RuntimeError(f"{rel_path} : image embarquée ({image.get('name')}) au lieu d'un lien vers la bibliothèque")
+        target = (path.parent / unquote(uri)).resolve()
+        if not target.exists() or target.parent != library:
+            raise RuntimeError(f"{rel_path} : image hors bibliothèque ou introuvable : {uri}")
+    # L'occlusion et le métal-rugosité doivent citer la même image `_orm` (pas de recomposition).
+    textures = data.get("textures", [])
+    for mat in data.get("materials", []):
+        occ = mat.get("occlusionTexture")
+        mr = mat.get("pbrMetallicRoughness", {}).get("metallicRoughnessTexture")
+        if occ and mr and textures[occ["index"]]["source"] != textures[mr["index"]]["source"]:
+            raise RuntimeError(f"{rel_path} : ORM recomposé pour {mat.get('name')}")
+        for key in ("baseColorTexture", "metallicRoughnessTexture"):
+            info = mat.get("pbrMetallicRoughness", {}).get(key)
+            if info and info.get("texCoord", 0) != 0:
+                raise RuntimeError(f"{rel_path} : {key} de {mat.get('name')} sur TEXCOORD_{info['texCoord']}")
+    stray = sorted(p.name for p in set(path.parent.iterdir()) - before if p.name not in (path.name, path.with_suffix(".bin").name))
+    if stray:
+        raise RuntimeError(f"{rel_path} : fichiers inattendus écrits à côté du modèle : {stray}")
+    return path

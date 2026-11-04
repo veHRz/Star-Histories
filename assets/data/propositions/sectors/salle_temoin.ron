@@ -1,0 +1,44 @@
+// Généré par tools/blender/materials/salle_temoin.py : NE PAS ÉDITER À LA MAIN.
+// Salle témoin de la direction « futur usé » (M8, lot 0 ; proposition P13) : coursive et atelier.
+// Coordonnées dans le repère du jeu (Y-haut), en mètres.
+(
+    id: "salle_temoin",
+    kind: Ship,
+    name_key: "sector.salle_temoin",
+    status: Proposition("P13"),
+    door_model: "models/kit/ship_interior/door_sliding.glb",
+    cells: [
+        (
+            id: "coursive",
+            model: "models/materials/salle_temoin/coursive.gltf",
+            lod: "models/materials/salle_temoin/coursive_lod.gltf",
+            min: (-1.400, -0.200, -8.200),
+            max: (1.400, 2.800, 0.200),
+            lightmap: (image: "textures/lightmaps/salle_temoin/coursive.png", exposure: 1329.803),
+        ),
+        (
+            id: "atelier",
+            model: "models/materials/salle_temoin/atelier.gltf",
+            lod: "models/materials/salle_temoin/atelier_lod.gltf",
+            min: (-3.200, -0.200, -16.600),
+            max: (3.200, 3.400, -8.200),
+            lightmap: (image: "textures/lightmaps/salle_temoin/atelier.png", exposure: 1365.758),
+        ),
+    ],
+    portals: [
+        (
+            id: "coursive__atelier",
+            a: "coursive",
+            b: "atelier",
+            kind: Door,
+            center: (0.000, 1.100, -8.200),
+            normal: (0.000, 0.000, -1.000),
+            width: 1.400,
+            height: 2.200,
+        ),
+    ],
+    spawns: [
+        (id: "entree", cell: "coursive", pos: (0.000, 0.000, -1.000), heading_deg: 0.0),
+        (id: "atelier", cell: "atelier", pos: (-0.600, 0.000, -9.600), heading_deg: 0.0),
+    ],
+)

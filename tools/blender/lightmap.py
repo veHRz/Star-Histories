@@ -215,10 +215,11 @@ def bake_cells(cells: dict, out_dir: str, lamps_coll) -> dict:
             obj.hide_render = True
             hidden.append(obj)
     # Les plafonniers sont remplacés par leurs lampes (comme dans le jeu) : leur surface
-    # émissive ne doit pas éclairer une seconde fois.
+    # émissive ne doit pas éclairer une seconde fois. Tout matériau `sh_light*` (variantes de
+    # teinte, M8) ; les bandeaux émissifs (`sh_band_*`) éclairent, eux, dans le bake.
     emitters = []
     for obj in bakeable:
-        if any(m and m.name == "sh_light" for m in obj.data.materials):
+        if any(m and m.name.startswith("sh_light") for m in obj.data.materials):
             obj.visible_diffuse = obj.visible_glossy = obj.visible_transmission = False
             obj.visible_volume_scatter = False
             emitters.append(obj)
