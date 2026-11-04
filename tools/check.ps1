@@ -73,6 +73,18 @@ Step "scénario pause_escape" {
     $global:LASTEXITCODE = $code
 }
 
+# La carte à la vraie touche, tenue comme un joueur : elle reste ouverte, puis se referme.
+Step "scénario map_key" {
+    $env:SH_START = "new"
+    $env:SH_RAID = "0"
+    $env:SH_SCENARIO = "map_key"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_START, Env:SH_RAID, Env:SH_SCENARIO -ErrorAction SilentlyContinue
+    $log | Select-String -Pattern "ERROR|panicked|map_key" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
 # Sauvegarde puis chargement, en vol et à quai : argent, date, vue et pose du vaisseau retrouvés.
 foreach ($start in @("new", "sector:hexis_spaceport")) {
     Step "scénario save_load ($start)" {

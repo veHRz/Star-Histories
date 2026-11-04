@@ -969,6 +969,11 @@ impl Plugin for ScenarioPlugin {
                 .add_systems(PreUpdate, pause_escape);
             return;
         }
+        if name == "map_key" {
+            app.init_resource::<MapKeyCheck>()
+                .add_systems(PreUpdate, map_key);
+            return;
+        }
         let (steps, flight) = match name.as_str() {
             "walk_ship" => (WALK_SHIP, None),
             "fly_ship" => (FLY_SHIP_WALK, Some(FlightCheck::default())),
@@ -998,7 +1003,7 @@ impl Plugin for ScenarioPlugin {
                 | "tutorial"
         ) {
             error!(
-                "SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage, contract_loop, raid_win, raid_flee, raid_lose, firefight, firefight_lose, tutorial, menu_return, save_load, pause_escape)"
+                "SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage, contract_loop, raid_win, raid_flee, raid_lose, firefight, firefight_lose, tutorial, menu_return, save_load, pause_escape, map_key)"
             );
             app.add_systems(Startup, |mut exit: MessageWriter<AppExit>| {
                 exit.write(AppExit::error());
@@ -1109,17 +1114,22 @@ struct PauseCheck {
     releasing: bool,
 }
 
-/// Envoie un appui ou un relâchement d'Échap, comme le clavier (contextes d'entrée compris).
-fn escape_key(world: &mut World, pressed: bool) {
+/// Envoie un appui ou un relâchement d'une touche, comme le clavier (contextes d'entrée compris).
+fn send_key(
+    world: &mut World,
+    key_code: KeyCode,
+    logical_key: bevy::input::keyboard::Key,
+    pressed: bool,
+) {
     use bevy::input::ButtonState;
-    use bevy::input::keyboard::{Key, KeyboardInput};
+    use bevy::input::keyboard::KeyboardInput;
     let mut windows = world.query_filtered::<Entity, With<bevy::window::PrimaryWindow>>();
     let Ok(window) = windows.single(world) else {
         return;
     };
     world.write_message(KeyboardInput {
-        key_code: KeyCode::Escape,
-        logical_key: Key::Escape,
+        key_code,
+        logical_key,
         state: if pressed {
             ButtonState::Pressed
         } else {
@@ -1129,6 +1139,15 @@ fn escape_key(world: &mut World, pressed: bool) {
         repeat: false,
         window,
     });
+}
+
+fn escape_key(world: &mut World, pressed: bool) {
+    send_key(
+        world,
+        KeyCode::Escape,
+        bevy::input::keyboard::Key::Escape,
+        pressed,
+    );
 }
 
 fn press_button(world: &mut World, button: Option<Entity>) -> bool {
@@ -1229,6 +1248,86 @@ fn pause_escape(world: &mut World) {
         return;
     }
     let mut check = world.resource_mut::<PauseCheck>();
+    check.step += 1;
+    check.since = 0.0;
+}
+
+/// `map_key` : la carte, à la vraie touche.
+#[derive(Resource, Default)]
+struct MapKeyCheck {
+    step: u8,
+    since: f32,
+    total: f32,
+    /// M enfoncé : le relâcher quand ce délai tombe à zéro (un appui humain dure ≈ 150 ms,
+    /// bien plus qu'un frame : la carte s'ouvre touche encore enfoncée).
+    holding: Option<f32>,
+}
+
+const KEY_HOLD_SECONDS: f32 = 0.15;
+
+/// `map_key` (avec `SH_START=new`) : M ouvre la carte, qui reste ouverte ; M la referme, retour
+/// aux commandes. La carte se refermait d'elle-même une demi-seconde après son ouverture.
+fn map_key(world: &mut World) {
+    use crate::state::ControlMode;
+    let dt = world.resource::<Time<Real>>().delta_secs();
+    let mut check = world.resource_mut::<MapKeyCheck>();
+    check.since += dt;
+    check.total += dt;
+    if let Some(left) = check.holding {
+        if left > dt {
+            check.holding = Some(left - dt);
+        } else {
+            check.holding = None;
+            send_key(
+                world,
+                KeyCode::KeyM,
+                bevy::input::keyboard::Key::Character("m".into()),
+                false,
+            );
+        }
+        return;
+    }
+    let (step, since, total) = (check.step, check.since, check.total);
+    if total > 90.0 {
+        error!("scénario map_key : bloqué à l'étape {step}");
+        world.write_message(AppExit::error());
+        return;
+    }
+    let view = world.get_resource::<State<ViewLevel>>().map(|s| *s.get());
+    let mode = world.get_resource::<State<ControlMode>>().map(|s| *s.get());
+    let busy = world.contains_resource::<crate::transition::Sequence>();
+    let seated = view == Some(ViewLevel::Global) && mode == Some(ControlMode::Piloting) && !busy;
+    match step {
+        // Aux commandes depuis un moment : M.
+        0 if seated && since > 3.0 => {}
+        0 => return,
+        // Trois secondes plus tard, la carte doit toujours être là.
+        1 if since < 3.0 => {
+            if view != Some(ViewLevel::Galaxy) && since > 1.0 {
+                error!("scénario map_key : la carte s'est refermée seule (vue {view:?})");
+                world.write_message(AppExit::error());
+            }
+            return;
+        }
+        1 => {}
+        // Refermée : retour aux commandes.
+        2 if seated && since > 1.0 => {
+            info!(
+                "scénario map_key terminé : la carte s'ouvre, reste ouverte et se referme à la touche"
+            );
+            world.write_message(AppExit::Success);
+            return;
+        }
+        _ => return,
+    }
+    send_key(
+        world,
+        KeyCode::KeyM,
+        bevy::input::keyboard::Key::Character("m".into()),
+        true,
+    );
+    let mut check = world.resource_mut::<MapKeyCheck>();
+    check.holding = Some(KEY_HOLD_SECONDS);
     check.step += 1;
     check.since = 0.0;
 }

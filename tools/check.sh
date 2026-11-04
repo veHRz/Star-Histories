@@ -59,6 +59,10 @@ step "scénario menu_return" \
 step "scénario pause_escape" \
     run_game "ERROR|panicked|pause_escape" SH_START=new SH_SCENARIO=pause_escape
 
+# La carte à la vraie touche, tenue comme un joueur : elle reste ouverte, puis se referme.
+step "scénario map_key" \
+    run_game "ERROR|panicked|map_key" SH_START=new SH_RAID=0 SH_SCENARIO=map_key
+
 # Sauvegarde puis chargement, en vol et à quai : argent, date, vue et pose du vaisseau retrouvés.
 for start in new sector:hexis_spaceport; do
     step "scénario save_load (${start})" \

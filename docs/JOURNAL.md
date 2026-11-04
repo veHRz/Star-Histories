@@ -2,6 +2,11 @@
 
 > Une entrée courte par session (2 à 5 lignes) : ce qui a été fait, ce qui reste en suspens, les décisions prises. Le plus récent en haut.
 
+## 04/11/2026 — Poste Linux : M8 validé, carte qui se refermait
+
+- L'auteur valide le visuel de M8 sur les captures avant / après ; commits poussés.
+- **Bug signalé** : la carte s'ouvrait une demi-seconde puis se refermait. La touche M, encore tenue quand le contexte Carte s'active, comptait pour un nouvel appui (les scénarios n'appuyaient que sur un frame). Les actions « à un coup » portent `require_reset` ; scénario `map_key` (touche tenue 150 ms) ajouté à `tools/check.*`.
+
 ## 04/11/2026 — Poste Linux : M8, vague 2 (B, C) et fin de l'interface
 
 - **Vague 2** : vaisseau du joueur (B) et spatioport d'Hexis (C) réassemblés avec le nouveau kit, habillés, lightmaps recuites à 512 échantillons. Gameplay intact : `tools/check.sh` vert, tous les scénarios (dont `tutorial`, `walk_ship`, `port_loop`, `save_load`, abordages).

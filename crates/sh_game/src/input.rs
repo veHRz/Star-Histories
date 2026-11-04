@@ -236,6 +236,7 @@ fn spawn_contexts(mut commands: Commands) {
             Bindings [ Binding::mouse_motion() ]
             --
             Action::<Jump>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::Space) -- Binding(GamepadButton::South) ]
             --
             Action::<Sprint>::new()
@@ -245,36 +246,46 @@ fn spawn_contexts(mut commands: Commands) {
             Bindings [ Binding(KeyCode::ControlLeft) -- Binding(GamepadButton::East) ]
             --
             Action::<Interact>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::KeyE) -- Binding(GamepadButton::West) ]
             --
             Action::<FireWeapon>::new()
             Bindings [ Binding(MouseButton::Left) -- Binding(GamepadButton::RightTrigger2) ]
             --
             Action::<Reload>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::KeyR) ]
             --
             Action::<ToggleMap>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::KeyM) -- Binding(GamepadButton::Select) ]
             --
             Action::<OpenSheet>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::KeyC) ]
             --
             Action::<OpenJournal>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::KeyJ) ]
             --
             Action::<OpenCodex>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::KeyK) ]
             --
             Action::<Pause>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::Escape) -- Binding(GamepadButton::Start) ]
             --
             Action::<QuickSave>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::F5) ]
             --
             Action::<QuickLoad>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::F9) ]
             --
             Action::<SkipTutorial>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::KeyH) ]
         ]
     });
@@ -307,12 +318,15 @@ fn spawn_contexts(mut commands: Commands) {
             Bindings [ Binding(KeyCode::ShiftLeft) ]
             --
             Action::<ToggleFlightAssist>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::KeyZ) ]
             --
             Action::<Dock>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::KeyG) ]
             --
             Action::<LeaveSeat>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::KeyF) ]
             --
             Action::<FireGuns>::new()
@@ -322,30 +336,39 @@ fn spawn_contexts(mut commands: Commands) {
             Bindings [ Binding(MouseButton::Right) ]
             --
             Action::<Countermeasure>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::KeyX) ]
             --
             Action::<ToggleMap>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::KeyM) ]
             --
             Action::<OpenSheet>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::KeyC) ]
             --
             Action::<OpenJournal>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::KeyJ) ]
             --
             Action::<OpenCodex>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::KeyK) ]
             --
             Action::<Pause>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::Escape) -- Binding(GamepadButton::Start) ]
             --
             Action::<QuickSave>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::F5) ]
             --
             Action::<QuickLoad>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::F9) ]
             --
             Action::<SkipTutorial>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::KeyH) ]
         ]
     });
@@ -375,21 +398,27 @@ fn spawn_contexts(mut commands: Commands) {
             ]
             --
             Action::<Select>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(MouseButton::Left) -- Binding(GamepadButton::South) ]
             --
             Action::<TravelPortal>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::Digit1) ]
             --
             Action::<TravelHyperspace>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::Digit2) ]
             --
             Action::<ToggleMap>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::KeyM) -- Binding(GamepadButton::Select) ]
             --
             Action::<SkipTutorial>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::KeyH) ]
             --
             Action::<Pause>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::Escape) -- Binding(GamepadButton::Start) ]
         ]
     });
@@ -401,9 +430,11 @@ fn spawn_contexts(mut commands: Commands) {
         ~ActiveInStates::<MenuControls, ControlMode>::single(ControlMode::Menu)
         Actions<MenuControls> [
             Action::<Back>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::Escape) -- Binding(GamepadButton::East) ]
             --
             Action::<Confirm>::new()
+            ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::Enter) -- Binding(GamepadButton::South) ]
             --
             Action::<Navigate>::new()
