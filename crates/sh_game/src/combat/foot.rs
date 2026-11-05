@@ -1073,6 +1073,13 @@ fn foot_hud(
         return;
     };
     if hud.is_empty() {
+        // En bas à droite ; à bord en vue Globale, ce coin est au schéma du vaisseau
+        // (`ui::combat_hud`) : la ligne se pose au-dessus de lui.
+        let bottom = if sector.view == crate::state::ViewLevel::Global {
+            crate::ui::combat_hud::SCHEMATIC_CLEARANCE
+        } else {
+            28.0
+        };
         commands.spawn((
             Name::new("Santé et munitions"),
             FootHud,
@@ -1084,7 +1091,7 @@ fn foot_hud(
             Node {
                 position_type: PositionType::Absolute,
                 right: px(24),
-                bottom: px(28),
+                bottom: px(bottom),
                 ..default()
             },
             Visibility::Hidden,

@@ -4,15 +4,22 @@
 //! Habillage (M8) : un réticule fin à quatre branches qui laisse le centre libre, et des
 //! plaquettes à barre ambre (`theme::Frame::Plate`) sous les textes, cachées quand ils sont
 //! vides : la vue à la première personne reste dégagée.
+//!
+//! Bandeau du lieu (M9) : en vue Sectorielle, le bandeau ([`crate::views::view_banner`]) porte
+//! le nom du secteur ; dans toutes les vues à secteur, sa seconde ligne dit où est le joueur :
+//! à bord de quoi (ou dans quel système) et dans quelle salle, quand la cellule a un nom
+//! (`name_key` du descripteur, `lang/<code>/rooms.ron`).
 
 use bevy::prelude::*;
 
-use crate::data::Texts;
-use crate::sector::ActiveSector;
+use crate::data::{Data, Texts};
 use crate::sector::streaming::{CellReady, CellStates};
+use crate::sector::{ActiveSector, Docked};
 use crate::state::ViewLevel;
 use crate::ui::pause::Paused;
 use crate::ui::theme::{self, Frame, UiFonts};
+use crate::views::{BannerDetail, view_banner};
+use crate::voyage::Location;
 
 pub struct HudPlugin;
 
@@ -32,6 +39,10 @@ impl Plugin for HudPlugin {
                     .chain(),
             )
             .add_systems(Update, show_veil.run_if(resource_exists::<ActiveSector>))
+            .add_systems(
+                Update,
+                show_banner_detail.run_if(resource_exists::<ActiveSector>),
+            )
             .add_systems(OnExit(ViewLevel::Sector), clear_prompt)
             .add_systems(OnExit(ViewLevel::Global), clear_prompt);
     }
@@ -100,6 +111,17 @@ fn spawn_hud(
     sector: Res<ActiveSector>,
 ) {
     let scope = sector.scope();
+    // Le bandeau du lieu : la vue Globale pose le sien (le système) ; en vue Sectorielle, c'est
+    // le secteur (un quartier où le vaisseau est amarré porte le nom du quartier).
+    if sector.view == ViewLevel::Sector {
+        commands.spawn(view_banner(
+            &texts,
+            &fonts,
+            texts.get(&sector.sector.name_key),
+            "",
+            scope.clone(),
+        ));
+    }
     // Réticule : quatre branches autour d'un point, le centre reste lisible.
     let reticle = commands
         .spawn((
@@ -262,6 +284,93 @@ fn show_plates(
         if node.bottom != bottom {
             node.bottom = bottom;
         }
+    }
+}
+
+/// La seconde ligne du bandeau du lieu. Recalculée seulement quand la cellule du joueur, la
+/// langue ou le lieu changent ; réécrite seulement si elle diffère (un texte réécrit est remis
+/// en page).
+#[allow(clippy::too_many_arguments)]
+fn show_banner_detail(
+    texts: Res<Texts>,
+    data: Res<Data>,
+    sector: Res<ActiveSector>,
+    states: Res<CellStates>,
+    location: Option<Res<Location>>,
+    docked: Option<Res<Docked>>,
+    added: Query<(), Added<BannerDetail>>,
+    mut details: Query<(&mut Text, &mut Node), With<BannerDetail>>,
+) {
+    let changed = texts.is_changed()
+        || sector.is_changed()
+        || states.is_changed()
+        || location.as_ref().is_some_and(|l| l.is_changed())
+        || docked.as_ref().is_some_and(|d| d.is_changed())
+        || !added.is_empty();
+    if !changed || details.is_empty() {
+        return;
+    }
+    let wanted = banner_detail(
+        &texts,
+        &data,
+        &sector,
+        &states,
+        location.as_deref(),
+        docked.as_deref(),
+    );
+    let display = if wanted.is_empty() {
+        Display::None
+    } else {
+        Display::Flex
+    };
+    for (mut text, mut node) in &mut details {
+        if text.0 != wanted {
+            text.0.clone_from(&wanted);
+        }
+        if node.display != display {
+            node.display = display;
+        }
+    }
+}
+
+/// « Votre vaisseau · Cockpit », « Système d'Hexis · Hall des arrivées » ; sans nom de salle
+/// (cellule sans `name_key`), le premier terme seul.
+fn banner_detail(
+    texts: &Texts,
+    data: &Data,
+    sector: &ActiveSector,
+    states: &CellStates,
+    location: Option<&Location>,
+    docked: Option<&Docked>,
+) -> String {
+    let current = states.current.as_deref();
+    let room = current
+        .and_then(|id| sector.sector.cell(id))
+        .and_then(|cell| cell.name_key.as_deref())
+        .map(|key| texts.get(key));
+    let place = match sector.view {
+        // En vol, à bord du vaisseau du joueur : le système est déjà le titre du bandeau.
+        ViewLevel::Global => Some(texts.get(&sector.sector.name_key)),
+        _ => {
+            // Amarré : dans les salles du vaisseau, son nom ; ailleurs, le système.
+            let ship = docked
+                .and_then(|d| data.sector(&d.ship))
+                .filter(|ship| current.is_some_and(|id| ship.cell(id).is_some()));
+            match ship {
+                Some(ship) => Some(texts.get(&ship.name_key)),
+                None => location
+                    .and_then(|l| data.galaxy.system(&l.system))
+                    .map(|s| s.name.clone()),
+            }
+        }
+    };
+    match (place, room) {
+        (Some(place), Some(room)) => texts.format(
+            "hud.banner.detail",
+            &[("place", place.as_str()), ("room", room.as_str())],
+        ),
+        (Some(text), None) | (None, Some(text)) => text,
+        (None, None) => String::new(),
     }
 }
 

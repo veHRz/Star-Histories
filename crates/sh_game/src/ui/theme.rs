@@ -38,6 +38,9 @@ pub const RULE: Color = Color::srgba(0.42, 0.45, 0.49, 0.45);
 pub const BUTTON: Color = Color::srgba(1.0, 1.0, 1.0, 0.04);
 pub const BUTTON_HOVER: Color = Color::srgba(0.95, 0.66, 0.24, 0.22);
 pub const BUTTON_BORDER: Color = Color::srgba(0.62, 0.66, 0.72, 0.28);
+/// Touche dessinée (encart des touches, aides des écrans) : fond et bord.
+pub const KEYCAP_FILL: Color = Color::srgba(0.0, 0.0, 0.0, 0.40);
+pub const KEYCAP_BORDER: Color = Color::srgba(0.62, 0.66, 0.72, 0.55);
 
 /// Chemins des polices (Inter, OFL ; DejaVu Sans Mono, licence Bitstream Vera et Arev ; voir
 /// `assets/CREDITS.md`).
@@ -268,6 +271,33 @@ pub fn status_lights() -> impl Bundle {
             light(SCREEN),
             light(Color::srgba(0.42, 0.45, 0.49, 0.5)),
         ],
+    )
+}
+
+/// Une touche dessinée, comme sur une console : son étiquette (déjà traduite, `Lang`) en chasse
+/// fixe dans un cadre fin, un bord bas plus épais pour le relief. Basse (≈ 16 px) : elle tient
+/// sur la ligne d'un libellé de 14 px. Rien n'y retient un clic.
+pub fn keycap(fonts: &UiFonts, label: &str) -> impl Bundle {
+    (
+        Pickable::IGNORE,
+        Node {
+            min_width: px(16),
+            padding: UiRect::new(px(4), px(4), px(0), px(0)),
+            border: UiRect::new(px(1), px(1), px(1), px(2)),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            flex_shrink: 0.0,
+            ..default()
+        },
+        BorderColor::all(KEYCAP_BORDER),
+        BackgroundColor(KEYCAP_FILL),
+        children![(
+            Text::new(label.to_owned()),
+            fonts.mono(11.0),
+            TextColor(TEXT),
+            TextLayout::no_wrap(),
+            Pickable::IGNORE,
+        )],
     )
 }
 

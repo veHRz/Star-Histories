@@ -61,8 +61,10 @@ fn learn_key_labels(
             continue;
         }
         let label = c.to_uppercase();
-        // Lecture d'abord : ne marquer `Texts` modifié que si l'étiquette change.
-        if texts.key_label(&code) != label {
+        // Lecture d'abord : ne marquer `Texts` modifié que si l'étiquette change. On compare
+        // l'étiquette apprise elle-même, pas `key_label` : celle-ci passe par les remappages, et
+        // une touche remappée paraîtrait changer à chaque appui (tout se redessinerait).
+        if texts.keys.get(&code).map(String::as_str) != Some(label.as_str()) {
             texts.0.set_key(&code, &label);
         }
     }

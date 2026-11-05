@@ -33,22 +33,36 @@ impl Plugin for ViewsPlugin {
     }
 }
 
-/// Bandeau du lieu et des commandes, en haut à gauche : une plaquette à barre ambre, le nom du
-/// lieu en capitales espacées, la ligne des commandes dessous.
+/// Bas du bandeau du lieu (deux lignes : le lieu, puis le détail), en pixels d'interface : ce qui
+/// se place dessous (encart des touches, conseils) part de là.
+pub const BANNER_BOTTOM: f32 = 76.0;
+
+/// Le bandeau du lieu (pour le retrouver).
+#[derive(Component)]
+pub struct PlaceBanner;
+
+/// La seconde ligne du bandeau : où l'on est dans le lieu (« Votre vaisseau · Cockpit »),
+/// remplie par `ui::hud` d'après la cellule du joueur ; cachée tant qu'elle est vide.
+#[derive(Component)]
+pub struct BannerDetail;
+
+/// Bandeau du lieu, en haut à gauche : une plaquette à barre ambre, le nom du lieu en capitales
+/// espacées et, dessous, le détail ([`BannerDetail`] : à bord de quoi, dans quelle salle).
 ///
-/// Il s'arrête avant la colonne du coin haut droit (date, nouvelles, tutoriel :
-/// [`crate::clock::HudCorner`]) : la ligne des commandes, longue, passe à la ligne plutôt que
-/// de passer sous la date. Le nœud extérieur fixe cette largeur permise ; la plaquette prend
-/// celle de son texte.
+/// M9 : les commandes n'y sont plus (encart des touches, `ui::keys_panel`) ; `_hint_key` reste
+/// dans la signature pour les appelants des vues, il ne sert plus. Le bandeau s'arrête avant la
+/// colonne du coin haut droit (date, nouvelles, tutoriel : [`crate::clock::HudCorner`]) : le
+/// nœud extérieur fixe cette largeur permise, la plaquette prend celle de son texte.
 pub fn view_banner(
-    texts: &Texts,
+    _texts: &Texts,
     fonts: &UiFonts,
     title: String,
-    hint_key: &str,
+    _hint_key: &str,
     scope: impl Component,
 ) -> impl Bundle {
     (
         scope,
+        PlaceBanner,
         Pickable::IGNORE,
         Node {
             position_type: PositionType::Absolute,
@@ -64,7 +78,7 @@ pub fn view_banner(
             Node {
                 max_width: percent(100),
                 flex_direction: FlexDirection::Column,
-                row_gap: px(3),
+                row_gap: px(2),
                 // Large à gauche : la barre ambre de la plaquette.
                 padding: UiRect::new(px(16), px(14), px(7), px(9)),
                 ..default()
@@ -78,10 +92,15 @@ pub fn view_banner(
                     Pickable::IGNORE,
                 ),
                 (
-                    Text::new(texts.get(hint_key)),
+                    BannerDetail,
+                    Text::new(""),
                     fonts.body(14.0),
                     TextColor(theme::TEXT_DIM),
                     Pickable::IGNORE,
+                    Node {
+                        display: Display::None,
+                        ..default()
+                    },
                 ),
             ],
         )],

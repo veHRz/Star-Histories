@@ -52,8 +52,9 @@ struct TipQueue {
 /// Secondes d'affichage d'un conseil.
 const TIP_SECONDS: f32 = 12.0;
 
-/// Place de l'encart : centré en haut, sous le bandeau du lieu (px).
-const TIP_TOP: f32 = 112.0;
+/// Place de l'encart : centré en haut, sous le bandeau du lieu (px). Le bandeau n'a plus que
+/// deux lignes depuis M9 (les commandes sont dans l'encart des touches, à gauche).
+const TIP_TOP: f32 = crate::views::BANNER_BOTTOM + 10.0;
 const TIP_WIDTH: f32 = 620.0;
 
 #[derive(Component)]
@@ -150,7 +151,7 @@ fn show(
             Pickable::IGNORE,
             Node {
                 position_type: PositionType::Absolute,
-                // Sous le bandeau du lieu, même quand sa ligne des commandes passe à la ligne.
+                // Sous le bandeau du lieu ; centré, il laisse l'encart des touches à gauche.
                 top: px(TIP_TOP),
                 left: percent(50),
                 width: px(TIP_WIDTH),
