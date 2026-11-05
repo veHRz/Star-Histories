@@ -2,6 +2,13 @@
 
 > Une entrée courte par session (2 à 5 lignes) : ce qui a été fait, ce qui reste en suspens, les décisions prises. Le plus récent en haut.
 
+## 05/11/2026 — Poste Linux : M9, vague 3 (coque, secteurs types, hangar, tutoriel)
+
+- **Intégrés et commités** : bakes finals de `corvette` (36 min) et `spaceport` (44 min) à 512 échantillons ; C (coque de la corvette, 12 286 triangles au plus, 9 `_col`, LOD) ; L7 (vaisseau du joueur = intérieur type `corvette`, Hexis = spatioport par défaut `spaceport`, coque posée dans le berceau, une seule porte au raccord sas–passerelle, arrivée voilée jusqu'aux cellules Locales prêtes, nouvelle partie debout dans la chambre, migration des sauvegardes par le champ `content`) ; L9 (tutoriel en 10 étapes : chambre, tour des salles avec leur rôle, puis la suite) ; anciens secteurs `player_ship` / `hexis_spaceport` retirés. `tools/check.sh` vert.
+- **Bugs trouvés en relecture** : se lever au cockpit coinçait le joueur entre siège et planche (`stand_up` essaie maintenant quatre places) ; PNJ et coque presque noirs après un amarrage (l'ambiante spatiale de la vue Globale restait en vue Sectorielle : `SECTOR_AMBIENT` posée à l'entrée d'un secteur).
+- **En suspens** : en vol, l'intérieur du vaisseau garde l'ambiante spatiale (objets sans lightmap, comme la tablette, peut-être sombres) ; sabots du berceau 8 cm au-dessus des patins de la coque ; `combat/foot.rs` prend la première cellule trouvée, pas la plus petite (abordage à quai) ; repère hors champ qui peut chevaucher le schéma de coque.
+- **À faire sous Windows** : `tools/check.ps1`, `tools/perf.ps1 -Preset low -Window fullscreen` (surtout le hangar : grande salle, coque, intérieur visible par le sas). Captures « après » prises sous Linux (`target/shots/m9-apres-*.png`), les « avant » sous Windows.
+
 ## 05/11/2026 — Poste Windows : M9, fin de la vague 2 et passage au poste Linux
 
 - **Commités sans bake final** (assets seuls, aucun code ne les lit encore, c'est L7 qui les branchera) :

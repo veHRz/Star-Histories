@@ -162,9 +162,9 @@ But : traiter la liste de l'auteur du 05/11/2026 (interface, options et touches,
 
 - [x] L0 : branchement (langue par domaine, schémas et types partagés, actions nouvelles).
 - [x] Vague 1 : kit (A), PNJ (E), objets et icônes (F), options et touches (L1), interface en jeu (L2), objets et interactions (L3).
-- [ ] Vague 2 : intérieur type `corvette` (B), spatioport par défaut avec hangar (D), bornes et conversation (L4), écran du personnage (L5), Hexis (L6), carte galactique (L8). *Tout est commité ; B et D (assets seuls, non encore lus par le code) sont commités sans contrôle complet, à vérifier sous Linux ; bake final de `spaceport` à faire.*
-- [ ] Vague 3 : coque de la corvette (C), secteurs types et arrivée au hangar (L7), tutoriel dans la chambre (L9) ; bakes finals. *Arrêtés avant de commencer (05/11/2026) ; briefs prêts : `docs/m9-retours.md` §8.*
-- [ ] Intégration et tests par l'orchestrateur à chaque vague : `tools/check.ps1`, captures avant / après, `tools/perf.ps1 -Preset low -Window fullscreen`.
+- [x] Vague 2 : intérieur type `corvette` (B), spatioport par défaut avec hangar (D), bornes et conversation (L4), écran du personnage (L5), Hexis (L6), carte galactique (L8). *B et D relus en jeu et recuits à 512 échantillons sous Linux.*
+- [x] Vague 3 : coque de la corvette (C), secteurs types et arrivée au hangar (L7), tutoriel dans la chambre (L9) ; bakes finals ; anciens secteurs `player_ship` / `hexis_spaceport` retirés. `tools/check.sh` vert (poste Linux).
+- [ ] Intégration et tests par l'orchestrateur à chaque vague : `tools/check.ps1`, captures avant / après, `tools/perf.ps1 -Preset low -Window fullscreen`. *Reste : `check.ps1` et mesures de performance sous Windows (UHD 770), validation des captures par l'auteur.*
 
 **Fini quand** : chaque point de la liste est traité ou tranché avec l'auteur ; `tools/check.ps1` vert ; ≥ 60 i/s en Bas 1080p sur la machine de référence ; l'auteur valide les captures avant / après.
 

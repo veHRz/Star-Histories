@@ -238,6 +238,24 @@ intégré, captures, mesures, commits, docs.
   - Les mesures de performance (`tools/perf.ps1 -Preset low -Window fullscreen`) restent à faire
     sous Windows. Propositions
   mises à jour (P7, P12, P18, P25 ; P28 carburant, P29 mondes isolés, P30 carte).
+- 05/11/2026, **poste Linux, reprise** : `check-ok` = HEAD (vert), `git pull` à jour. D relu en
+  jeu (`target/shots/m9-D-*.png`) : hangar, berceau, passerelle, salles nommées, PNJ aux cinq
+  comptoirs ; accepté. **Lancés** : C (coque, artiste, s'appuie sur une copie figée de l'intérieur
+  dans `target/art-previews/m9-lotC/ref/`), bakes finals de `corvette` et de `spaceport`
+  (orchestrateur, en parallèle), L7 (dossier du dépôt). L9 partira après L7.
+- 05/11/2026, Linux : bakes finals faits (`corvette` 36 min, `spaceport` 44 min, i9-9900K).
+  C livré (coque 9 238 / 12 286 triangles, 8 matériaux, 9 `_col`, LOD 1 000), aperçus relus.
+  L7 livré : `cargo t`, `walk_ship`, `save_load` (vol, quai), `map_key`, `terminal_tour` verts ;
+  `port_loop`, `fly_ship` (se lever au cockpit) et `pickup_persist` (visée) renvoyés à L7.
+  Remarques de C à reprendre : sabots du berceau 8 cm trop hauts (`saddle_height`, D), ligne
+  `corvette_hull.py` au README des outils, coque sans lumière dynamique dans un hangar cuit.
+- 05/11/2026, Linux : L7 corrigé (se lever au cockpit, visée de `pickup_persist`), L9 livré
+  (tutoriel en 10 étapes, scénario vert), `check.sh` vert ; commits 4248656 (bakes), b4ce83a (C),
+  a3a92f2 (retrait des anciens secteurs), 2dea39b (L7), 57b0bb0 (L9). Défaut vu en relecture :
+  PNJ noirs après un amarrage (ambiante de la vue Globale restée), corrigé par L7
+  (`SECTOR_AMBIENT`). **Reste** : `check.ps1` et `perf.ps1` sous Windows, validation des
+  captures après par l'auteur ; points ouverts au journal (ambiante en vol, sabots du berceau,
+  `cell_at` de `combat/foot.rs`).
 
 ## 8. Briefs à relancer sur le poste Linux
 
