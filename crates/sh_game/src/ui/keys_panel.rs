@@ -682,8 +682,10 @@ fn push_unique(out: &mut Vec<String>, label: String) {
 /// jamais de retour à la ligne) ; une seconde touche ou un nom de touche long l'élargit plutôt
 /// que de déborder du cadre.
 const PANEL_TOP: f32 = BANNER_BOTTOM + 12.0;
-/// Opacité de la plaquette (fond et barre ambre) : la vue reste visible au travers.
-const PANEL_ALPHA: f32 = 0.7;
+/// Opacité de la plaquette (fond et barre ambre). Son fond peint n'est opaque qu'aux deux tiers
+/// (`tools/ui/frames.py`) : une ligne se lisait mal devant un bandeau lumineux (M9). L'encart en
+/// pose donc une seconde dessous ([`build_panel`]) : ≈ 0,88 d'opacité, même découpe, même barre.
+const PANEL_ALPHA: f32 = 1.0;
 /// Taille des libellés.
 const LABEL_SIZE: f32 = 14.0;
 /// Au-dessus du HUD ; une liste d'écran passe au-dessus des voiles des menus et du terminal (20)
@@ -946,6 +948,22 @@ fn build_panel(
 ) {
     commands.entity(panel).despawn_children();
     commands.entity(panel).with_children(|ui| {
+        // La seconde plaquette, sous le contenu, à la taille de l'encart (padding compris) : elle
+        // ne prend aucune place dans la mise en page.
+        let mut backing = fonts.frame(Frame::Plate);
+        backing.color = Color::WHITE.with_alpha(PANEL_ALPHA);
+        ui.spawn((
+            Pickable::IGNORE,
+            Node {
+                position_type: PositionType::Absolute,
+                left: px(0),
+                right: px(0),
+                top: px(0),
+                bottom: px(0),
+                ..default()
+            },
+            backing,
+        ));
         ui.spawn((
             Pickable::IGNORE,
             Node {

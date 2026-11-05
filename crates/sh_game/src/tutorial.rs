@@ -1,26 +1,36 @@
-//! Tutoriel guidé des premières minutes (M8, `docs/refonte-visuelle.md` §6).
+//! Tutoriel guidé des premières minutes (M8, `docs/refonte-visuelle.md` §6 ; M9,
+//! `docs/m9-retours.md` §8.2).
 //!
-//! Huit étapes mènent une nouvelle partie de l'orbite d'Hexis jusqu'à la première livraison et
-//! la première sauvegarde : prendre les commandes, s'amarrer, descendre à quai, prendre un
-//! contrat, ouvrir le journal, la fiche et le codex, partir, livrer, sauvegarder.
+//! Dix étapes mènent une nouvelle partie de la chambre du vaisseau jusqu'à la première livraison
+//! et la première sauvegarde : la chambre (un casier, la tablette, l'inventaire), le tour du
+//! vaisseau salle par salle avec le rôle de chacune, puis prendre les commandes, s'amarrer,
+//! descendre à quai (hangar, hall, bureau), prendre un contrat auprès du guichetier, ouvrir le
+//! journal, l'écran du personnage et le codex, partir, livrer, sauvegarder.
 //!
 //! - **Un fait observé fait avancer, jamais une minuterie** : chaque étape a ses vérifications
 //!   ([`Check`]), cochées dès que le jeu les constate ([`Facts`]) et gardées une fois cochées.
 //!   Le joueur peut donc les faire dans l'ordre qu'il veut, ou les avoir déjà faites.
+//! - **Les salles se reconnaissent à leur usage**, pas à un identifiant de secteur : la clé de
+//!   nom d'une cellule (`room.cockpit`, `room.contracts_office`…, `sh_data::Cell::name_key`) dit
+//!   ce qu'elle est, et `sector::aboard_cell` si le joueur est dans son propre vaisseau. Un autre
+//!   intérieur type ou un autre spatioport aux salles de même usage suit le même tutoriel.
 //! - Un **panneau d'objectif** (en haut à droite) donne la consigne ; les touches y sont des
 //!   jetons (`[KeyG]`) qui suivent la disposition du clavier et le remappage. Un **repère** à
-//!   l'écran montre où aller quand c'est utile (balise, sas, bureau, poste de pilotage, hub),
-//!   ramené au bord de l'écran, avec une flèche, quand la cible est hors champ.
+//!   l'écran montre où aller quand c'est utile (casier, tablette, balise, poste de pilotage,
+//!   guichetier, hub), ramené au bord de l'écran, avec une flèche, quand la cible est hors champ.
+//!   Vers une salle, il montre la prochaine porte du chemin le plus court ([`path`]).
 //! - Il se coupe dans les options (« Tutoriel ») et se passe à tout moment ([`SkipTutorial`],
-//!   deux appuis : un appui égaré ne le fait pas perdre). Son avancement est sauvegardé ; une
+//!   deux appuis : un appui égaré ne le fait pas perdre). Son avancement est sauvegardé par le
+//!   **nom** de l'étape et des vérifications, jamais par leur numéro : une sauvegarde de M8 ou de
+//!   M9 prise en plein tutoriel reprend à la même étape malgré les étapes ajoutées devant ; une
 //!   sauvegarde d'avant M8 le charge comme terminé (on n'impose pas le début à une partie déjà
 //!   avancée).
 //! - Pendant qu'il tourne, les conseils de première fois qu'il remplace se taisent
 //!   ([`REPLACED_TIPS`]) ; terminé, il les marque comme vus. Passé, il les laisse venir.
 //!
-//! La logique (étapes, vérifications, avancement) est pure et testée ; les systèmes ne font que
-//! relever les faits et afficher. L'autopilote le coupe, sauf `SH_TUTORIAL=1` ;
-//! `SH_TUTORIAL_STEP=<n>` démarre à l'étape n (captures du panneau).
+//! La logique (étapes, vérifications, avancement, chemin du repère) est pure et testée ; les
+//! systèmes ne font que relever les faits et afficher. L'autopilote le coupe, sauf
+//! `SH_TUTORIAL=1` ; `SH_TUTORIAL_STEP=<n>` démarre à l'étape n (captures du panneau).
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
@@ -36,6 +46,7 @@ use crate::clock::HudCorner;
 use crate::data::{Data, Texts};
 use crate::graphics::WorldCamera;
 use crate::input::SkipTutorial;
+use crate::items::{CharacterTab, PickedUp};
 use crate::living::display_name;
 use crate::options::UserSettings;
 use crate::player::Player;
@@ -48,6 +59,7 @@ use crate::space::SpaceRotation;
 use crate::state::{AppState, ControlMode, ViewLevel};
 use crate::tips::TipsSeen;
 use crate::transition::{DockBeacon, Sequence};
+use crate::ui::character::{CharacterScreen, ScreenView};
 use crate::ui::hud::Notice;
 use crate::ui::terminal::{Screen, Terminal};
 use crate::ui::theme::{self, Frame, UiFonts};
@@ -88,18 +100,24 @@ impl Plugin for TutorialPlugin {
 /// restent : ces situations viennent plus tard.
 pub const REPLACED_TIPS: [&str; 6] = ["helm", "dock", "port", "foot", "map", "contract"];
 
-/// Une étape du tutoriel, dans l'ordre.
+/// Une étape du tutoriel, dans l'ordre. Sauvegardée par son nom : on peut en ajouter, en
+/// insérer (M9 : la chambre et le tour du vaisseau, devant) sans changer celle d'une sauvegarde.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Stage {
-    /// Aux commandes en orbite : regarder, pousser, la croisière.
+    /// Dans la chambre : ouvrir un casier, ramasser la tablette, ouvrir l'inventaire.
+    Cabin,
+    /// Le tour du vaisseau : chaque salle, son nom et son rôle, jusqu'au cockpit.
+    Tour,
+    /// S'asseoir aux commandes, en orbite : regarder, pousser, la croisière.
     Flight,
     /// Rejoindre la balise du spatioport et s'amarrer.
     Dock,
-    /// Se lever, sortir par le sas, trouver le bureau des contrats.
+    /// Se lever, sortir par le sas dans le hangar, traverser le hall jusqu'au bureau des
+    /// contrats.
     Office,
     /// Parler au guichetier, prendre un contrat de transport.
     Contract,
-    /// Ouvrir le journal, la fiche, le codex.
+    /// Ouvrir le journal, l'écran du personnage, le codex.
     Screens,
     /// Revenir aux commandes, partir, ouvrir la carte, choisir la destination.
     Departure,
@@ -110,7 +128,9 @@ pub enum Stage {
 }
 
 impl Stage {
-    pub const ALL: [Stage; 8] = [
+    pub const ALL: [Stage; 10] = [
+        Stage::Cabin,
+        Stage::Tour,
         Stage::Flight,
         Stage::Dock,
         Stage::Office,
@@ -121,7 +141,7 @@ impl Stage {
         Stage::Save,
     ];
 
-    /// Numéro affiché (1 à 8).
+    /// Numéro affiché (1 à 10). Jamais sauvegardé : il change quand on ajoute une étape.
     pub fn number(self) -> usize {
         Self::ALL
             .iter()
@@ -129,7 +149,7 @@ impl Stage {
             .map_or(0, |i| i + 1)
     }
 
-    /// L'étape de ce numéro (1 à 8).
+    /// L'étape de ce numéro (1 à 10).
     pub fn from_number(n: usize) -> Option<Self> {
         n.checked_sub(1).and_then(|i| Self::ALL.get(i).copied())
     }
@@ -141,6 +161,8 @@ impl Stage {
     /// Clé de langue de l'étape (`tutorial.<clé>.title`, `.body`).
     pub fn key(self) -> &'static str {
         match self {
+            Stage::Cabin => "cabin",
+            Stage::Tour => "tour",
             Stage::Flight => "flight",
             Stage::Dock => "dock",
             Stage::Office => "office",
@@ -155,9 +177,19 @@ impl Stage {
     /// Ce qu'il faut avoir fait pour franchir l'étape.
     pub fn checks(self) -> &'static [Check] {
         match self {
-            Stage::Flight => &[Check::Look, Check::Thrust, Check::Cruise],
+            Stage::Cabin => &[Check::Locker, Check::Pickup, Check::Inventory],
+            // Dans l'ordre du repère ([`TOUR`]).
+            Stage::Tour => &[
+                Check::Visit(Room::Quarters),
+                Check::Visit(Room::Mess),
+                Check::Visit(Room::Airlock),
+                Check::Visit(Room::Hold),
+                Check::Visit(Room::Engine),
+                Check::Visit(Room::Cockpit),
+            ],
+            Stage::Flight => &[Check::Helm, Check::Look, Check::Thrust, Check::Cruise],
             Stage::Dock => &[Check::Dock],
-            Stage::Office => &[Check::Stand, Check::Airlock, Check::Office],
+            Stage::Office => &[Check::Stand, Check::Hangar, Check::Hall, Check::Office],
             Stage::Contract => &[Check::Talk, Check::Contract],
             Stage::Screens => &[Check::Journal, Check::Sheet, Check::Codex],
             Stage::Departure => &[Check::Helm, Check::Undock, Check::Map, Check::Route],
@@ -167,15 +199,120 @@ impl Stage {
     }
 }
 
-/// Une vérification d'étape : un fait que le jeu constate.
+/// Une salle du tour du vaisseau, reconnue à l'usage de sa cellule (clé de nom `room.*`, la même
+/// pour tout intérieur type : `lang/<code>/rooms.ron`). La chambre n'en est pas : on y commence.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Room {
+    Cockpit,
+    Airlock,
+    Hold,
+    Engine,
+    Mess,
+    Quarters,
+}
+
+/// L'ordre du tour, celui que suit le repère : de la chambre, à l'avant, les quartiers et le
+/// carré qui donnent sur le même couloir, puis vers l'arrière le sas, la soute et les machines,
+/// enfin le cockpit, où l'étape suivante fait prendre les commandes.
+pub const TOUR: [Room; 6] = [
+    Room::Quarters,
+    Room::Mess,
+    Room::Airlock,
+    Room::Hold,
+    Room::Engine,
+    Room::Cockpit,
+];
+
+impl Room {
+    /// La clé de nom des cellules de cet usage.
+    pub fn name_key(self) -> &'static str {
+        match self {
+            Room::Cockpit => "room.cockpit",
+            Room::Airlock => "room.airlock",
+            Room::Hold => "room.cargo_hold",
+            Room::Engine => "room.engine_room",
+            Room::Mess => "room.mess",
+            Room::Quarters => "room.crew_quarters",
+        }
+    }
+
+    /// La salle de cet usage, d'après la clé de nom d'une cellule.
+    pub fn from_name_key(key: &str) -> Option<Self> {
+        TOUR.into_iter().find(|r| r.name_key() == key)
+    }
+}
+
+/// Usage de la cellule du bureau des contrats, et du hall par lequel on y arrive (spatioport).
+const OFFICE_ROOM: &str = "room.contracts_office";
+const HALL_ROOM: &str = "room.arrivals_hall";
+/// Le rôle du PNJ de comptoir qui donne les contrats (`items::TalkTo`).
+const CONTRACTS_ROLE: &str = "contracts";
+
+/// La prochaine salle du tour pas encore visitée, dans l'ordre du repère.
+pub fn next_room(ticked: &[Check]) -> Option<Room> {
+    TOUR.into_iter()
+        .find(|r| !ticked.contains(&Check::Visit(*r)))
+}
+
+/// Le plus court chemin de la cellule `from` à la cellule `to`, à travers les portails `edges`
+/// (paires de cellules) : le rang dans `edges` de chaque portail franchi, dans l'ordre. `None`
+/// si l'on y est déjà ou si rien n'y mène. Parcours en largeur dans l'ordre des portails : le
+/// même chemin à chaque frame, le repère ne saute pas d'une porte à l'autre.
+pub fn path<S: AsRef<str>>(edges: &[(S, S)], from: &str, to: &str) -> Option<Vec<usize>> {
+    if from == to {
+        return None;
+    }
+    // Chaque cellule atteinte garde son chemin depuis `from` (quelques salles : c'est court).
+    let mut queue: std::collections::VecDeque<(&str, Vec<usize>)> =
+        std::collections::VecDeque::from([(from, Vec::new())]);
+    let mut seen: Vec<&str> = vec![from];
+    while let Some((cell, route)) = queue.pop_front() {
+        for (i, (a, b)) in edges.iter().enumerate() {
+            let (a, b) = (a.as_ref(), b.as_ref());
+            let other = if a == cell {
+                b
+            } else if b == cell {
+                a
+            } else {
+                continue;
+            };
+            if seen.contains(&other) {
+                continue;
+            }
+            let mut next = route.clone();
+            next.push(i);
+            if other == to {
+                return Some(next);
+            }
+            seen.push(other);
+            queue.push_back((other, next));
+        }
+    }
+    None
+}
+
+/// Une vérification d'étape : un fait que le jeu constate. Sauvegardée par son nom.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Check {
+    /// Un casier ouvert (écran de rangement).
+    Locker,
+    /// Un objet ramassé à bord (la tablette de la chambre).
+    Pickup,
+    /// L'inventaire ouvert.
+    Inventory,
+    /// Une salle du tour visitée.
+    Visit(Room),
     Look,
     Thrust,
     Cruise,
     Dock,
     Stand,
-    Airlock,
+    /// Sorti du vaisseau, dans le hangar. Ancien « sortir par le sas » (M8) : même fait, les
+    /// sauvegardes de M8 le relisent.
+    #[serde(alias = "Airlock")]
+    Hangar,
+    /// Dans le hall des arrivées, en chemin vers le bureau.
+    Hall,
     Office,
     Talk,
     Contract,
@@ -195,12 +332,24 @@ impl Check {
     /// Clé de langue de la ligne de la liste (`tutorial.check.<clé>`).
     pub fn key(self) -> &'static str {
         match self {
+            Check::Locker => "locker",
+            Check::Pickup => "pickup",
+            Check::Inventory => "inventory",
+            Check::Visit(room) => match room {
+                Room::Cockpit => "visit_cockpit",
+                Room::Airlock => "visit_airlock",
+                Room::Hold => "visit_hold",
+                Room::Engine => "visit_engine",
+                Room::Mess => "visit_mess",
+                Room::Quarters => "visit_quarters",
+            },
             Check::Look => "look",
             Check::Thrust => "thrust",
             Check::Cruise => "cruise",
             Check::Dock => "dock",
             Check::Stand => "stand",
-            Check::Airlock => "airlock",
+            Check::Hangar => "hangar",
+            Check::Hall => "hall",
             Check::Office => "office",
             Check::Talk => "talk",
             Check::Contract => "contract",
@@ -220,12 +369,17 @@ impl Check {
     /// Le fait est-il constaté ce frame ?
     pub fn holds(self, f: &Facts) -> bool {
         match self {
+            Check::Locker => f.locker_open,
+            Check::Pickup => f.picked_up,
+            Check::Inventory => f.inventory,
+            Check::Visit(room) => f.room == Some(room),
             Check::Look => f.looked,
             Check::Thrust => f.thrusting,
             Check::Cruise => f.cruising,
             Check::Dock => f.docked,
             Check::Stand => f.standing_docked,
-            Check::Airlock => f.left_ship,
+            Check::Hangar => f.left_ship,
+            Check::Hall => f.in_hall,
             Check::Office => f.at_office,
             Check::Talk => f.talking,
             Check::Contract => f.cargo_contract.is_some(),
@@ -246,6 +400,14 @@ impl Check {
 /// Ce que le jeu constate ce frame (relevé par [`Observed::facts`]).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Facts {
+    /// L'écran de rangement d'un casier est ouvert.
+    pub locker_open: bool,
+    /// Un objet posé dans le vaisseau du joueur a été ramassé (`items::PickedUp`).
+    pub picked_up: bool,
+    /// L'écran du personnage est ouvert sur l'inventaire.
+    pub inventory: bool,
+    /// La salle du tour où se trouve le joueur, à bord de son vaisseau.
+    pub room: Option<Room>,
     /// Le vaisseau a tourné d'assez d'un total, aux commandes.
     pub looked: bool,
     /// Le vaisseau file à bonne vitesse de manœuvre.
@@ -255,15 +417,18 @@ pub struct Facts {
     pub docked: bool,
     /// À quai et debout.
     pub standing_docked: bool,
-    /// À quai, dans une cellule du quartier (sorti du vaisseau).
+    /// À quai, dans une cellule du quartier (sorti du vaisseau : le hangar d'abord).
     pub left_ship: bool,
-    /// Près de la console du bureau des contrats.
+    /// À quai, dans le hall des arrivées (ou déjà au bureau, s'il n'y a pas de hall).
+    pub in_hall: bool,
+    /// Dans le bureau des contrats, ou près de son guichetier.
     pub at_office: bool,
     /// Le terminal montre le guichetier ou ses contrats.
     pub talking: bool,
     /// Un contrat de livraison actif (transport ou ravitaillement), le plus récent.
     pub cargo_contract: Option<String>,
     pub journal: bool,
+    /// L'écran du personnage (inventaire, compétences) ou la fiche de la tablette.
     pub sheet: bool,
     pub codex: bool,
     pub at_helm: bool,
@@ -332,7 +497,7 @@ impl Tutorial {
         }
     }
 
-    /// Numéro de l'étape en cours ; 9 une fois fini ou passé (vérifications de l'autopilote).
+    /// Numéro de l'étape en cours ; 11 une fois fini ou passé (vérifications de l'autopilote).
     pub fn number(&self) -> usize {
         self.stage().map_or(Stage::ALL.len() + 1, Stage::number)
     }
@@ -457,7 +622,7 @@ const LOOK_DEGREES: f32 = 30.0;
 const THRUST_SPEED: f64 = 100.0;
 /// La croisière : au-delà de cette part de la vitesse de manœuvre.
 const CRUISE_FACTOR: f64 = 1.5;
-/// Distance horizontale (m) à la console du bureau à laquelle on l'a « trouvé ».
+/// Distance horizontale (m) au guichetier des contrats à laquelle on a « trouvé » le bureau.
 const OFFICE_DISTANCE: f32 = 4.0;
 /// Délai (s) pour confirmer le passage du tutoriel par un second appui.
 const SKIP_CONFIRM_SECONDS: f32 = 5.0;
@@ -475,6 +640,8 @@ struct Observed<'w, 's> {
     route: Option<Res<'w, RoutePlan>>,
     location: Option<Res<'w, Location>>,
     sequence: Option<Res<'w, Sequence>>,
+    /// L'écran du personnage ouvert, et les objets déjà ramassés.
+    screens: (Option<Res<'w, CharacterScreen>>, Option<Res<'w, PickedUp>>),
     ships: Query<'w, 's, (&'static SpaceRotation, &'static ShipMotion)>,
     player: Query<'w, 's, &'static GlobalTransform, With<Player>>,
     interactables: Query<'w, 's, (&'static Interactable, &'static GlobalTransform)>,
@@ -509,69 +676,121 @@ impl Observed<'_, '_> {
             .map_or(250.0, |h| h.max_speed)
     }
 
-    /// Une cellule du vaisseau amarré (placée dans le repère du quartier) ?
-    fn is_ship_cell(&self, cell: &str) -> Option<bool> {
-        let sector = self.sector.as_ref()?;
-        sector
+    fn active(&self) -> Option<&ActiveSector> {
+        self.sector.as_deref()
+    }
+
+    /// La cellule où se trouve le joueur, à bord ou non.
+    fn current_cell(&self) -> Option<&str> {
+        self.cells.as_ref()?.current.as_deref()
+    }
+
+    /// Le joueur est-il dans son propre vaisseau, et dans quelle cellule ? En vol comme à quai,
+    /// quel que soit l'intérieur type (`sector::aboard_cell`).
+    fn aboard(&self) -> Option<&str> {
+        crate::sector::aboard_cell(self.active(), self.cells.as_deref()?)
+    }
+
+    /// À quai, le joueur est-il sorti de son vaisseau (une cellule du quartier) ?
+    fn in_district(&self) -> bool {
+        self.docked.is_some() && self.current_cell().is_some() && self.aboard().is_none()
+    }
+
+    /// L'usage d'une cellule du secteur chargé : sa clé de nom (`room.*`).
+    fn room_key(&self, cell: &str) -> Option<&str> {
+        self.active()?.sector.cell(cell)?.name_key.as_deref()
+    }
+
+    /// La première cellule de cet usage, dans le vaisseau du joueur (`aboard`) ou hors de lui.
+    fn cell_of(&self, key: &str, aboard: bool) -> Option<&str> {
+        let active = self.active()?;
+        active
             .sector
             .cells
             .iter()
-            .find(|c| c.id == cell)
-            .map(|c| c.placement.is_some())
+            .find(|c| c.name_key.as_deref() == Some(key) && active.is_ship_cell(&c.id) == aboard)
+            .map(|c| c.id.as_str())
     }
 
-    /// À quai, le joueur est-il dans le quartier (sorti par le sas) ?
-    fn in_district(&self) -> bool {
-        self.docked.is_some()
-            && self
-                .cells
-                .as_ref()
-                .and_then(|c| c.current.as_deref())
-                .and_then(|cell| self.is_ship_cell(cell))
-                == Some(false)
-    }
-
-    /// Le guichetier du bureau des contrats du quartier où l'on est amarré.
-    fn office(&self) -> Option<&Dialogue> {
-        let district = &self.docked.as_ref()?.district;
-        self.data
-            .dialogues
+    /// La prochaine porte du chemin vers cette cellule, dans le monde ; `None` si l'on y est
+    /// déjà (ou si rien n'y mène). Une ouverture (deux couloirs bout à bout) ne se montre pas :
+    /// on y passe sans rien faire ; le repère va à la première vraie porte du chemin.
+    fn door_toward(&self, target: &str) -> Option<Vec3> {
+        let active = self.active()?;
+        let from = self.current_cell()?;
+        let portals = &active.sector.portals;
+        let edges: Vec<(&str, &str)> = portals
             .iter()
-            .find(|d| &d.sector == district && offers_contracts(d))
-    }
-
-    /// La console de ce guichetier.
-    fn office_console(&self) -> Option<Vec3> {
-        let label = &self.office()?.console;
-        self.interactables
+            .map(|p| (p.a.as_str(), p.b.as_str()))
+            .collect();
+        let route: Vec<&sh_data::sector::Portal> = path(&edges, from, target)?
+            .into_iter()
+            .filter_map(|i| portals.get(i))
+            .collect();
+        let portal = route
             .iter()
-            .find(|(i, _)| matches!(i, Interactable::Console { label: l } if l == label))
-            .map(|(_, t)| t.translation())
-    }
-
-    /// Le siège du pilote.
-    fn helm(&self) -> Option<Vec3> {
-        self.interactables
-            .iter()
-            .find(|(i, _)| matches!(i, Interactable::Seat { role } if role == "pilot"))
-            .map(|(_, t)| t.translation())
-    }
-
-    /// Le sas : le portail entre une cellule du vaisseau et une cellule du quartier.
-    fn airlock(&self) -> Option<Vec3> {
-        let sector = self.sector.as_ref()?;
-        let portal = sector.sector.portals.iter().find(|p| {
-            matches!(
-                (self.is_ship_cell(&p.a), self.is_ship_cell(&p.b)),
-                (Some(a), Some(b)) if a != b
-            )
-        })?;
-        let root = self.transforms.get(sector.root).ok()?;
+            .find(|p| !matches!(p.kind, sh_data::sector::PortalKind::Opening))
+            .or(route.first())?;
+        let root = self.transforms.get(active.root).ok()?;
         Some(root.transform_point(v3(portal.center)))
     }
 
     fn player_position(&self) -> Option<Vec3> {
         self.player.single().ok().map(GlobalTransform::translation)
+    }
+
+    /// L'interactif voulu le plus proche du joueur, s'il est chargé.
+    fn nearest(&self, wanted: impl Fn(&Interactable) -> bool) -> Option<(&Interactable, Vec3)> {
+        let player = self.player_position()?;
+        self.interactables
+            .iter()
+            .filter(|(i, _)| wanted(i))
+            .map(|(i, t)| (i, t.translation()))
+            .min_by(|a, b| {
+                a.1.distance_squared(player)
+                    .total_cmp(&b.1.distance_squared(player))
+            })
+    }
+
+    /// Le guichetier des contrats (PNJ de comptoir), s'il est chargé.
+    fn clerk(&self) -> Option<Vec3> {
+        self.nearest(|i| matches!(i, Interactable::Npc { role, .. } if role == CONTRACTS_ROLE))
+            .map(|(_, p)| p)
+    }
+
+    /// Le siège du pilote.
+    fn helm(&self) -> Option<Vec3> {
+        self.nearest(|i| matches!(i, Interactable::Seat { role } if role == "pilot"))
+            .map(|(_, p)| p)
+    }
+
+    /// Ce que montre l'écran du personnage, s'il est ouvert.
+    fn character_view(&self) -> Option<&ScreenView> {
+        self.screens.0.as_ref().map(|s| &s.view)
+    }
+
+    /// Un objet posé dans le vaisseau du joueur a-t-il été ramassé ? Un point de ramassage pris
+    /// a pour identifiant `<secteur>/<cellule>/<nœud>` (`sector::gltf::pickup_id`).
+    fn picked_aboard(&self) -> bool {
+        let (Some(active), Some(picked)) = (self.active(), self.screens.1.as_ref()) else {
+            return false;
+        };
+        picked.0.iter().any(|id| {
+            id.split('/')
+                .nth(1)
+                .is_some_and(|cell| active.is_ship_cell(cell))
+        })
+    }
+
+    /// Le terminal montre-t-il le guichetier des contrats (sa conversation, ou ses contrats) ?
+    fn talking_to_office(&self) -> bool {
+        match self.terminal.as_ref().map(|t| &t.screen) {
+            Some(Screen::Dialogue { id, .. }) => self.data.dialogues.iter().any(|d| {
+                &d.id == id && (d.role.as_deref() == Some(CONTRACTS_ROLE) || offers_contracts(d))
+            }),
+            Some(Screen::Contracts) => true,
+            _ => false,
+        }
     }
 
     /// Relève les faits du frame. `turned` : rotation cumulée aux commandes (degrés).
@@ -583,33 +802,45 @@ impl Observed<'_, '_> {
             .filter(|_| self.flying())
             .map_or(0.0, |(_, m)| m.velocity.length());
         let screen = self.terminal.as_ref().map(|t| &t.screen);
-        let office = self.office().map(|d| d.id.as_str());
-        let at_office = match (self.office_console(), self.player_position()) {
-            (Some(console), Some(player)) => {
-                docked
-                    && Vec2::new(console.x - player.x, console.z - player.z).length()
-                        < OFFICE_DISTANCE
+        let talking = self.talking_to_office();
+        let current = self.current_cell();
+        let near_clerk = match (self.clerk(), self.player_position()) {
+            (Some(clerk), Some(player)) => {
+                Vec2::new(clerk.x - player.x, clerk.z - player.z).length() < OFFICE_DISTANCE
             }
             _ => false,
         };
+        let in_office = current.is_some() && current == self.cell_of(OFFICE_ROOM, false);
+        let at_office = docked && (in_office || near_clerk || talking);
+        let in_district = self.in_district();
+        let in_hall =
+            in_district && (current.and_then(|c| self.room_key(c)) == Some(HALL_ROOM) || at_office);
+        let character = self.character_view();
         let target = target_contract(tutorial, captain);
         let here = self.location.as_ref().map(|l| &l.system);
         Facts {
+            locker_open: matches!(character, Some(ScreenView::Container(_))),
+            picked_up: self.picked_aboard(),
+            inventory: character == Some(&ScreenView::Tab(CharacterTab::Inventory)),
+            room: self
+                .aboard()
+                .and_then(|cell| self.room_key(cell))
+                .and_then(Room::from_name_key),
             looked: turned >= LOOK_DEGREES,
             thrusting: speed >= THRUST_SPEED,
             cruising: speed >= self.max_speed() * CRUISE_FACTOR,
             docked: docked && view == Some(ViewLevel::Sector),
             standing_docked: docked && *self.mode.get() == ControlMode::OnFoot,
-            left_ship: self.in_district(),
+            left_ship: in_district,
+            in_hall,
             at_office,
-            talking: match screen {
-                Some(Screen::Dialogue { id, .. }) => Some(id.as_str()) == office,
-                Some(Screen::Contracts) => true,
-                _ => false,
-            },
+            talking,
             cargo_contract: latest_cargo_contract(captain).map(|c| c.id.clone()),
             journal: matches!(screen, Some(Screen::Journal)),
-            sheet: matches!(screen, Some(Screen::Sheet)),
+            // M9 : [KeyC], [KeyI], [KeyO] ouvrent l'écran du personnage ; la fiche de la
+            // tablette compte aussi.
+            sheet: matches!(character, Some(ScreenView::Tab(_)))
+                || matches!(screen, Some(Screen::Sheet)),
             codex: matches!(screen, Some(Screen::Codex | Screen::CodexEntry(_))),
             at_helm: self.piloting(),
             undocked: !docked && self.flying(),
@@ -630,7 +861,7 @@ fn start_tutorial(mut commands: Commands) {
         .flatten()
         .and_then(|v| v.trim().parse().ok())
         .and_then(Stage::from_number)
-        .unwrap_or(Stage::Flight);
+        .unwrap_or(Stage::ALL[0]);
     commands.insert_resource(Tutorial::new(stage));
 }
 
@@ -677,6 +908,10 @@ fn track(
     let mut next = tutorial.clone();
     let advance = next.observe(&facts);
     if next != *tutorial {
+        // Le journal dit ce qui a été constaté (mise au point des scénarios de l'autopilote).
+        for check in next.ticked.iter().filter(|c| !tutorial.is_ticked(**c)) {
+            info!("tutoriel : coché {check:?}");
+        }
         *tutorial = next;
     }
     match advance {
@@ -809,6 +1044,13 @@ fn panel_content(
             .checks()
             .iter()
             .map(|c| {
+                // Une salle du tour : son nom, celui du bandeau (`lang/<code>/rooms.ron`).
+                let room = match c {
+                    Check::Visit(room) => texts.get(room.name_key()),
+                    _ => String::new(),
+                };
+                let [place, beacon] = args;
+                let args = [place, beacon, ("room", room.as_str())];
                 (
                     tutorial.is_ticked(*c),
                     texts.format(&format!("tutorial.check.{}", c.key()), &args),
@@ -986,10 +1228,12 @@ const MARKER_WIDTH: f32 = 280.0;
 /// Marge du bord de l'écran pour un repère hors champ (px).
 const MARKER_MARGIN: f32 = 48.0;
 
-/// La cible du repère de l'étape, et son nom.
+/// La cible du repère de l'étape, et son nom. Vers une salle, la prochaine porte du chemin
+/// ([`Observed::door_toward`]) ; dans la salle, ce qu'on y cherche (siège, guichetier).
 fn marker_target(
     texts: &Texts,
     observed: &Observed,
+    tutorial: &Tutorial,
     stage: Stage,
     target: Option<&Contract>,
     beacons: &Query<(&DockBeacon, &Name, &GlobalTransform)>,
@@ -997,20 +1241,48 @@ fn marker_target(
 ) -> Option<(Vec3, String)> {
     let view = observed.view();
     let docked = observed.docked.is_some();
+    // La cible si l'on est dans sa salle, sinon la prochaine porte vers elle.
+    let toward = |cell: Option<&str>, here: Option<Vec3>| match cell {
+        Some(cell) if observed.current_cell() != Some(cell) => observed.door_toward(cell).or(here),
+        _ => here,
+    };
     match stage {
+        Stage::Cabin if !tutorial.is_ticked(Check::Locker) => observed
+            .nearest(|i| matches!(i, Interactable::Locker { .. }))
+            .map(|(_, p)| (p, texts.get("tutorial.marker.locker"))),
+        Stage::Cabin if !tutorial.is_ticked(Check::Pickup) => observed
+            .nearest(|i| matches!(i, Interactable::Pickup { .. }))
+            .map(|(i, p)| {
+                let item = match i {
+                    Interactable::Pickup { item } => texts.get(&format!("item.{item}")),
+                    _ => String::new(),
+                };
+                (
+                    p,
+                    texts.format("tutorial.marker.pickup", &[("item", &item)]),
+                )
+            }),
+        Stage::Tour => {
+            let room = next_room(&tutorial.ticked)?;
+            let cell = observed.cell_of(room.name_key(), true)?;
+            observed
+                .door_toward(cell)
+                .map(|p| (p, texts.get(room.name_key())))
+        }
+        Stage::Flight | Stage::Departure
+            if !observed.piloting() && view != Some(ViewLevel::Galaxy) =>
+        {
+            let cockpit = observed.cell_of(Room::Cockpit.name_key(), true);
+            toward(cockpit, observed.helm()).map(|p| (p, texts.get("tutorial.marker.helm")))
+        }
+        Stage::Office | Stage::Contract if docked => {
+            let office = observed.cell_of(OFFICE_ROOM, false);
+            toward(office, observed.clerk()).map(|p| (p, texts.get("tutorial.marker.office")))
+        }
         Stage::Dock if view == Some(ViewLevel::Global) => beacons
             .iter()
             .next()
             .map(|(_, name, t)| (t.translation(), name.as_str().to_owned())),
-        Stage::Office if docked && !observed.in_district() => observed
-            .airlock()
-            .map(|p| (p, texts.get("tutorial.marker.airlock"))),
-        Stage::Office | Stage::Contract if docked => observed
-            .office_console()
-            .map(|p| (p, texts.get("tutorial.marker.office"))),
-        Stage::Departure if docked && !observed.piloting() => observed
-            .helm()
-            .map(|p| (p, texts.get("tutorial.marker.helm"))),
         Stage::Delivery
             if view == Some(ViewLevel::Global)
                 && target.is_some_and(|c| {
@@ -1067,7 +1339,9 @@ fn place_marker(
             let contract = career
                 .as_deref()
                 .and_then(|c| target_contract(tutorial, &c.captain));
-            marker_target(&texts, &observed, stage, contract, &beacons, &points)
+            marker_target(
+                &texts, &observed, tutorial, stage, contract, &beacons, &points,
+            )
         }
         _ => None,
     };
@@ -1155,12 +1429,18 @@ mod tests {
         let mut f = Facts::default();
         for check in stage.checks() {
             match check {
+                Check::Locker => f.locker_open = true,
+                Check::Pickup => f.picked_up = true,
+                Check::Inventory => f.inventory = true,
+                // Une salle par relevé : voir `tout_le_parcours_jusqu_a_la_fin`.
+                Check::Visit(room) => f.room = Some(*room),
                 Check::Look => f.looked = true,
                 Check::Thrust => f.thrusting = true,
                 Check::Cruise => f.cruising = true,
                 Check::Dock => f.docked = true,
                 Check::Stand => f.standing_docked = true,
-                Check::Airlock => f.left_ship = true,
+                Check::Hangar => f.left_ship = true,
+                Check::Hall => f.in_hall = true,
                 Check::Office => f.at_office = true,
                 Check::Talk => f.talking = true,
                 Check::Contract => f.cargo_contract = Some("CT-1".into()),
@@ -1180,16 +1460,18 @@ mod tests {
     }
 
     #[test]
-    fn huit_etapes_numerotees() {
-        assert_eq!(Stage::ALL.len(), 8);
+    fn dix_etapes_numerotees() {
+        assert_eq!(Stage::ALL.len(), 10);
         for (i, stage) in Stage::ALL.iter().enumerate() {
             assert_eq!(stage.number(), i + 1);
             assert_eq!(Stage::from_number(i + 1), Some(*stage));
             assert!(!stage.checks().is_empty());
         }
         assert_eq!(Stage::from_number(0), None);
-        assert_eq!(Stage::from_number(9), None);
+        assert_eq!(Stage::from_number(11), None);
         assert_eq!(Stage::Save.next(), None);
+        // Une nouvelle partie commence dans la chambre.
+        assert_eq!(Stage::ALL[0], Stage::Cabin);
     }
 
     #[test]
@@ -1204,12 +1486,14 @@ mod tests {
     #[test]
     fn les_cases_cochees_restent_cochees() {
         let mut t = Tutorial::new(Stage::Flight);
+        // Assis aux commandes, et il regarde autour de lui.
         let looked = Facts {
+            at_helm: true,
             looked: true,
             ..default()
         };
         assert_eq!(t.observe(&looked), None);
-        assert!(t.is_ticked(Check::Look));
+        assert!(t.is_ticked(Check::Look) && t.is_ticked(Check::Helm));
         // Le joueur ne tourne plus, mais pousse puis passe en croisière : l'étape est franchie.
         assert_eq!(
             t.observe(&Facts {
@@ -1244,20 +1528,91 @@ mod tests {
 
     #[test]
     fn tout_le_parcours_jusqu_a_la_fin() {
-        let mut t = Tutorial::new(Stage::Flight);
+        let mut t = Tutorial::new(Stage::Cabin);
         let mut seen = Vec::new();
         for stage in Stage::ALL {
             assert_eq!(t.stage(), Some(stage));
+            if stage == Stage::Tour {
+                // Une salle à la fois, dans le désordre : l'étape tient jusqu'à la dernière.
+                for room in [
+                    Room::Cockpit,
+                    Room::Hold,
+                    Room::Quarters,
+                    Room::Engine,
+                    Room::Mess,
+                ] {
+                    let f = Facts {
+                        room: Some(room),
+                        ..default()
+                    };
+                    assert_eq!(t.observe(&f), None, "{room:?}");
+                }
+                assert_eq!(next_room(&t.ticked), Some(Room::Airlock));
+                seen.push(t.observe(&Facts {
+                    room: Some(Room::Airlock),
+                    ..default()
+                }));
+                continue;
+            }
             seen.push(t.observe(&all_of(stage)));
         }
         assert_eq!(seen.last(), Some(&Some(Advance::Finished)));
         assert_eq!(t.progress, Progress::Finished);
-        assert_eq!(t.number(), 9);
+        assert_eq!(t.number(), 11);
         // Une étape par relevé : la 2e n'est pas franchie au même frame que la 1re.
-        assert_eq!(seen[0], Some(Advance::Stage(Stage::Dock)));
+        assert_eq!(seen[0], Some(Advance::Stage(Stage::Tour)));
+        assert_eq!(seen[1], Some(Advance::Stage(Stage::Flight)));
         // Le contrat pris est retenu pour la suite.
         assert_eq!(t.contract.as_deref(), Some("CT-1"));
         assert_eq!(t.observe(&all_of(Stage::Save)), None);
+    }
+
+    #[test]
+    fn le_tour_suit_l_ordre_du_repere() {
+        assert_eq!(next_room(&[]), Some(Room::Quarters));
+        let ticked = [Check::Visit(Room::Quarters), Check::Visit(Room::Airlock)];
+        assert_eq!(next_room(&ticked), Some(Room::Mess));
+        let all: Vec<Check> = TOUR.iter().map(|r| Check::Visit(*r)).collect();
+        assert_eq!(next_room(&all), None);
+        // Les vérifications du tour sont les salles du repère, dans le même ordre.
+        assert_eq!(Stage::Tour.checks(), all.as_slice());
+        for room in TOUR {
+            assert_eq!(Room::from_name_key(room.name_key()), Some(room));
+        }
+        assert_eq!(Room::from_name_key("room.cabin"), None);
+        assert_eq!(Room::from_name_key("room.corridor"), None);
+    }
+
+    #[test]
+    fn la_prochaine_porte_du_chemin() {
+        // Le vaisseau type, amarré : chambre → couloir avant → couloir arrière → sas → hangar.
+        let edges = [
+            ("couloir_arriere", "machines"),
+            ("couloir_arriere", "sas"),
+            ("couloir_arriere", "couloir_avant"),
+            ("couloir_avant", "chambre"),
+            ("couloir_avant", "cockpit"),
+            ("sas", "@dock"),
+            ("sas", "hangar"),
+            ("couloir", "hangar"),
+            ("couloir", "hall"),
+            ("hall", "bureau"),
+        ];
+        assert_eq!(path(&edges, "chambre", "cockpit"), Some(vec![3, 4]));
+        assert_eq!(path(&edges, "couloir_avant", "cockpit"), Some(vec![4]));
+        assert_eq!(
+            path(&edges, "chambre", "bureau"),
+            Some(vec![3, 2, 1, 6, 7, 8, 9])
+        );
+        assert_eq!(path(&edges, "sas", "bureau"), Some(vec![6, 7, 8, 9]));
+        assert_eq!(path(&edges, "hall", "bureau"), Some(vec![9]));
+        assert_eq!(
+            path(&edges, "bureau", "cockpit"),
+            Some(vec![9, 8, 7, 6, 1, 2, 4])
+        );
+        // Déjà là, ou rien n'y mène (le point d'attache externe `@dock` ne mène nulle part).
+        assert_eq!(path(&edges, "bureau", "bureau"), None);
+        assert_eq!(path(&edges, "chambre", "taverne"), None);
     }
 
     #[test]
@@ -1290,9 +1645,9 @@ mod tests {
 
     #[test]
     fn avancement_en_ron() {
-        let mut t = Tutorial::new(Stage::Contract);
+        let mut t = Tutorial::new(Stage::Tour);
         t.observe(&Facts {
-            talking: true,
+            room: Some(Room::Hold),
             ..default()
         });
         let text = sh_data::ron_options().to_string(&t).expect("sérialisable");
@@ -1303,6 +1658,32 @@ mod tests {
             .from_str("(progress: Running(Delivery))")
             .expect("relisible");
         assert_eq!(minimal.stage(), Some(Stage::Delivery));
+    }
+
+    #[test]
+    fn sauvegardes_de_m8_en_plein_tutoriel() {
+        // L'étape et les cases sont sauvegardées par leur nom : une partie de M8 sortie du
+        // vaisseau (« Airlock », devenu « Hangar ») reprend à la même étape, cases gardées,
+        // malgré les deux étapes ajoutées devant.
+        let old: Tutorial = sh_data::ron_options()
+            .from_str("(progress: Running(Office), ticked: [Stand, Airlock], contract: None)")
+            .expect("relisible");
+        assert_eq!(old.stage(), Some(Stage::Office));
+        assert!(old.is_ticked(Check::Stand) && old.is_ticked(Check::Hangar));
+        for (text, stage) in [
+            ("Flight", Stage::Flight),
+            ("Contract", Stage::Contract),
+            ("Save", Stage::Save),
+        ] {
+            let t: Tutorial = sh_data::ron_options()
+                .from_str(&format!("(progress: Running({text}))"))
+                .expect("relisible");
+            assert_eq!(t.stage(), Some(stage));
+        }
+        let done: Tutorial = sh_data::ron_options()
+            .from_str("(progress: Finished)")
+            .expect("relisible");
+        assert_eq!(done.stage(), None);
     }
 
     #[test]
