@@ -2,6 +2,12 @@
 
 > Une entrée courte par session (2 à 5 lignes) : ce qui a été fait, ce qui reste en suspens, les décisions prises. Le plus récent en haut.
 
+## 05/11/2026 — Poste Windows : M9, retours de l'auteur (vague 1 et début de la vague 2)
+
+- **Plan** `docs/m9-retours.md` (16 lots, conventions entre lots). Q16–Q18 validées par l'auteur (pas de boucliers : blindage par section ; Hexis monde-usine urbanisé ; mondes isolés en orbite seulement). Jusqu'à dix sous-agents autorisés.
+- **Intégrés et commités** : L0 (langue par domaine, catalogue d'objets, types partagés), L1 (options à onglets, deux touches par action, conflits signalés, pilotage × 3), L2 (encart des touches F1, bandeau lieu + salle, schéma du blindage), L3 (objets posés et pris pour de bon, casiers, PNJ, décor selon la qualité), L4 (bornes refaites, conversations des PNJ, carburant au chantier), L5 (inventaire, compétences, casiers), L6 (Hexis, villes de jour et de nuit), L8 (carte refaite, mondes isolés, Karza par Portail), A (kit), E (PNJ), F (objets et icônes). `tools/check.ps1` **vert** (arbre e5e6999).
+- **Pièges** : arbres de travail qui partagent `target/` → code d'un autre arbre compilé ou lancé (parade : remettre les `.rs` à l'heure) ; pointeurs LFS dans les arbres neufs ; arbres créés sur un vieux commit ; textes de valeur qui rétrécissent jusqu'à se briser mot par mot (AGENTS.md §4, §12.5).
+- **En cours** : B (intérieur `corvette`), D (spatioport `spaceport` avec hangar), L10 (raccords). **Reste** : C, L7, L9, bakes finals, captures après complètes, `tools/perf.ps1 -Preset low -Window fullscreen`, propositions.
 ## 05/11/2026 — Poste Windows : mode orchestrateur
 
 - **`/orchestrateur <jalon | fichier | tâches>`** (`.claude/skills/orchestrateur/SKILL.md`, à lancer dans une nouvelle session) : l'orchestrateur ne produit rien lui-même, découpe en lots à propriétaire unique, briefe `artiste-blender` et `dev-jeu`, exporte et recuit lui-même les cartes que plusieurs lots touchent, fait le contrôle complet une fois par vague, et ne dérange l'auteur que pour valider le visuel, une installation, un téléchargement ou une dépense. Sous-agents valables pour tout jalon ; AGENTS.md §2, §3.3, §12.5.
