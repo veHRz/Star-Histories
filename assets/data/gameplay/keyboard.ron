@@ -1,9 +1,11 @@
 // Dispositions de clavier : étiquette affichée pour chaque touche physique (nom `KeyCode`) qui
-// ne porte pas la lettre de sa position QWERTY. Les liaisons restent physiques ; seules les
-// aides changent (Q13 : l'auteur joue en AZERTY, le remappage arrive en M7). Au premier appui,
-// le jeu apprend le vrai caractère de chaque touche et corrige l'étiquette.
+// ne porte pas le caractère de sa position QWERTY (noms de la langue : `key.<KeyCode>`). Les
+// liaisons restent physiques ; seules les aides et le menu des touches changent (Q13 : l'auteur
+// joue en AZERTY). Au premier appui, le jeu apprend le vrai caractère de chaque touche lettre et
+// corrige l'étiquette. Le joueur choisit la disposition supposée dans les options (onglet
+// Général, M9) ; chaque disposition a son nom dans la langue (`options.layout.<id>`).
 (
-    // Disposition supposée avant tout appui (celle de l'auteur).
+    // Disposition supposée avant tout appui et tout choix (celle de l'auteur).
     default_layout: "azerty",
     layouts: {
         "qwerty": {},
@@ -14,6 +16,16 @@
             "KeyZ": "W",
             "KeyM": ",",
             "Semicolon": "M",
+            // Ponctuation de l'AZERTY français, pour les touches qu'on peut choisir (M9).
+            "Backquote": "²",
+            "Minus": ")",
+            "BracketLeft": "^",
+            "BracketRight": "$",
+            "Quote": "Ù",
+            "Backslash": "*",
+            "Comma": ";",
+            "Period": ":",
+            "Slash": "!",
         },
     },
 )

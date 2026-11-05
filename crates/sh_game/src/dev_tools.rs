@@ -1,9 +1,13 @@
 //! Outils de développement (feature `dev` uniquement, jamais dans un build distribué).
 //!
-//! - **F1** : inspecteur du monde (entités, ressources, assets) ;
+//! - **F4** : inspecteur du monde (entités, ressources, assets). F1 est au jeu depuis M9 : il
+//!   replie l'encart des touches (`input::ToggleKeyHelp`) ;
 //! - **F2** : caméra libre sur la caméra du monde (ZQSD/WASD, clic droit pour regarder) ;
 //! - **F3** : affichage FPS et temps de frame (masqué par défaut pendant une capture de
 //!   l'autopilote, pour des images propres ; `SH_SHOW_FPS=1` le force).
+//!
+//! Ces touches sont lues directement, hors des contextes d'entrée : un joueur qui en choisit une
+//! dans le menu des touches la partage avec l'outil (builds de développement seulement).
 
 use bevy::camera_controller::free_camera::{FreeCamera, FreeCameraPlugin};
 use bevy::dev_tools::fps_overlay::{FpsOverlayConfig, FpsOverlayPlugin, FrameTimeGraphConfig};
@@ -25,7 +29,7 @@ impl Plugin for DevToolsPlugin {
         let show_fps = std::env::var("SH_SHOW_FPS").is_ok_and(|v| v == "1") || !capturing;
         app.add_plugins((
             EguiPlugin::default(),
-            WorldInspectorPlugin::new().run_if(input_toggle_active(false, KeyCode::F1)),
+            WorldInspectorPlugin::new().run_if(input_toggle_active(false, KeyCode::F4)),
             FreeCameraPlugin,
             FpsOverlayPlugin {
                 config: FpsOverlayConfig {
