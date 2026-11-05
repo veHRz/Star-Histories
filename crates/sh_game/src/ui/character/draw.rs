@@ -108,7 +108,9 @@ struct LoanEntry {
     lender: String,
     balance: String,
     installment: String,
+    /// La date de la prochaine échéance, et le délai qui reste (« dans 30 jours »).
     due: String,
+    due_note: Option<String>,
     missed: u32,
 }
 
@@ -259,21 +261,21 @@ fn loans(
             } else {
                 loan.installment
             };
-            let date = format_date(t, loan.next_due);
-            let due = match today.map(|d| d.days_until(loan.next_due)) {
-                Some(0) => t.format("character.loan.due_today", &[("date", &date)]),
-                Some(1) => t.format("character.loan.due_tomorrow", &[("date", &date)]),
-                Some(days) if days > 1 => t.format(
-                    "character.loan.due_in",
-                    &[("date", &date), ("days", &t.number(days as f64, 0))],
-                ),
-                _ => date,
+            let due_note = match today.map(|d| d.days_until(loan.next_due)) {
+                Some(0) => Some(t.get("character.loan.today")),
+                Some(1) => Some(t.get("character.loan.tomorrow")),
+                Some(days) if days > 1 => Some(t.format(
+                    "character.loan.in_days",
+                    &[("days", &t.number(days as f64, 0))],
+                )),
+                _ => None,
             };
             LoanEntry {
                 lender: faction_name(t, data, &loan.lender),
                 balance: money(t, loan.balance),
                 installment: money(t, installment),
-                due,
+                due: format_date(t, loan.next_due),
+                due_note,
                 missed: loan.missed,
             }
         })
@@ -1068,8 +1070,8 @@ fn spawn_inventory(commands: &mut Commands, body: Entity, kit: &Kit, b: &Invento
             theme::TEXT_DIM,
         );
     }
-    for loan in &b.loans {
-        spawn_loan(commands, loans, kit, loan);
+    for (index, loan) in b.loans.iter().enumerate() {
+        spawn_loan(commands, loans, kit, loan, index > 0);
     }
 }
 
@@ -1190,12 +1192,45 @@ fn spawn_reputation(commands: &mut Commands, parent: Entity, kit: &Kit, rep: &Re
     ));
 }
 
-/// Un emprunt : créancier, reste dû, échéance, date ; les échéances manquées en rouge.
-fn spawn_loan(commands: &mut Commands, parent: Entity, kit: &Kit, loan: &LoanEntry) {
+/// Un emprunt : créancier (sur toute la largeur, il passe à la ligne s'il est long), puis des
+/// lignes libellé : valeur. La valeur prend toute la largeur qui reste et ne se coupe jamais
+/// (montants, date) ; le délai qui reste va dessous, en gris. Les échéances manquées en rouge.
+/// `separated` : un emprunt qui en suit un autre s'en détache par un filet.
+fn spawn_loan(
+    commands: &mut Commands,
+    parent: Entity,
+    kit: &Kit,
+    loan: &LoanEntry,
+    separated: bool,
+) {
     let t = kit.t;
+    let block = commands
+        .spawn((
+            ChildOf(parent),
+            Node {
+                flex_direction: FlexDirection::Column,
+                row_gap: px(3),
+                width: percent(100),
+                flex_shrink: 0.0,
+                ..default()
+            },
+        ))
+        .id();
+    if separated {
+        commands.spawn((
+            ChildOf(block),
+            Node {
+                width: percent(100),
+                height: px(1),
+                margin: UiRect::vertical(px(4)),
+                ..default()
+            },
+            BackgroundColor(theme::RULE),
+        ));
+    }
     spawn_text(
         commands,
-        parent,
+        block,
         loan.lender.clone(),
         kit.fonts.body(15.0),
         theme::TEXT,
@@ -1204,30 +1239,34 @@ fn spawn_loan(commands: &mut Commands, parent: Entity, kit: &Kit, loan: &LoanEnt
         (
             t.get("character.loan.balance"),
             loan.balance.clone(),
+            None,
             kit.fonts.mono(15.0),
             theme::ACCENT,
         ),
         (
             t.get("character.loan.installment"),
             loan.installment.clone(),
+            None,
             kit.fonts.mono(15.0),
             theme::TEXT,
         ),
         (
             t.get("character.loan.due"),
             loan.due.clone(),
+            loan.due_note.clone(),
             kit.fonts.body(14.0),
             theme::TEXT,
         ),
     ];
-    for (label, value, font, color) in pairs {
+    for (label, value, note, font, color) in pairs {
         let row = commands
             .spawn((
-                ChildOf(parent),
+                ChildOf(block),
                 Node {
                     flex_direction: FlexDirection::Row,
-                    align_items: AlignItems::Center,
+                    align_items: AlignItems::FlexStart,
                     column_gap: px(10),
+                    width: percent(100),
                     flex_shrink: 0.0,
                     ..default()
                 },
@@ -1244,22 +1283,41 @@ fn spawn_loan(commands: &mut Commands, parent: Entity, kit: &Kit, loan: &LoanEnt
                 ..default()
             },
         ));
+        // Base nulle et croissance : la colonne des valeurs prend toute la largeur restante
+        // (sans elle, le texte se réduisait à sa largeur minimale, un mot par ligne).
+        let values = commands
+            .spawn((
+                ChildOf(row),
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    flex_grow: 1.0,
+                    flex_basis: px(0),
+                    min_width: px(0),
+                    ..default()
+                },
+            ))
+            .id();
         commands.spawn((
-            ChildOf(row),
+            ChildOf(values),
             Text::new(value),
             font,
             TextColor(color),
-            Node {
-                flex_shrink: 1.0,
-                min_width: px(0),
-                ..default()
-            },
+            TextLayout::no_wrap(),
         ));
+        if let Some(note) = note {
+            spawn_text(
+                commands,
+                values,
+                note,
+                kit.fonts.body(13.0),
+                theme::TEXT_DIM,
+            );
+        }
     }
     if loan.missed > 0 {
         spawn_text(
             commands,
-            parent,
+            block,
             t.format(
                 "character.loan.missed",
                 &[("count", &loan.missed.to_string())],
