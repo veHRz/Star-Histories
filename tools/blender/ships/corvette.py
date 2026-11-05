@@ -16,6 +16,12 @@ l'auteur :
 - noms de salle (`meta["rooms"]`) et décor par niveau de qualité (`detail` : 0 sobre, 1 habillage
   moyen, 2 très riche ; aucun décor optionnel n'a de collision ni de lampe cuite).
 
+M10 (lot B, docs/m10.md §1.2) : plus de sacs sur les couchettes ni sur la malle, plus de linge
+plié sur le lit ; frigo du kit (`corvette_carre_frigo`) à la place de la borne de la cuisine et de
+la chambre froide ; porte blindée du kit au sas (`meta["door_models"]`, portail `sas__@dock`
+seulement) ; casiers décoratifs « verrouillés » (volume `INTERACT_` du kit, noms stables) et
+plaques de nom sur les casiers de la chambre ; tableaux électriques du kit (gaines au plafond).
+
 Plan (repère Blender : X = tribord, Y = avant, Z = haut ; pont à z = 0) :
 
     cockpit                      x −4 → 4,     y 14,4 → 20,4  (verrière au nord)
@@ -45,7 +51,8 @@ seulement), `--lit` (aperçus Cycles éclairés par les lampes), `--game` (aper�
 jeu » après un bake), `--only a,b` (prises de vue), `--samples N`, `--res LxH`. Aperçus dans
 target/art-previews/m9-lotB/ ; `<vue>_n0.png` / `_n1` / `_n2` : la même vue au niveau de décor
 0 (Bas), 1 (Moyen) ou 2 (Haut). Bake final : 512 échantillons (défaut de `lightmap.py`) ;
-`SH_BAKE_SAMPLES=64` pour un aperçu.
+`SH_BAKE_SAMPLES=64` pour un aperçu. `SH_PREVIEW_DIR=<dossier>` et `SH_PREVIEW_PREFIX=<préfixe>`
+(M10) : dossier et préfixe des aperçus (avant / après sous les mêmes angles).
 """
 
 from __future__ import annotations
@@ -149,6 +156,10 @@ META = {
     "models": MODELS,
     "lightmaps": LIGHTMAPS,
     "rooms": ROOMS,
+    # M10 (lot B) : la porte extérieure du sas (donne sur le vide en vol) est la porte blindée du
+    # kit ; les autres portes gardent `door_model` du secteur. Id calculé par `portal_record`
+    # (« @ » retiré), réécrit « sas__@dock » par `write_ron`.
+    "door_models": {"sas__dock": st.AIRLOCK_DOOR},
 }
 
 COOL = [0.78, 0.88, 1.0]
@@ -523,19 +534,6 @@ def boots(k: Cell, x, y, rot=0.0, detail=2):
             k.obj(o, detail=detail)
 
 
-def duffel(k: Cell, center, rot=0.0, length=0.62, detail=2):
-    """Sac de toile couché (cylindre le long de son X local), sangles et poignée."""
-    objs = [c.cylinder(k.nm("duffel"), 0.15, length, (0, 0, 0.14), k.m["fabric_dark"], k.coll, axis="X", segments=12)]
-    for sx in (-1, 1):
-        objs.append(c.cylinder(k.nm("duffel_end"), 0.13, 0.03, (sx * length / 2, 0, 0.14), k.m["rubber"], k.coll, axis="X", segments=12))
-        objs.append(c.box(k.nm("duffel_strap"), (0.04, 0.31, 0.3), (sx * length * 0.22, 0, 0.14), k.m["rubber"], k.coll))
-    objs.append(c.box(k.nm("duffel_handle"), (0.22, 0.03, 0.04), (0, 0, 0.3), k.m["rubber"], k.coll))
-    bpy.context.view_layer.update()
-    place(objs, center, rot)
-    for o in objs:
-        k.obj(o, detail=detail)
-
-
 def plant(k: Cell, x, y, z, detail=2):
     """Plante en pot du capitaine : pot sombre, terre, feuillage en touffes."""
     k.cyl("pot", 0.075, 0.13, (x, y, z + 0.065), "dark", segments=12, detail=detail)
@@ -798,8 +796,9 @@ def build_cockpit(k: Cell):
     # --- Arrière : communications, armoire, casiers --------------------------------------------
     k.add(kit.console("cockpit_comms", (k.x1 - 0.32, 17.4, 0.0), PI / 2, m, kc, label="comms"))
     k.add(kit.cabinet(k.nm("cabinet"), k.wall("W", 17.4), Cell.facing("W"), m, kc, size=(1.4, 0.32, 1.5)))
-    k.add(kit.locker(k.nm("locker"), (-3.4, k.y0 + 0.28, 0.0), 0.0, m, kc))
-    k.add(kit.locker(k.nm("locker"), (-2.77, k.y0 + 0.28, 0.0), 0.0, m, kc))
+    # Casiers décoratifs (M10 : « Casier verrouillé », volume INTERACT_ du kit).
+    k.add(kit.locker("cockpit_locker0", (-3.4, k.y0 + 0.28, 0.0), 0.0, m, kc))
+    k.add(kit.locker("cockpit_locker1", (-2.74, k.y0 + 0.28, 0.0), 0.0, m, kc))  # 0,66 m : volumes jointifs
     k.add(kit.cabinet(k.nm("cabinet"), k.wall("S", 3.0), Cell.facing("S"), m, kc, size=(1.3, 0.32, 1.6)))
     k.add(kit.wall_screen(k.nm("screen"), k.wall("E", 15.4, 0, 1.78), Cell.facing("E"), m, kc, size=(0.6, 0.4)))
     k.add(kit.floor_grating(k.nm("grating"), (0.0, 16.4, 0.0), (1.0, 1.6), 0.0, m, kc, glow=False))
@@ -808,7 +807,9 @@ def build_cockpit(k: Cell):
     k.add(kit.seat("cockpit_jump_e", (k.x1 - 0.42, 15.55, 0.0), PI / 2, m, kc))
 
     # --- Niveau 1 : habillage moyen ------------------------------------------------------------
-    k.add(kit.wall_screen(k.nm("screen"), k.wall("W", 17.4, 0, 2.05), Cell.facing("W"), m, kc, size=(0.8, 0.4), detail=1))
+    # M10 : plus au-dessus du tableau électrique (ses gaines montent jusqu'à 2,05 m) : paroi sud,
+    # entre les casiers et la porte.
+    k.add(kit.wall_screen(k.nm("screen"), k.wall("S", -1.4, 0, 1.6), Cell.facing("S"), m, kc, size=(0.5, 0.34), detail=1))
     k.add(kit.junction_box(k.nm("jbox"), k.wall("W", 15.0, 0, 2.12), Cell.facing("W"), m, kc, size=(0.42, 0.14, 0.46), detail=1))
     k.add(kit.junction_box(k.nm("jbox"), k.wall("E", 17.4, 0, 2.2), Cell.facing("E"), m, kc, size=(0.5, 0.14, 0.42), detail=1))
     k.add(kit.stencil(k.nm("stencil"), k.wall("S", -2.0 - 0.9, 0, 2.35), Cell.facing("S"), m, kc, length=0.9, detail=1))
@@ -890,7 +891,7 @@ def build_chambre(k: Cell):
     k.add(kit.vent(k.nm("vent"), (-4.6, 9.3, k.h), 0.0, m, kc, size=(0.5, 0.5), surface="ceiling"))
     k.add(kit.wall_screen(k.nm("screen"), k.wall("E", 9.0, 0, 1.5), Cell.facing("E"), m, kc, size=(0.5, 0.34)))
     # Penderie dans l'angle nord-est.
-    k.add(kit.locker(k.nm("wardrobe"), (-2.3, k.y1 - 0.28, 0.0), PI, m, kc, both_sides=False))
+    k.add(kit.locker("chambre_wardrobe", (-2.3, k.y1 - 0.28, 0.0), PI, m, kc, both_sides=False))
 
     # --- Niveau 1 ----------------------------------------------------------------------------
     k.box("rug", (1.8, 1.3, 0.012), (-4.4, 10.9, 0.006), "rug", tile=1.0, detail=1)
@@ -914,16 +915,12 @@ def build_chambre(k: Cell):
     k.ori("frame_screen", (0.16, 0.11, 0.004), (-7.462, 9.3, 0.925), (0, 1, 0), (0, 0, 1), "screen", tile=0.35, detail=2)
     boots(k, -4.25, k.y1 - 0.38, rot=PI, detail=2)
     jacket(k, "E", 12.7, detail=2)
-    duffel(k, (k.x0 + 0.5, 11.4, 0.45), rot=PI / 2 + 0.1, length=0.55, detail=2)
-    # Linge plié sur le lit, livre ouvert sur la tablette de tête.
-    k.box("folded", (0.32, 0.26, 0.08), (-7.0, 12.9, 0.62), "fabric_dark", bevel=0.02, detail=2)
-    k.box("folded", (0.3, 0.24, 0.06), (-6.98, 12.91, 0.69), "fabric_light", bevel=0.02, detail=2)
+    # M10 : plus de sac sur la malle ni de linge plié sur le lit (retour 5 de l'auteur).
     hanging_cable(k, (-4.1, k.y1 - 0.03, 1.0), (-3.7, k.y1 - 0.4, 0.79), sag=0.08, radius=0.008, detail=2)
     wall_conduits(k, 2.33, sides="NSW")
-    # Caisses rangées dans l'angle sud-est, sac de linge, deuxième veste, lampe du lit.
+    # Caisses rangées dans l'angle sud-est.
     k.add(kit.crate(k.nm("small_crate"), (-1.85, 8.3, 0.0), 0.1, m, kc, size=(0.42, 0.42, 0.36), variant="olive", detail=2))
     k.add(kit.crate(k.nm("small_crate"), (-1.86, 8.32, 0.36), -0.15, m, kc, size=(0.36, 0.36, 0.3), variant="slate", detail=2))
-    duffel(k, (-2.3, 13.1, 0.0), rot=0.4, length=0.5, detail=2)
     slates(k, -7.3, 8.98, 0.85, rot=1.2, count=2, detail=2)
     for i in range(3):
         k.box("book", (0.04, 0.16, 0.22 - 0.02 * i), (-6.95 + 0.05 * i, 13.82, 1.09 + 0.11 - 0.01 * i), "fabric_dark" if i % 2 else "crate_rust", detail=2)
@@ -943,7 +940,7 @@ def build_quartiers(k: Cell):
     k.add(kit.bunk("quartiers_bunk1", (k.x0 + 0.55, 6.45, 0.0), PI / 2, m, kc))
     k.add(kit.locker("quartiers_wardrobe", (k.x0 + 0.28, 4.6, 0.0), -PI / 2, m, kc))
     k.add(kit.locker("quartiers_locker0", (-3.0, k.y1 - 0.28, 0.0), PI, m, kc))
-    k.add(kit.locker("quartiers_locker1", (-2.38, k.y1 - 0.28, 0.0), PI, m, kc))
+    k.add(kit.locker("quartiers_locker1", (-2.34, k.y1 - 0.28, 0.0), PI, m, kc))  # 0,66 m : volumes jointifs
     k.add(kit.table("quartiers_desk", (-4.6, k.y0 + 0.4, 0.0), 0.0, m, kc, size=(1.4, 0.7)))
     k.cyl("stool", 0.19, 0.06, (-4.6, 2.55, 0.45), "rubber", segments=12)
     k.cyl("stool_post", 0.035, 0.42, (-4.6, 2.55, 0.21), "bare", segments=8)
@@ -966,8 +963,7 @@ def build_quartiers(k: Cell):
     k.add(kit.light_band(k.nm("desk_lamp"), (-5.2, k.y0 + 0.06, 1.92), (-4.0, k.y0 + 0.06, 1.92), m, kc, normal=(0, 0.5, -0.87), tone="warm", detail=1))
 
     # --- Niveau 2 ----------------------------------------------------------------------------
-    for y, rot in ((2.75, 0.1), (6.45, -0.15)):
-        duffel(k, (k.x0 + 0.5, y + 0.3, 1.48), rot=PI / 2 + rot, detail=2)
+    # M10 : plus de sacs sur les couchettes du haut (retour 2 : ils ressemblaient à des moteurs).
     boots(k, k.x0 + 1.15, 2.3, rot=-PI / 2, detail=2)
     k.box("towel", (0.03, 0.3, 0.4), (k.x0 + 1.0, 5.8, 1.42), "fabric_light", detail=2)
     mug(k, -4.9, k.y0 + 0.35, 0.79, "paint_yellow", detail=2)
@@ -977,17 +973,18 @@ def build_quartiers(k: Cell):
     k.add(kit.shelf(k.nm("shelf"), (-6.1, k.y1, 0.0), PI, m, kc, width=0.8, height=0.9, depth=0.3, levels=2, items_detail=2))
     hanging_cable(k, (-1.85, 2.2, 2.3), (-1.85, 4.0, 2.3), sag=0.22, detail=2)
     wall_conduits(k, 2.33, sides="NSW")
-    # Petits écrans personnels à la tête des couchettes, linge pendu aux montants.
+    # Petits écrans personnels à la tête des couchettes (M10 : plus de linge pendu aux montants,
+    # un pavé qui se lisait comme une planche devant la couchette du haut).
     for y in (2.75, 6.45):
         for z in (0.8, 1.75):
             k.ori("bunk_screen", (0.16, 0.11, 0.006), (k.x0 + 0.06, y - 0.7, z), (0, 1, 0), (0, 0, 1), "screen", tile=0.35, detail=2)
-        k.box("bunk_shirt", (0.03, 0.34, 0.5), (k.x0 + 1.03, y - 0.98, 1.3), "fabric_light" if y < 4 else "rug", detail=2)
     k.add(kit.crate(k.nm("small_crate"), (-5.1, k.y0 + 0.35, 0.0), 0.05, m, kc, size=(0.45, 0.4, 0.35), variant="slate", detail=2))
 
 
 def build_carre(k: Cell):
-    """Carré : table et sièges, office le long de la coque (console, plan de travail, placards,
-    chambre froide), buffet ; lumière chaude, carrelage."""
+    """Carré : table et sièges, office le long de la coque (frigo, plan de travail, placards),
+    étagère, buffet ; lumière chaude, carrelage. M10 : le frigo du kit (`corvette_carre_frigo`,
+    nourriture seulement) remplace la borne de la cuisine et la chambre froide décorative."""
     warm_palette(k, floor="tiles")
     lamps = [(4.4, 5.6), (6.0, 2.6), (4.4, 8.6)]
     k.shell(style="ship", bands=False, avoid=lamps, beams=[3.6, 7.6])
@@ -998,14 +995,16 @@ def build_carre(k: Cell):
     k.add(kit.table("carre_table", (4.4, 7.0, 0.0), PI / 2, m, kc, size=(2.2, 0.9)))
     for i, (x, y, f) in enumerate(((3.55, 6.4, -PI / 2), (3.55, 7.6, -PI / 2), (5.25, 6.4, PI / 2), (5.25, 7.6, PI / 2))):
         k.add(kit.seat(f"carre_seat{i}", (x, y, 0.0), f, m, kc))
-    # Office contre la coque (est).
-    k.add(kit.console("carre_galley", (k.x1 - 0.32, 2.75, 0.0), PI / 2, m, kc, label="galley"))
+    # Office contre la coque (est) : frigo dans la première travée (entre le mur sud et la
+    # nervure de y = 3,6), porte vers la salle ; plan de travail et placards dans la suivante.
+    k.add(kit.fridge("carre_frigo", (k.x1 - 0.35, 2.6, 0.0), PI / 2, m, kc, container="corvette_carre_frigo"))
     k.add(kit.table(k.nm("counter"), (k.x1 - 0.32, 4.6, 0.0), PI / 2, m, kc, size=(1.6, 0.6)))
     k.box("cupboard", (0.36, 1.6, 0.6), (k.x1 - 0.18, 4.6, 1.82), "dark", bevel=0.01)
     k.ori("cupboard_door", (0.74, 0.54, 0.012), (k.x1 - 0.365, 4.2, 1.82), (0, -1, 0), (0, 0, 1), "panel", uv=("box", (0.3, 0.1)))
     k.ori("cupboard_door", (0.74, 0.54, 0.012), (k.x1 - 0.365, 5.0, 1.82), (0, -1, 0), (0, 0, 1), "panel", uv=("box", (0.6, 0.4)))
     k.ori("cupboard_lamp", (1.4, 0.05, 0.01), (k.x1 - 0.32, 4.6, 1.515), (0, 1, 0), (1, 0, 0), "trim_sheet", uv="light_strip")
-    k.add(kit.locker(k.nm("cold_locker"), (k.x1 - 0.28, 6.6, 0.0), PI / 2, m, kc))
+    # Étagère de provisions dans la travée de l'ancienne chambre froide (garnie dès le Bas).
+    k.add(kit.shelf(k.nm("pantry"), k.wall("E", 6.6), Cell.facing("E"), m, kc, width=1.2, height=1.8, depth=0.34, items_detail=0))
     sideboard(k, "sideboard", k.wall("S", 4.6), Cell.facing("S"), size=(1.3, 0.42, 0.9), drawers=2)
     sideboard(k, "buffet", k.wall("N", 4.6), Cell.facing("N"), size=(1.6, 0.42, 0.8), drawers=2)
     k.add(kit.wall_screen(k.nm("screen"), k.wall("N", 4.6, 0, 1.55), Cell.facing("N"), m, kc, size=(0.9, 0.5)))
@@ -1084,7 +1083,7 @@ def build_sas(k: Cell):
     # Râtelier de combinaisons (nord).
     suit_rack(k, -4.6, k.y1, count=3)
     # Sud : casier, banc, armoire de pressurisation ; écrans de cycle près des deux portes.
-    k.add(kit.locker(k.nm("locker"), (-6.9, k.y0 + 0.28, 0.0), 0.0, m, kc))
+    k.add(kit.locker("sas_locker", (-6.9, k.y0 + 0.28, 0.0), 0.0, m, kc))
     bx, by = -4.6, k.y0 + 0.09 + 0.23
     k.box("bench_top", (1.6, 0.46, 0.06), (bx, by, 0.47), "dark", bevel=0.01)
     k.box("bench_pad", (1.5, 0.4, 0.05), (bx, by, 0.525), "rubber")
@@ -1400,11 +1399,71 @@ def check_gameplay(cells: dict[str, Cell]) -> None:
                 raise RuntimeError(f"{mk.name} ({kind}) sans half_extents")
             if kind == "seat" and f"SOCKET_{mk.name[len('INTERACT_'):]}_eye" not in names:
                 raise RuntimeError(f"{mk.name} sans œil")
-    containers = sorted(mk.get("container") for k in cells.values() for mk in k.marks if mk.get("interact") == "locker")
-    print(f"casiers fonctionnels : {containers}")
-    for need in ("corvette_chambre_casier_1", "corvette_chambre_casier_2"):
+    lockers = [mk for k in cells.values() for mk in k.marks if mk.get("interact") == "locker"]
+    containers = sorted(mk["container"] for mk in lockers if mk.get("container"))
+    locked = sorted(mk.name for mk in lockers if not mk.get("container"))
+    print(f"rangements fonctionnels : {containers}")
+    print(f"casiers verrouillés (décor) : {locked}")
+    if len(containers) != len(set(containers)):
+        raise RuntimeError(f"contenus en double : {containers}")
+    for need in FUNCTIONAL_CONTAINERS:
         if need not in containers:
-            raise RuntimeError(f"casier {need} absent")
+            raise RuntimeError(f"rangement {need} absent")
+    # M10 (docs/m10.md §3.3) : chaque casier de la chambre a sa plaque de nom (volume et ancre).
+    for i in (1, 2, 3):
+        cid = f"corvette_chambre_casier_{i}"
+        for node, key in ((f"INTERACT_chambre_lockers_{i}_label", "interact"), (f"SOCKET_chambre_lockers_{i}_label", "usage")):
+            mk = bpy.data.objects.get(node)
+            if mk is None or mk.get("container") != cid or mk.get(key) not in ("locker_label", "label"):
+                raise RuntimeError(f"plaque de nom de {cid} absente ou fausse ({node})")
+    check_interact_volumes(cells)
+
+
+# Rangements fonctionnels de la corvette (contenus de départ et règles dans gameplay/items.ron).
+FUNCTIONAL_CONTAINERS = ("corvette_chambre_casier_1", "corvette_chambre_casier_2", "corvette_chambre_casier_3", "corvette_carre_frigo")
+
+
+def _interact_box(mk):
+    """Boîte englobante (Blender, monde) du capteur d'un `INTERACT_*` : pavé `half_extents`
+    ([x, hauteur, profondeur] dans le repère local Y-haut du nœud), sinon sphère de 0,35 m."""
+    he = mk.get("half_extents")
+    hx, hz, hy = (he[0], he[1], he[2]) if he is not None else (0.35, 0.35, 0.35)
+    pts = [mk.matrix_world @ Vector((sx * hx, sy * hy, sz * hz)) for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)]
+    return tuple(min(p[i] for p in pts) for i in range(3)), tuple(max(p[i] for p in pts) for i in range(3))
+
+
+def _overlap(a, b, eps=0.0):
+    return all(a[0][i] < b[1][i] - eps and b[0][i] < a[1][i] - eps for i in range(3))
+
+
+def check_interact_volumes(cells: dict[str, Cell]) -> None:
+    """Volumes d'interaction : aucun ne doit en chevaucher un autre (sauf une plaque de nom, posée
+    exprès devant son casier, et le siège et sa console de pilotage) ni empiéter sur le passage
+    d'une porte (1,4 m de large, 0,6 m de part et d'autre de la cloison). Avertissements
+    seulement : la visée choisit le capteur le plus proche."""
+    bpy.context.view_layer.update()
+    boxes = {mk.name: _interact_box(mk) for k in cells.values() for mk in k.marks if mk.name.startswith("INTERACT_")}
+    names = sorted(boxes)
+    warn = []
+    allowed = {("INTERACT_cockpit_helm", "INTERACT_cockpit_pilot"), ("INTERACT_cockpit_copilot", "INTERACT_cockpit_nav")}
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            if b == f"{a}_label" or a == f"{b}_label" or (a, b) in allowed:
+                continue
+            if _overlap(boxes[a], boxes[b], eps=0.005):
+                warn.append(f"{a} chevauche {b}")
+    for p in PORTALS:
+        a_, b_, kind, x, y, axis = p[:6]
+        if kind != "Door":
+            continue
+        hw = kit.DOOR_W / 2
+        lane = ((x - 0.7, y - hw, 0.0), (x + 0.7, y + hw, kit.DOOR_H)) if axis == "x" else ((x - hw, y - 0.7, 0.0), (x + hw, y + 0.7, kit.DOOR_H))
+        for n in names:
+            if _overlap(boxes[n], lane, eps=0.005):
+                warn.append(f"{n} empiète sur le passage de la porte {a_}/{b_}")
+    for w in warn:
+        print(f"AVERTISSEMENT volume : {w}")
+    print(f"volumes d'interaction : {len(names)} ({len(warn)} avertissements)")
 
 
 def verify_gltf(rel_path: str) -> None:
@@ -1483,6 +1542,18 @@ def shots() -> dict:
         "couloir_arriere": ((0.0, -0.6, EYE), (0.0, -14.0, 1.4), 75.0, (2,)),
         "quartiers": ((-2.2, 4.0, EYE), (-7.2, 5.6, 0.9), 75.0, both),
         "carre": ((2.2, 5.0, EYE), (7.2, 7.4, 0.9), 75.0, both),
+        # M10 (lot B) : retours de l'auteur, avant / après sous les mêmes angles.
+        "quartiers_couchettes": ((-3.4, 4.6, 1.95), (-7.2, 6.6, 1.35), 75.0, (2,)),
+        "quartiers_couchette_haut": ((-5.0, 4.9, 1.9), (-7.2, 6.4, 1.45), 75.0, (2,)),
+        "chambre_lit": ((-4.4, 10.4, EYE), (-7.0, 12.5, 0.55), 75.0, both),
+        "carre_cuisine": ((3.2, 5.6, EYE), (7.4, 3.4, 1.1), 75.0, both),
+        "sas_porte": ((-4.4, -3.0, EYE), (-7.7, -3.0, 1.25), 75.0, (2,)),
+        "chambre_plaques": ((-4.6, 10.1, 1.6), (-4.6, 8.0, 1.25), 60.0, (2,)),
+        "soute_compteur": ((4.6, -4.0, EYE), (4.6, -1.6, 1.45), 75.0, (2,)),
+        "sas_compteur": ((-3.0, -2.2, EYE), (-2.5, -4.8, 1.45), 75.0, (2,)),
+        "cockpit_compteur": ((-1.2, 17.0, EYE), (-4.0, 17.4, 1.6), 75.0, (1, 2)),
+        "cockpit_compteur_s": ((2.2, 16.8, EYE), (3.0, 14.4, 1.45), 75.0, (2,)),
+        "machines_compteur": ((-2.0, -21.0, EYE), (-5.0, -21.0, 1.6), 75.0, (2,)),
     }
 
 
@@ -1532,7 +1603,9 @@ def _render_set(objs, lamps, out_prefix, only):
             for lamp, d in lamps:
                 lamp.hide_render = d > lv
             suffix = "" if levels == (2,) else f"_n{lv}"
-            pv.render(PREVIEWS / f"{out_prefix}{name}{suffix}.png")
+            out = Path(os.environ.get("SH_PREVIEW_DIR", str(PREVIEWS)))
+            out.mkdir(parents=True, exist_ok=True)
+            pv.render(out / f"{os.environ.get('SH_PREVIEW_PREFIX', '')}{out_prefix}{name}{suffix}.png")
             print(f"aperçu : {out_prefix}{name}{suffix}.png")
         for o in cut:
             o.hide_render = False
@@ -1548,7 +1621,7 @@ def lit_previews(cells, m, samples, res, only):
     w, h = (int(v) for v in res.split("x"))
     pv.setup_cycles(samples, w, h, exposure=float(os.environ.get("SH_PREVIEW_EXPOSURE", "2.2")))
     pv.world((0.012, 0.02, 0.04), 1.0)
-    doors = st.door_panels(PORTALS, CELLS, m, c.collection("PREVIEW_DOORS"), style="ship")
+    doors = st.door_panels(PORTALS, CELLS, m, c.collection("PREVIEW_DOORS"), style="ship", door_models=META["door_models"])
     shown = [o for k in cells.values() for o in k.visual + k.pickups] + doors
     keep = set(shown)
     for obj in bpy.context.scene.objects:
@@ -1590,7 +1663,7 @@ def game_previews(result, m, samples, res, only):
             for i, mat in enumerate(mats):
                 mats[i] = st.game_material(mat, image, scale, cid, exposure)
             shown.append(obj)
-    doors = st.door_panels(PORTALS, CELLS, m, c.collection("PREVIEW_DOORS_GAME"), style="ship")
+    doors = st.door_panels(PORTALS, CELLS, m, c.collection("PREVIEW_DOORS_GAME"), style="ship", door_models=META["door_models"])
     ambient = float(os.environ.get("SH_PREVIEW_DOOR_AMBIENT", "0.35"))
     cache = {}
     for obj in doors:
