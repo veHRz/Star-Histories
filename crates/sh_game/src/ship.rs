@@ -397,7 +397,7 @@ fn read_pilot_input(
         Res<Texts>,
         MessageWriter<Notice>,
     ),
-    mut steer_streak: Local<u32>,
+    (mut steer_streak, mut guard, real): (Local<u32>, Local<MouseGuard>, Res<Time<Real>>),
 ) {
     if scripted.0 {
         return;
@@ -407,6 +407,7 @@ fn read_pilot_input(
         *steer_streak = 0;
         return;
     }
+    let since_guard = guard.update(real.elapsed_secs_f64(), autopilot.0.as_deref());
     let raw_steer: Vec2 = ***steer;
     let steer = raw_steer * settings.look_scale();
     *intent = PilotIntent {
@@ -425,7 +426,7 @@ fn read_pilot_input(
         0
     };
     let keys = intent.thrust != Vec3::ZERO || intent.roll != 0.0 || intent.cruise;
-    let mouse = *steer_streak >= STEER_TAKEOVER_FRAMES;
+    let mouse = mouse_takes_over(*steer_streak, since_guard);
     if (keys || mouse) && autopilot.0.is_some() {
         info!(
             "autopilote : le joueur reprend la main ({})",
@@ -433,6 +434,44 @@ fn read_pilot_input(
         );
         disengage(&mut autopilot, &texts, &mut notices);
     }
+}
+
+/// Délai de grâce de la souris (s) : le joueur engage l'autopilote d'un clic sur la carte, et sa
+/// main bouge encore quand la carte se ferme ; de même en reprenant les commandes.
+const MOUSE_GRACE_SECONDS: f64 = 0.5;
+/// Au-delà de cet écart entre deux frames lus (s), les commandes ont été quittées (carte,
+/// séquence, siège) : la reprise rouvre le délai de grâce.
+const PILOT_GAP_SECONDS: f64 = 0.2;
+
+/// Depuis quand la souris ne peut pas désengager l'autopilote.
+#[derive(Default)]
+pub struct MouseGuard {
+    request: Option<String>,
+    last_seen: Option<f64>,
+    since: f64,
+}
+
+impl MouseGuard {
+    /// Un frame aux commandes à l'instant `now` (s), avec cette demande d'autopilote ; rend le
+    /// temps écoulé depuis l'engagement ou la reprise des commandes (le plus récent).
+    pub fn update(&mut self, now: f64, request: Option<&str>) -> f64 {
+        let resumed = self
+            .last_seen
+            .is_none_or(|last| now - last > PILOT_GAP_SECONDS);
+        let engaged = request.is_some() && self.request.as_deref() != request;
+        if resumed || engaged {
+            self.since = now;
+        }
+        self.last_seen = Some(now);
+        self.request = request.map(str::to_owned);
+        now - self.since
+    }
+}
+
+/// La souris reprend-elle la main ? Plusieurs frames de suite au-delà du seuil, et hors du
+/// délai de grâce. Les touches, elles, désengagent toujours tout de suite.
+pub fn mouse_takes_over(streak: u32, since_guard: f64) -> bool {
+    streak >= STEER_TAKEOVER_FRAMES && since_guard >= MOUSE_GRACE_SECONDS
 }
 
 /// Coupe l'autopilote, et le dit.
@@ -954,6 +993,42 @@ mod tests {
         let (time, distance, _) =
             autopilot_flight(from, Quat::IDENTITY, to, 8_000.0, SpacePos::ZERO, r);
         assert!(time.is_some(), "jamais arrivé ({distance:.0} m)");
+    }
+
+    #[test]
+    fn la_souris_ne_coupe_pas_l_autopilote_juste_apres_l_engagement() {
+        let frame = 1.0 / 60.0;
+        let mut guard = MouseGuard::default();
+        // Aux commandes depuis un moment, sans autopilote.
+        let mut t = 10.0;
+        while t < 12.0 {
+            guard.update(t, None);
+            t += frame;
+        }
+        // Engagé depuis la carte : la souris qui bouge encore ne compte pas pendant 0,5 s.
+        let since = guard.update(t, Some("vorrh_shipyards"));
+        assert!(!mouse_takes_over(STEER_TAKEOVER_FRAMES + 10, since));
+        let mut since = since;
+        while since < MOUSE_GRACE_SECONDS + frame {
+            t += frame;
+            since = guard.update(t, Some("vorrh_shipyards"));
+        }
+        assert!(mouse_takes_over(STEER_TAKEOVER_FRAMES, since));
+        assert!(!mouse_takes_over(STEER_TAKEOVER_FRAMES - 1, since));
+        // Retour de la carte (les commandes quittées une seconde) : de nouveau le délai.
+        t += 1.0;
+        let since = guard.update(t, Some("vorrh_shipyards"));
+        assert!(since < 1e-9);
+        assert!(!mouse_takes_over(STEER_TAKEOVER_FRAMES + 10, since));
+        // Une autre cible : nouvel engagement, nouveau délai.
+        let mut since = 0.0;
+        for _ in 0..60 {
+            t += frame;
+            since = guard.update(t, Some("vorrh_shipyards"));
+        }
+        assert!(since > MOUSE_GRACE_SECONDS);
+        t += frame;
+        assert!(guard.update(t, Some("vorrh_portal_hub")) < 1e-9);
     }
 
     #[test]
