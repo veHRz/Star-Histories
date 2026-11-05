@@ -6,19 +6,27 @@ les salles du spatioport d'Hexis de M8 (`places/hexis_spaceport.py`, dont ce scr
 aux mêmes coordonnées, et remplace la passerelle par un hangar où le vaisseau du joueur repose
 dans un berceau, son pont au niveau du sol :
 
+               bureau                chantier (bureau du chantier, fenêtre sur le hangar)
+                  │                     │
     marche ── hall ── couloir ── HANGAR (vaisseau dans son berceau, porte de baie au nord)
-               │  │               │
-          bureau  taverne     chantier (bureau du chantier, fenêtre sur le hangar)
+                  │  └── banque
+               taverne
 
     hangar   : coque haute (`kit/hangar.py`), fermes en treillis, projecteurs, porte de baie,
                berceau (fosse de PIT_DEPTH m), passerelle plane jusqu'au portail `hangar__ship`
                (b = « @ship », la porte extérieure du sas du vaisseau), portique, conteneurs, bornes
     couloir  : coursive industrielle (l'ancienne passerelle), porte vers le hangar
     chantier : comptoir du chantier naval (PNJ `shipyard`), écrans, pièces détachées
-    hall     : salle des pas perdus (inchangée : console des départs, bancs, kiosque)
-    bureau   : comptoir des contrats (PNJ `contracts`) et guichet de la Banque (PNJ `bank`),
-               console des contrats
-    taverne  : bar (PNJ `bar`, plateau à 1,05 m), console du bar, tables
+    hall     : hall des arrivées (M10) : allée centrale de l'entrée (couloir) à la porte du
+               marché, allée transversale du bureau à la taverne, banquettes dos à dos tournées
+               vers deux grands panneaux d'information (écrans à lignes de glyphes, aucun texte
+               lisible), bornes des départs, comptoir d'information, chariots à bagages, bacs à
+               plantes, signalétique au sol (lignes, chevrons)
+    bureau   : comptoir des contrats (PNJ `contracts`), console des contrats, tableau d'affichage
+    banque   : salle de la Banque (M10, PNJ `bank`) : guichets derrière des vitres, porte de coffre
+               massive en décor, écrans de cours, colonnes, sol de dalles sombres, plantes
+    taverne  : bar (PNJ `bar`, plateau à 1,05 m), console du bar, tables (passage de 1,85 m de
+               la porte au tavernier, M10)
     marche   : étals, comptoir du marchand (PNJ `market`), console du marché
 
 PNJ de comptoir (docs/m9-retours.md §3.4) : `SOCKET_<nom>_npc` (pied du PNJ, regard vers +Y
@@ -47,7 +55,7 @@ art/places/spaceport.blend.
 
 `--no-bake` : pas de lightmap (itération) ; `--lit` : aperçus Cycles avec les lampes ;
 `--previews` : aperçus « comme dans le jeu » (lightmaps appliquées). Aperçus dans
-target/art-previews/m9-lotD/. Repères Blender : X = est, Y = nord, Z = haut.
+target/art-previews/D/. Repères Blender : X = est, Y = nord, Z = haut.
 """
 
 from __future__ import annotations
@@ -73,7 +81,7 @@ import sector_tools as st  # noqa: E402
 import ship_interior as kit  # noqa: E402
 
 SECTOR = "spaceport"
-PREVIEWS = c.ROOT / "target" / "art-previews" / "m9-lotD"
+PREVIEWS = c.ROOT / "target" / "art-previews" / "D"
 
 # --- Le vaisseau amarré (cotes du lot de l'intérieur, repère du jeu du vaisseau) ---------------
 # Cotes de l'intérieur type `corvette` (lot B de M9, définitives) : boîte englobante des cellules,
@@ -93,6 +101,10 @@ HULL_STERN = HULL_MARGIN  # tuyères (arrière)
 HULL_TOP = HULL_MARGIN
 HULL_BOTTOM = HULL_MARGIN
 PIT_DEPTH = 3.0  # fosse sous le pont
+# Épaisseur du patin de caoutchouc posé sur chaque sabot (`hangar.docking_cradle`, `saddle_pad`) :
+# le vaisseau repose sur le patin, pas sur le sabot (M10 : il s'y enfonçait de 8 cm). Vérifié
+# après construction (`check_saddles`).
+SADDLE_PAD = 0.08
 PIT_CLEARANCE = 1.2  # jeu entre la coque et la paroi de la fosse (bras de maintien)
 BAKE_SHIP_OCCLUDER = True  # coque grise dans le bake (ombre dans la fosse)
 
@@ -295,8 +307,8 @@ def ship_layout() -> dict:
         "origin": (hx - rh[0], hy - rh[1], 0.0),
         # Normale du portail du hangar : vers le vaisseau (contre celle de son sas).
         "dock_normal": (-dock_n[0], -dock_n[1], 0.0),
-        # Le vaisseau repose sur les sabots : leur dessus sous la coque.
-        "saddle": max(0.3, PIT_DEPTH + hull_z[0]),
+        # Le vaisseau repose sur les patins des sabots : dessus du patin = dessous de la coque.
+        "saddle": max(0.3, PIT_DEPTH + hull_z[0] - SADDLE_PAD),
     }
 
 
@@ -310,6 +322,9 @@ CELLS = {
     "bureau": (-24.0, -16.0, 7.4, 13.4, 3.0),
     "taverne": (-24.0, -16.0, -13.4, -7.4, 3.2),
     "marche": (-40.0, -26.4, -6.0, 6.0, 4.5),
+    # M10 : la Banque, au sud du couloir, derrière le mur est du hall (même façade sur le hangar
+    # que le chantier), plus haute que les bureaux.
+    "banque": (-12.0, -4.4, -11.6, -1.6, 4.0),
 }
 
 ROOMS = {
@@ -320,6 +335,7 @@ ROOMS = {
     "bureau": "contracts_office",
     "taverne": "tavern",
     "marche": "market",
+    "banque": "bank",
 }
 
 # Le portail du vaisseau (point d'attache « @ship ») est au bout de la passerelle, dans le
@@ -332,6 +348,8 @@ WALL_PORTALS = [
     ("hall", "bureau", "Door", -20.0, 7.2, "y"),
     ("hall", "taverne", "Door", -20.0, -7.2, "y"),
     ("hall", "marche", "Door", -26.2, 0.0, "x"),
+    # M10 : la Banque, porte dans le mur est du hall, au sud de l'entrée (entre deux pilastres).
+    ("hall", "banque", "Door", -12.2, -4.6, "x"),
 ]
 PORTALS = [DOCK_PORTAL] + WALL_PORTALS
 
@@ -348,6 +366,8 @@ SPAWNS = [
     ("hall", "hall", -19.0, 0.0, 0.0, -90.0),
     # Entrée du hangar depuis le couloir.
     ("hangar", "hangar", HANGAR_X0 + 1.6, 0.0, 0.0, -90.0),
+    # M10 : juste passé la porte de la Banque, regard vers le guichet (cap −90° = +X).
+    ("banque", "banque", -11.2, -4.6, 0.0, -90.0),
 ]
 
 COOL = [0.78, 0.88, 1.0]
@@ -364,10 +384,17 @@ BACK = ((1, 0, 0), (0, 0, 1))  # (right, up) d'une face tournée vers −Y
 
 
 def palette() -> dict:
-    """Palette du kit, plus le verre teinté des bouteilles de la taverne (sans texture)."""
+    """Palette du kit, plus le verre teinté des bouteilles de la taverne (sans texture) ; M10 : sol
+    et murs de la Banque (dalles et tôle de la bibliothèque, teintées), laiton (métal brut teinté),
+    feuillages (sans texture)."""
     m = kit.palette()
     m["bottle"] = c.material("place_bottle_glass", (0.3, 0.13, 0.04), roughness=0.15)
     m["bottle_green"] = c.material("place_bottle_green", (0.09, 0.2, 0.1), roughness=0.15)
+    m["bank_floor"] = c.textured_material("place_bank_floor", "floor_tiles", tint=(0.34, 0.32, 0.30))
+    m["bank_wall"] = c.textured_material("place_bank_wall", "panel_painted", tint=(0.30, 0.42, 0.41))
+    m["brass"] = c.textured_material("place_brass", "metal_bare", tint=(1.0, 0.74, 0.40))
+    m["plant"] = c.material("place_plant", (0.07, 0.17, 0.05), roughness=0.7)
+    m["plant_light"] = c.material("place_plant_light", (0.20, 0.30, 0.07), roughness=0.7)
     return m
 
 
@@ -499,6 +526,21 @@ class Cell:
         self.colliders.extend(col)
         self.marks.extend(marks)
         return vis, col, marks
+
+    def mark(self, obj):
+        """Repère fait à la main (siège d'une banquette) : posé avec le groupe en cours."""
+        if self._group is not None:
+            self._group.append(obj)
+        self.marks.append(obj)
+        return obj
+
+    def screen(self, tag, size, center, right, up, tile, th=0.01):
+        """Écran plat (matériau `screen`) qui montre une seule case de la texture d'écrans
+        (`SCREEN_TILES`) : lignes de glyphes, barres, courbes ; jamais de texte lisible."""
+        obj = self.ori(tag, (size[0], size[1], th), center, right, up, "screen", uv=None)
+        if obj is not None:
+            _uv_tile(obj, tile)
+        return obj
 
     def shell(self, shell):
         self.visual.extend(shell["visual"])
@@ -911,6 +953,292 @@ def cut_wainscot(shell: dict, cid: str, x_face: float, a: float, b: float, m: di
             shell["structure"].append(piece)
 
 
+# --- Pièces nouvelles (M10) : hall, banque ------------------------------------------------------
+
+# Cases de la texture d'écrans de la bibliothèque (`materials/devices.screen`, grille 4 × 4,
+# ligne 0 en haut) : lignes de glyphes, barres, courbes, voyants. Aucune ne contient de texte
+# lisible ; les cases à chiffres (« digits_* ») ne servent pas aux panneaux.
+SCREEN_TILES = {
+    "bars_green": (0, 0), "digits_red": (0, 1), "text_green": (0, 2), "wave_orange": (0, 3),
+    "text_orange": (1, 0), "wave_cyan": (1, 1), "status_orange": (1, 2), "radar_green": (1, 3),
+    "radar_cyan": (2, 0), "status_green": (2, 1), "digits_cyan": (2, 2), "bars_orange": (2, 3),
+    "digits_orange": (3, 0), "bars_cyan": (3, 1), "wave_green": (3, 2), "text_cyan": (3, 3),
+}
+
+
+def _uv_tile(obj, tile: str, inset: float = 0.06) -> None:
+    """1er jeu d'UV d'une plaque (`Cell.ori`, X = largeur, Y = hauteur) : toute la plaque montre
+    la case `tile` de la texture d'écrans, rognée de `inset` (sa marge sombre), sans miroir."""
+    row, col = SCREEN_TILES[tile]
+    u0, u1 = (col + inset) / 4.0, (col + 1 - inset) / 4.0
+    v0, v1 = 1.0 - (row + 1 - inset) / 4.0, 1.0 - (row + inset) / 4.0
+    mesh = obj.data
+    xs = [v.co.x for v in mesh.vertices]
+    ys = [v.co.y for v in mesh.vertices]
+    ax0, ax1, ay0, ay1 = min(xs), max(xs), min(ys), max(ys)
+    layer = c._uv_layer(mesh)
+    for loop in mesh.loops:
+        co = mesh.vertices[loop.vertex_index].co
+        fu = (co.x - ax0) / max(ax1 - ax0, 1e-6)
+        fv = (co.y - ay0) / max(ay1 - ay0, 1e-6)
+        layer.data[loop.index].uv = (u0 + fu * (u1 - u0), v0 + fv * (v1 - v0))
+
+
+def info_board(k: Cell, tag, center, facing, tiles, rows=3, cell=(1.0, 0.42), gap=0.05, glow="band_cool",
+               standoff=0.0, hang_to=None):
+    """Grand panneau d'information, face vers +Y local (`center` : centre du panneau, `tiles` :
+    une case de `SCREEN_TILES` par colonne, de gauche à droite vu de face) : caisson noir à
+    chants de métal brut, bandeau de tête jaune à pochoirs, grille d'écrans à lignes de glyphes
+    (aucun texte lisible), bandeau lumineux dessous (cuit : il éclaire le sol au pied du
+    panneau). `standoff` : consoles murales jusqu'au mur (derrière le caisson) ; `hang_to` :
+    tiges jusqu'au plafond (z absolu). Pas de collider (au-dessus des têtes)."""
+    cols = len(tiles)
+    cw, ch = cell
+    head = 0.2
+    W = cols * cw + (cols + 1) * gap
+    H = rows * ch + (rows + 1) * gap + head
+    k.begin()
+    k.box(f"{tag}_case", (W + 0.1, 0.16, H + 0.1), (0, -0.08, 0), "paint_black", bevel=0.015, structure=True)
+    for s in (-1, 1):
+        k.box(f"{tag}_rim", (W + 0.14, 0.05, 0.04), (0, -0.005, s * (H / 2 + 0.07)), "bare")
+        k.box(f"{tag}_jamb", (0.04, 0.05, H + 0.1), (s * (W / 2 + 0.07), -0.005, 0), "bare")
+    zh = H / 2 - head / 2
+    k.plate(f"{tag}_head", (W - 0.04, head - 0.05), (0, 0.006, zh), "paint_yellow", th=0.008)
+    for x in (-W * 0.3, W * 0.3):
+        k.plate(f"{tag}_head_label", (min(1.1, W * 0.3), 0.11), (x, 0.012, zh), "trim_sheet", "stencils", th=0.004)
+    z_top = H / 2 - head - gap
+    for j in range(rows):
+        z = z_top - ch / 2 - j * (ch + gap)
+        for i, tile in enumerate(tiles):
+            # Vu de face (depuis +Y), +X local est à gauche : colonne 0 à droite de X.
+            x = W / 2 - gap - cw / 2 - i * (cw + gap)
+            k.screen(f"{tag}_scr", (cw, ch), (x, 0.006, z), *FRONT, tile)
+    k.ori(f"{tag}_glow", (W - 0.2, 0.06, 0.02), (0, -0.07, -H / 2 - 0.065), (1, 0, 0), (0, 1, 0), glow, ("strip", 1.0))
+    if standoff > 0.0:
+        for x in (-W * 0.36, W * 0.36):
+            for z in (-H * 0.3, H * 0.3):
+                k.box(f"{tag}_bracket", (0.08, standoff, 0.12), (x, -0.16 - standoff / 2, z), "dark")
+    if hang_to is not None:
+        zt = hang_to - center[2]
+        z0 = H / 2 + 0.05
+        for x in (-W * 0.36, W * 0.36):
+            k.box(f"{tag}_rod", (0.03, 0.03, zt - z0), (x, -0.08, (zt + z0) / 2), "dark")
+            k.box(f"{tag}_rod_plate", (0.16, 0.16, 0.02), (x, -0.08, zt - 0.01), "dark")
+    k.end(center, facing)
+    return W, H
+
+
+def bench_block(k: Cell, tag, center, facing, seats=4, rows=2, pitch=0.66, fabric="fabric_dark"):
+    """Banquette de salle d'attente : sièges en rangée sur une poutre à pieds en T, la rangée le
+    long de X local. `rows` = 2 : deux rangées dos à dos de `seats` sièges, tournées vers +Y et
+    −Y local, séparées par un dossier central noir à lisse jaune ; 1 : une rangée tournée vers
+    +Y (dos à −Y, contre un mur). Assises et dossiers matelassés (`fabric`), coques sombres,
+    accoudoirs partagés. Chaque siège est interactif comme `kit.seat` (`INTERACT_<nom>` :
+    `seat`, `passenger`, volume ; œil `SOCKET_<nom>_eye`, regard vers l'avant du siège) ; un seul
+    collider pour la banquette. `center` : au sol, au milieu de la banquette."""
+    L = seats * pitch + 0.08
+    sides = (1, -1) if rows == 2 else (1,)
+    o = 0.0 if rows == 2 else -0.26  # décalage d'une rangée seule (dos vers −Y)
+    beam_y = 0.0 if rows == 2 else o + 0.26
+    a = math.radians(10)
+    k.begin()
+    for si, s in enumerate(sides):
+        up = (0.0, -s * math.sin(a), math.cos(a))
+        for i in range(seats):
+            x = (i - (seats - 1) / 2) * pitch
+            k.box(f"{tag}_pan", (0.56, 0.5, 0.03), (x, o + s * 0.37, 0.415), "dark")
+            k.box(f"{tag}_cushion", (0.54, 0.48, 0.08), (x, o + s * 0.38, 0.47), fabric, bevel=0.025)
+            k.ori(f"{tag}_back", (0.54, 0.5, 0.07), (x, o + s * 0.15, 0.83), (1, 0, 0), up, fabric, bevel=0.025)
+            k.ori(f"{tag}_back_shell", (0.56, 0.54, 0.025), (x, o + s * 0.1, 0.825), (1, 0, 0), up, "dark")
+            name = f"{k.cid}_{tag}_{'ab'[si]}{i}"
+            rz = 0.0 if s > 0 else math.pi
+            k.mark(c.empty(f"INTERACT_{name}", (x, o + s * 0.33, 0.62), k.coll,
+                           {"interact": "seat", "role": "passenger", "half_extents": c.half_extents((0.62, 0.62, 1.24), 0.03)},
+                           rotation_z=rz))
+            k.mark(c.empty(f"SOCKET_{name}_eye", (x, o + s * 0.33, 1.25), k.coll, {"usage": "seat_eye"}, rotation_z=rz))
+        for j in range(seats + 1):
+            x = (j - seats / 2) * pitch
+            k.box(f"{tag}_arm", (0.05, 0.36, 0.035), (x, o + s * 0.36, 0.66), "dark")
+            k.box(f"{tag}_arm_pad", (0.056, 0.26, 0.02), (x, o + s * 0.38, 0.687), "rubber")
+            k.box(f"{tag}_arm_post", (0.04, 0.04, 0.22), (x, o + s * 0.5, 0.54), "dark")
+    for i in range(seats):
+        x = (i - (seats - 1) / 2) * pitch
+        k.box(f"{tag}_bracket", (0.06, 0.8 if rows == 2 else 0.5, 0.04), (x, beam_y if rows == 2 else o + 0.3, 0.38), "dark")
+    k.box(f"{tag}_beam", (L, 0.12, 0.09), (0, beam_y, 0.32), "bare")
+    for xl in (-L / 2 + 0.3, L / 2 - 0.3):
+        k.box(f"{tag}_leg", (0.09, 0.09, 0.28), (xl, beam_y, 0.16), "dark")
+        k.box(f"{tag}_foot", (0.12, 1.1 if rows == 2 else 0.6, 0.04), (xl, beam_y, 0.02), "dark", bevel=0.01)
+    if rows == 2:
+        k.box(f"{tag}_spine", (L, 0.06, 0.62), (0, 0, 0.79), "paint_black", bevel=0.01)
+        k.box(f"{tag}_spine_cap", (L + 0.02, 0.1, 0.035), (0, 0, 1.11), "paint_yellow", bevel=0.006)
+        k.col(f"{tag}", (L, 1.2, 1.1), (0, 0, 0.55))
+    else:
+        k.col(f"{tag}", (L, 0.7, 1.05), (0, o + 0.12, 0.525))
+    k.end(center, facing)
+
+
+def _blade(k: Cell, tag, base, height, width, lean, yaw, mat, thick=0.022):
+    """Feuille en lame (sansevière) : section plate élargie à mi-hauteur, pointe ; penchée de
+    `lean` vers +Y puis tournée de `yaw` (≈ 22 triangles, sans texture)."""
+    import bmesh
+
+    name = k.nm(tag)
+    mesh = bpy.data.meshes.new(name)
+    bm = bmesh.new()
+    w, t = width / 2, thick / 2
+    low = [bm.verts.new(p) for p in ((-w, -t, 0.0), (w, -t, 0.0), (w, t, 0.0), (-w, t, 0.0))]
+    mid = [bm.verts.new((x * 1.25, y * 0.8, height * 0.5)) for x, y, _ in ((-w, -t, 0), (w, -t, 0), (w, t, 0), (-w, t, 0))]
+    tip = bm.verts.new((0.0, 0.0, height))
+    for i in range(4):
+        j = (i + 1) % 4
+        bm.faces.new((low[i], low[j], mid[j], mid[i]))
+        bm.faces.new((mid[i], mid[j], tip))
+    bm.faces.new(list(reversed(low)))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(mesh)
+    bm.free()
+    mesh.materials.append(k.m[mat])
+    obj = bpy.data.objects.new(name, mesh)
+    k.coll.objects.link(obj)
+    obj.matrix_basis = Matrix.Translation(Vector(base)) @ Matrix.Rotation(yaw, 4, "Z") @ Matrix.Rotation(-lean, 4, "X")
+    c.uv_box(obj)
+    return k._keep(obj)
+
+
+def planter(k: Cell, tag, center, facing=0.0, size=(0.6, 0.6, 0.5), height=0.75, blades=11, seed=0):
+    """Bac à plantes : caisson noir, lisse jaune, plinthe de caoutchouc, terre ; touffe de
+    feuilles en lames (deux verts, sans texture), haute de `height` m. Collider (le bac seul)."""
+    sx, sy, sz = size
+    k.begin()
+    k.box(f"{tag}_box", (sx, sy, sz), (0, 0, sz / 2), "paint_black", bevel=0.012, structure=True)
+    for s in (-1, 1):
+        k.box(f"{tag}_lip", (sx + 0.03, 0.05, 0.05), (0, s * (sy / 2 - 0.01), sz + 0.005), "paint_yellow")
+        k.box(f"{tag}_lip", (0.05, sy - 0.07, 0.05), (s * (sx / 2 - 0.01), 0, sz + 0.005), "paint_yellow")
+    k.box(f"{tag}_soil", (sx - 0.06, sy - 0.06, 0.02), (0, 0, sz + 0.01), "rubber")
+    k.box(f"{tag}_kick", (sx + 0.012, sy + 0.012, 0.07), (0, 0, 0.035), "rubber")
+    k.plate(f"{tag}_label", (min(sx, 0.5) * 0.6, 0.09), (0, sy / 2 + 0.002, sz * 0.62), "trim_sheet", "stencils", th=0.004)
+    rx, ry = sx / 2 - 0.1, sy / 2 - 0.1
+    for i in range(blades):
+        f = (i * 0.618 + seed * 0.37) % 1.0
+        phi = 2 * math.pi * f
+        r = 0.25 + 0.75 * ((i * 7 + seed) % 5) / 4
+        base = (math.cos(phi) * rx * r * 0.7, math.sin(phi) * ry * r * 0.7, sz + 0.02)
+        hgt = height * (0.6 + 0.4 * ((i * 3 + seed) % 4) / 3)
+        lean = 0.1 + 0.32 * r
+        _blade(k, f"{tag}_leaf", base, hgt, 0.075, lean, phi - math.pi / 2, "plant_light" if (i + seed) % 4 == 0 else "plant")
+    k.col(f"{tag}", (sx, sy, sz + 0.05), (0, 0, (sz + 0.05) / 2))
+    k.end(center, facing)
+
+
+def luggage_cart(k: Cell, tag, center, facing, load=()):
+    """Chariot à bagages (poussé vers +Y local) : plateau sombre à tapis de caoutchouc sur quatre
+    roulettes, cadre de tubes jaunes et poignée de poussée à l'arrière (−Y), rebord avant ;
+    `load` : bagages [(taille, matériau)] empilés sur le plateau, décor de niveau 1. Collider."""
+    W, L = 0.62, 1.0
+    k.begin()
+    k.box(f"{tag}_deck", (W, L, 0.05), (0, 0, 0.16), "dark", bevel=0.01)
+    k.box(f"{tag}_mat", (W - 0.06, L - 0.12, 0.01), (0, 0.02, 0.19), "rubber")
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            k.box(f"{tag}_fork", (0.03, 0.06, 0.08), (sx * 0.25, sy * 0.4, 0.1), "dark")
+            k.cyl(f"{tag}_wheel", 0.06, 0.04, (sx * 0.25, sy * 0.4, 0.06), "rubber", axis="X", segments=8)
+        k.box(f"{tag}_upright", (0.04, 0.04, 0.95), (sx * 0.27, -L / 2 + 0.04, 0.66), "paint_yellow", bevel=0.008)
+        k.box(f"{tag}_handle_arm", (0.03, 0.12, 0.03), (sx * 0.27, -L / 2 - 0.02, 1.12), "bare")
+    for z in (0.55, 0.85):
+        k.box(f"{tag}_rail", (W - 0.1, 0.03, 0.03), (0, -L / 2 + 0.04, z), "paint_yellow")
+    k.cyl(f"{tag}_handle", 0.022, W + 0.04, (0, -L / 2 - 0.07, 1.12), "rubber", axis="X", segments=8)
+    k.box(f"{tag}_lip", (W, 0.03, 0.09), (0, L / 2 - 0.015, 0.225), "paint_yellow")
+    with k.detail(1):
+        z = 0.195
+        for i, (size, mat) in enumerate(load):
+            k.box(f"{tag}_bag", size, (0.02 * (i % 2), -0.05 + 0.04 * (i % 3), z + size[2] / 2), mat, bevel=0.02)
+            z += size[2]
+    k.col(f"{tag}", (W + 0.06, L + 0.14, 1.15), (0, -0.03, 0.575))
+    k.end(center, facing)
+
+
+def hanging_sign(k: Cell, tag, center, facing, length=2.4, arrows=((1, 0.55), (-1, -0.55)), hang_to=None):
+    """Panneau de direction suspendu, lisible des deux côtés (faces ±Y local) : caisson noir à
+    liserés jaunes, bandes de chevrons de la trim sheet (chacune pointe vers +X ou −X local selon
+    `arrows` = [(sens, position)]), tiges au plafond (`hang_to`, z absolu)."""
+    k.begin()
+    k.box(f"{tag}_box", (length, 0.1, 0.44), (0, 0, 0), "paint_black", bevel=0.012)
+    for s in (-1, 1):
+        k.box(f"{tag}_edge", (length + 0.02, 0.11, 0.03), (0, 0, s * 0.21), "paint_yellow")
+    for d, xo in arrows:
+        # Une seule plaque traverse le caisson : ses deux faces montrent les chevrons dans le même
+        # sens (U de la bande le long de +X local de la plaque, tournée vers `d`).
+        k.ori(f"{tag}_chevrons", (0.9, 0.2, 0.104), (xo, 0, -0.03), (d, 0, 0), (0, 0, 1), "trim_sheet", "chevrons")
+    k.ori(f"{tag}_label", (0.5, 0.1, 0.104), (0, 0, 0.1), (1, 0, 0), (0, 0, 1), "trim_sheet", "stencils")
+    if hang_to is not None:
+        zt = hang_to - center[2]
+        for x in (-length * 0.22, length * 0.22):
+            k.box(f"{tag}_rod", (0.025, 0.025, zt - 0.22), (x, 0, (zt + 0.22) / 2), "dark")
+    k.end(center, facing)
+
+
+def stanchions(k: Cell, tag, points, h=0.95, rope="fabric"):
+    """Barrière de potelets en laiton (socle, fût, boule) et barres matelassées entre eux,
+    `points` = [(x, y)] alignés sur X ou sur Y ; collider sur chaque travée."""
+    for x, y in points:
+        k.cyl(f"{tag}_base", 0.15, 0.03, (x, y, 0.015), "brass", segments=16)
+        k.cyl(f"{tag}_post", 0.025, h, (x, y, h / 2 + 0.02), "brass", segments=10)
+        k.cyl(f"{tag}_cap", 0.045, 0.06, (x, y, h + 0.05), "brass", segments=10)
+    for (xa, ya), (xb, yb) in zip(points[:-1], points[1:]):
+        k.strut(f"{tag}_rope", (xa, ya, h - 0.12), (xb, yb, h - 0.12), 0.05, 0.06, rope)
+        along_x = abs(xb - xa) >= abs(yb - ya)
+        size = (abs(xb - xa), 0.12, h + 0.08) if along_x else (0.12, abs(yb - ya), h + 0.08)
+        k.col(f"{tag}", size, ((xa + xb) / 2, (ya + yb) / 2, (h + 0.08) / 2))
+
+
+def vault_door(k: Cell, tag, center, facing):
+    """Porte de coffre (décor), face vers +Y local, `center` au pied du mur : cadre carré massif
+    noir à bandes de danger et pochoirs, collerette de laiton, porte ronde de métal brut à deux
+    gradins, couronne de boulons, moyeu et volant à trois rayons en laiton, gonds à droite (vu
+    de face), pênes engagés dans leurs gâches à gauche, seuil d'acier. Fermée. Collider."""
+    R, zc = 1.22, 1.45
+    k.begin()
+    k.box(f"{tag}_frame", (3.0, 0.32, 3.0), (0, 0.16, 1.5), "paint_black", bevel=0.03, structure=True)
+    for z in (0.12, 2.86):
+        k.ori(f"{tag}_frame_hazard", (2.9, 0.14, 0.008), (0, 0.324, z), *FRONT, "trim_sheet", "hazard")
+    for x in (-1.05, 1.05):
+        k.ori(f"{tag}_frame_label", (0.62, 0.1, 0.006), (x, 0.324, 2.62), *FRONT, "trim_sheet", "stencils")
+    k._keep(kit._ring(k.nm(f"{tag}_collar"), R + 0.03, R + 0.24, 0.12, (0, 0.38, zc), k.m["brass"], k.coll, segments=32))
+    k.cyl(f"{tag}_door", R, 0.36, (0, 0.5, zc), "bare", axis="Y", segments=32)
+    k.cyl(f"{tag}_step", R - 0.2, 0.04, (0, 0.69, zc), "dark", axis="Y", segments=32)
+    k.cyl(f"{tag}_face", R - 0.42, 0.04, (0, 0.72, zc), "bare", axis="Y", segments=28)
+    for i in range(16):
+        a = 2 * math.pi * i / 16
+        k.cyl(f"{tag}_bolt", 0.045, 0.05, ((R - 0.1) * math.cos(a), 0.705, zc + (R - 0.1) * math.sin(a)), "dark", axis="Y", segments=8)
+    k.cyl(f"{tag}_hub", 0.3, 0.14, (0, 0.79, zc), "dark", axis="Y", segments=20)
+    k.cyl(f"{tag}_hub_cap", 0.13, 0.06, (0, 0.88, zc), "brass", axis="Y", segments=16)
+    k._keep(kit._ring(k.nm(f"{tag}_wheel"), 0.56, 0.65, 0.06, (0, 0.88, zc), k.m["brass"], k.coll, segments=24))
+    for i in range(3):
+        a = math.pi / 2 + 2 * math.pi * i / 3
+        k.strut(f"{tag}_spoke", (0.2 * math.cos(a), 0.88, zc + 0.2 * math.sin(a)), (0.6 * math.cos(a), 0.88, zc + 0.6 * math.sin(a)), 0.06, 0.05, "brass")
+    # Vu de face, +X local est à gauche : gonds à −X (à droite), pênes à +X (à gauche).
+    for dz in (-0.72, 0.72):
+        k.cyl(f"{tag}_hinge", 0.15, 0.5, (-(R + 0.12), 0.55, zc + dz), "dark", axis="Z", segments=16)
+        k.box(f"{tag}_hinge_arm", (0.5, 0.12, 0.3), (-(R - 0.08), 0.62, zc + dz), "bare", bevel=0.01)
+    for dz in (-0.6, 0.0, 0.6):
+        k.box(f"{tag}_keeper", (0.24, 0.22, 0.24), (R + 0.3, 0.43, zc + dz), "dark", bevel=0.01)
+        k.box(f"{tag}_bolt_bar", (0.42, 0.1, 0.1), (R + 0.1, 0.52, zc + dz), "bare")
+    k.box(f"{tag}_sill", (3.4, 1.1, 0.012), (0, 0.85, 0.006), "floor_plate")
+    k.col(f"{tag}", (3.0, 1.0, 3.0), (0, 0.5, 1.5))
+    k.end(center, facing)
+
+
+def column_round(k: Cell, tag, x, y, h, r=0.24):
+    """Colonne ronde de la Banque : fût noir, base et chapiteau à bagues de laiton ; collider."""
+    k.cyl(f"{tag}_plinth", r + 0.08, 0.12, (x, y, 0.06), "paint_black", segments=20)
+    k.cyl(f"{tag}_base_ring", r + 0.04, 0.05, (x, y, 0.145), "brass", segments=20)
+    k.cyl(f"{tag}_shaft", r, h - 0.4, (x, y, 0.17 + (h - 0.4) / 2), "paint_black", segments=20)
+    k.cyl(f"{tag}_band", r + 0.012, 0.08, (x, y, 1.6), "brass", segments=20)
+    k.cyl(f"{tag}_capital_ring", r + 0.04, 0.05, (x, y, h - 0.205), "brass", segments=20)
+    k.box(f"{tag}_capital", (2 * r + 0.2, 2 * r + 0.2, 0.18), (x, y, h - 0.09), "paint_black", bevel=0.015)
+    k.col(f"{tag}", (2 * r + 0.16, 2 * r + 0.16, h), (x, y, h / 2))
+
+
 # --- Cellules -----------------------------------------------------------------------------------
 
 
@@ -1179,60 +1507,112 @@ def build_chantier(m: dict) -> Cell:
 
 
 def build_hall(m: dict) -> Cell:
+    """Hall des arrivées (M10, retour 13) : une allée centrale de l'entrée (couloir du hangar, à
+    l'est) à la porte du marché (ouest), une allée transversale du bureau (nord) à la taverne
+    (sud), dégagées toutes deux ; quatre banquettes dos à dos dont les rangées regardent l'un des
+    deux grands panneaux d'information (au-dessus de la porte du marché et de l'entrée) ; bornes
+    des départs sous le grand panneau ; comptoir d'information et chariots à bagages près de
+    l'entrée ; porte de la Banque au sud de l'entrée ; bacs à plantes ; lignes, chevrons et
+    tapis au sol ; panneau de direction suspendu au croisement. Lumière contrastée : blanc froid
+    sur l'allée, suspensions sodium au-dessus des banquettes, lueur des panneaux (cuite)."""
     cid = "hall"
     x0, x1, y0, y1, h = CELLS[cid]
     k = Cell(cid, m)
-    lamps = [(x, y) for x in (-22.0, -16.4) for y in (-5.0, -1.0, 3.0)]
+    bench_x = (-23.4, -16.6)  # centres des banquettes (x)
+    bench_y = 4.07  # |y| du centre des banquettes
+    aisle = [(-14.6, 0.0), (-17.6, 0.0), (-22.4, 0.0)]
+    pendants = [(x, s * bench_y) for x in bench_x for s in (-1, 1)]
     k.shell(kit.room_shell(cid, x0, x1, y0, y1, 0.0, h, st.openings_for(cid, CELLS, WALL_PORTALS, WINDOWS), m, k.coll,
-                           style="station", avoid=lamps))
-    for i, (x, y) in enumerate(lamps):
-        k.light(f"l{i}", x, y, h, 22000.0, 12.0, SODIUM, drop=0.9)
-    # Départs : console tournée vers le hall, tableau au mur au-dessus.
-    k.add(kit.console(f"{cid}_departures", (-13.4, 4.5, 0.0), math.pi / 2, m, k.coll, label="departures"))
-    k.add(kit.wall_screen(k.nm("board"), (-12.4, 3.15, 3.0), FACE_E, m, k.coll, size=(2.6, 1.0)))
-    k.add(kit.wall_screen(k.nm("board"), (-16.0, 7.0, 3.2), FACE_N, m, k.coll, size=(3.0, 1.1)))
-    k.add(kit.stencil(k.nm("stencil"), (-12.4, 3.15, 2.25), FACE_E, m, k.coll, length=2.0))
-    k.add(kit.stencil(k.nm("stencil"), (-16.0, 7.0, 2.4), FACE_N, m, k.coll, length=2.4))
-    # Bancs, guéridons et corbeilles entre les paires.
-    for row, y in enumerate((-2.2, 2.2)):
-        for i, x in enumerate((-23.0, -21.6, -18.4, -17.0)):
-            k.add(kit.seat(f"{cid}_bench{row}_{i}", (x, y, 0.0), 0.0 if row == 0 else math.pi, m, k.coll))
-        bench_table(k, f"gueridon{row}", -20.0, y)
-        bin_(k, f"bin{row}", -24.2, y)
-    kiosk(k, (-23.8, -6.2, 0.0), 0.0)
-    door_sign(k, "sign_bureau", -20.0, 7.0, 2.95, FACE_N, accent="paint_yellow", width=1.4)
-    door_sign(k, "sign_taverne", -20.0, -7.0, 2.95, FACE_S, accent="paint_yellow", width=1.4)
-    door_sign(k, "sign_marche", -26.0, 0.0, 2.95, FACE_W, accent="paint_yellow", width=1.4)
-    # Sol : allée de sortie du couloir (bandes jusqu'au hall).
+                           style="station", avoid=aisle + pendants))
+    for i, (x, y) in enumerate(aisle):
+        k.light(f"aisle{i}", x, y, h, 20000.0, 12.0, COOL_W, drop=0.5)
+    for i, (x, y) in enumerate(pendants):
+        k.light(f"pendant{i}", x, y, h, 14000.0, 9.0, SODIUM, lens="light_amber", drop=1.5, facing=math.pi / 2)
+
+    # --- Panneaux d'information : départs (ouest, au-dessus de la porte du marché), arrivées (est,
+    # au-dessus de l'entrée). Lignes de glyphes, aucun texte lisible.
+    info_board(k, "board_w", (x0 + 0.24, 0.0, 3.55), FACE_W,
+               ["text_orange", "text_orange", "text_orange", "text_orange", "status_orange"], rows=3, glow="band_warm", standoff=0.08)
+    info_board(k, "board_e", (x1 - 0.24, 0.0, 3.62), FACE_E,
+               ["text_cyan", "text_cyan", "text_cyan", "status_green"], rows=2, cell=(0.9, 0.4), glow="band_cool", standoff=0.08)
+    # Bornes des départs sous le grand panneau, de part et d'autre de la porte du marché.
+    for i, y in enumerate((-1.95, 1.95)):
+        k.add(kit.console(f"{cid}_departures{i}", (x0 + 0.55, y, 0.0), FACE_W, m, k.coll, label="departures"))
+
+    # --- Banquettes dos à dos (rangées le long de Y : un côté vers l'ouest, l'autre vers l'est),
+    # un bac à plantes au bout côté allée.
+    for i, (x, s) in enumerate((bx, s) for bx in bench_x for s in (-1, 1)):
+        bench_block(k, f"bench{i}", (x, s * bench_y, 0.0), math.pi / 2, seats=4)
+        planter(k, f"bench_planter{i}", (x, s * 2.28, 0.0), size=(1.2, 0.55, 0.42), height=0.62, blades=13, seed=i)
+    # Grands bacs dans les angles, de part et d'autre de l'entrée.
+    planter(k, "planter_nw", (x0 + 0.7, y1 - 0.7, 0.0), size=(0.8, 0.8, 0.55), height=1.25, blades=16, seed=5)
+    planter(k, "planter_sw", (x0 + 0.7, y0 + 0.7, 0.0), size=(0.8, 0.8, 0.55), height=1.25, blades=16, seed=6)
+    planter(k, "planter_se", (x1 - 0.65, y0 + 0.65, 0.0), size=(0.7, 0.7, 0.5), height=1.1, blades=14, seed=7)
+    planter(k, "planter_entry", (x1 - 0.36, -2.1, 0.0), size=(0.55, 0.55, 0.5), height=0.9, blades=11, seed=8)
+    bin_(k, "bin0", -21.45, 2.2)
+    bin_(k, "bin1", -18.55, -2.2)
+
+    # --- Près de l'entrée : comptoir d'information (nord), chariots à bagages rangés (angle
+    # nord-est), un chariot chargé laissé là (sud-est).
+    kiosk(k, (x1 - 0.75, 3.4, 0.0), FACE_E)
+    for i, x in enumerate((-15.25, -14.55, -13.85)):
+        luggage_cart(k, f"cart{i}", (x, 6.15, 0.0), math.pi)
+    k.add(kit.hazard_frame(k.nm("cart_bay"), (-14.55, 6.12, 0.0), (2.2, 1.12), m, k.coll, width=0.08))
+    luggage_cart(k, "cart_loose", (-14.95, -6.0, 0.0), 0.35,
+                 load=[((0.5, 0.74, 0.24), "fabric_dark"), ((0.42, 0.56, 0.2), "crate_slate"), ((0.34, 0.44, 0.3), "crate_rust")])
+    k.add(kit.cabinet(k.nm("cabinet"), (-23.4, y0, 0.0), FACE_S, m, k.coll, size=(0.9, 0.32, 1.6)))
+
+    # --- Signalétique : portes, panneau suspendu au croisement (chevrons vers le bureau et la
+    # taverne), lignes jaunes des allées, chevrons au sol, tapis de l'entrée et de la Banque.
+    door_sign(k, "sign_bureau", -20.0, y1, 2.95, FACE_N, accent="paint_yellow", width=1.4)
+    door_sign(k, "sign_taverne", -20.0, y0, 2.95, FACE_S, accent="paint_yellow", width=1.4)
+    door_sign(k, "sign_banque", x1, -4.6, 2.95, FACE_E, accent="crate_slate", width=1.4)
+    # Au-dessus de la ligne du grand panneau vue depuis l'entrée (sinon il le coupe).
+    hanging_sign(k, "sign_cross", (-20.0, 0.0, 4.2), math.pi / 2, length=2.6, arrows=((1, 0.62), (-1, -0.62)), hang_to=h)
+    ax0, ax1, ae = x0 + 1.0, x1 - 1.2, 1.75  # allée centrale : bords en y = ±ae
+    cx0, cx1 = -21.0, -19.0  # allée transversale
     for s in (-1, 1):
-        k.add(kit.hazard_stripe(k.nm("lane"), (-12.6, s * 1.45, 0.0), (-15.6, s * 1.45, 0.0), m, k.coll, width=0.12))
-    k.add(kit.duct(k.nm("duct"), (-25.8, 6.35, 4.05), (-12.6, 6.35, 4.05), m, k.coll, size=(0.7, 0.45), hang_to=h))
-    k.add(kit.cable_tray(k.nm("tray"), (-19.2, -6.8, 4.55), (-19.2, 6.8, 4.55), m, k.coll, hang_to=h))
-    k.add(kit.junction_box(k.nm("jbox"), (-26.0, 3.6, 1.5), FACE_W, m, k.coll, size=(0.6, 0.16, 0.7)))
-    k.add(kit.junction_box(k.nm("jbox"), (-14.6, -7.0, 1.5), FACE_S, m, k.coll, size=(0.5, 0.14, 0.6)))
-    k.add(kit.vent(k.nm("vent"), (-24.0, 7.0, 2.6), FACE_N, m, k.coll, size=(1.0, 0.4)))
-    k.add(kit.vent(k.nm("vent"), (-16.0, -7.0, 2.6), FACE_S, m, k.coll, size=(1.0, 0.4)))
+        for a, b in ((ax0, cx0), (cx1, ax1)):
+            k.box("aisle_line", (b - a, 0.08, 0.006), ((a + b) / 2, s * ae, 0.003), "paint_yellow")
+        for xl in (cx0, cx1):
+            a, b = ae, 6.0
+            k.box("cross_line", (0.08, b - a, 0.006), (xl, s * (a + b) / 2, 0.003), "paint_yellow")
+    for (xa, xb, y) in ((-14.4, -16.0, 0.8), (-22.6, -24.2, 0.8), (-16.0, -14.4, -0.8), (-24.2, -22.6, -0.8)):
+        k.add(kit.hazard_stripe(k.nm("chevrons"), (xa, y, 0.0), (xb, y, 0.0), m, k.coll, width=0.45, trim="chevrons"))
     for s in (-1, 1):
-        k.add(kit.beacon(k.nm("beacon"), (-12.4, s * 1.95, 2.45), FACE_E, m, k.coll, lumens=800.0, rng=4.0))
-    crate_stack(k, "crate", (-13.2, 6.2, 0.0), 0.1, [(1.2, 1.0, 1.0), (0.8, 0.7, 0.6)], ["yellow", "yellow"], hero=True)
-    crate_stack(k, "crate", (-14.45, 6.35, 0.0), -0.15, [(0.9, 0.9, 0.8)], ["yellow"])
-    crate_stack(k, "crate", (-25.3, 6.2, 0.0), 0.05, [(1.0, 1.0, 1.0), (0.9, 0.8, 0.7)], ["yellow", "yellow"])
-    crate_stack(k, "crate", (-15.5, -6.35, 0.0), -0.08, [(1.1, 1.0, 0.9)], ["yellow"])
+        k.add(kit.hazard_stripe(k.nm("chevrons"), (-20.0, s * 2.4, 0.0), (-20.0, s * 4.2, 0.0), m, k.coll, width=0.45, trim="chevrons"))
+    k.add(kit.hazard_stripe(k.nm("chevrons"), (-13.5, -2.3, 0.0), (-13.5, -3.7, 0.0), m, k.coll, width=0.35, trim="chevrons"))
+    k.box("mat_entry", (0.9, 2.3, 0.008), (x1 - 0.6, 0.0, 0.004), "rubber")
+    k.box("mat_bank", (0.7, 1.5, 0.008), (x1 - 0.5, -4.6, 0.004), "fabric_dark")
+
+    # --- Murs et plafond : gaine, chemin de câbles, boîtiers, bouches, gyrophares de l'entrée.
+    k.add(kit.duct(k.nm("duct"), (x0 + 0.2, 6.35, 4.05), (x1 - 0.2, 6.35, 4.05), m, k.coll, size=(0.7, 0.45), hang_to=h))
+    k.add(kit.cable_tray(k.nm("tray"), (-19.2, y0 + 0.2, 4.55), (-19.2, y1 - 0.2, 4.55), m, k.coll, hang_to=h))
+    k.add(kit.junction_box(k.nm("jbox"), (x0, 3.6, 1.5), FACE_W, m, k.coll, size=(0.6, 0.16, 0.7)))
+    k.add(kit.junction_box(k.nm("jbox"), (-14.6, y0, 1.5), FACE_S, m, k.coll, size=(0.5, 0.14, 0.6)))
+    k.add(kit.vent(k.nm("vent"), (-24.0, y1, 2.6), FACE_N, m, k.coll, size=(1.0, 0.4)))
+    k.add(kit.vent(k.nm("vent"), (-16.0, y0, 2.6), FACE_S, m, k.coll, size=(1.0, 0.4)))
+    for s in (-1, 1):
+        k.add(kit.beacon(k.nm("beacon"), (x1, s * 1.95, 2.45), FACE_E, m, k.coll, lumens=800.0, rng=4.0))
     with k.detail(1):
-        k.add(kit.pipe(k.nm("pipe"), (-25.6, -6.8, 3.55), (-25.6, 6.8, 3.55), m, k.coll, radius=0.08))
-        k.add(kit.wall_screen(k.nm("board"), (-26.0, -4.0, 2.4), FACE_W, m, k.coll, size=(1.2, 0.7)))
+        k.add(kit.pipe(k.nm("pipe"), (x0 + 0.4, y0 + 0.2, 4.7), (x0 + 0.4, y1 - 0.2, 4.7), m, k.coll, radius=0.08))
+        k.add(kit.wall_screen(k.nm("screen"), (x0, -4.2, 2.3), FACE_W, m, k.coll, size=(1.0, 0.6)))
+        k.add(kit.wall_screen(k.nm("screen"), (-16.0, y1, 1.9), FACE_N, m, k.coll, size=(0.9, 0.5)))
+        k.add(kit.stencil(k.nm("stencil"), (-16.0, y1, 2.5), FACE_N, m, k.coll, length=1.4))
     with k.detail(2):
-        k.add(kit.duct(k.nm("duct"), (-25.8, -6.35, 4.05), (-16.8, -6.35, 4.05), m, k.coll, size=(0.6, 0.4), hang_to=h))
-        k.add(kit.pipe(k.nm("pipe"), (-12.8, -6.8, 4.3), (-12.8, 6.8, 4.3), m, k.coll, radius=0.06, hang_to=h))
-        barrel(k, "drum", -25.4, -4.9, "paint_yellow")
-        k.add(kit.vent(k.nm("vent"), (-19.2, 7.0, 3.9), FACE_N, m, k.coll, size=(0.8, 0.3)))
+        k.add(kit.duct(k.nm("duct"), (x0 + 0.2, -6.35, 4.05), (-16.8, -6.35, 4.05), m, k.coll, size=(0.6, 0.4), hang_to=h))
+        k.add(kit.pipe(k.nm("pipe"), (x1 - 0.4, y0 + 0.2, 4.65), (x1 - 0.4, y1 - 0.2, 4.65), m, k.coll, radius=0.06, hang_to=h))
+        barrel(k, "drum", x0 + 0.6, -4.9, "paint_yellow")
+        k.add(kit.vent(k.nm("vent"), (-19.2, y1, 3.9), FACE_N, m, k.coll, size=(0.8, 0.3)))
+        bin_(k, "bin2", -24.6, 6.4)
     return k
 
 
 def build_bureau(m: dict) -> Cell:
     """Bureau des contrats : comptoir des contrats contre le mur nord (PNJ `contracts`), console
-    des contrats à côté, guichet de la Banque contre le mur est (PNJ `bank`, P25), cloisons
-    vitrées : on ne passe pas derrière les comptoirs."""
+    des contrats à côté, cloison vitrée : on ne passe pas derrière le comptoir. M10 : le guichet
+    de la Banque a sa salle (`build_banque`) ; à sa place, un tableau d'affichage des contrats,
+    une armoire et un bac à plantes contre le mur est."""
     cid = "bureau"
     x0, x1, y0, y1, h = CELLS[cid]
     k = Cell(cid, m)
@@ -1242,7 +1622,7 @@ def build_bureau(m: dict) -> Cell:
     for i, (x, y) in enumerate(lamps[:2]):
         k.light(f"l{i}", x, y, h, 8000.0, 8.0, NEUTRAL)
     k.light("l_guichet", *lamps[2], h, 4000.0, 6.0, COOL)
-    k.light("l_banque", *lamps[3], h, 3500.0, 6.0, COOL, facing=math.pi / 2)
+    k.light("l_est", *lamps[3], h, 3500.0, 6.0, NEUTRAL, facing=math.pi / 2)
     # Comptoir des contrats (pièce maîtresse) et sa console.
     ccx, ccy, cl = -21.6, 12.25, 3.2
     k.add(kit.counter(f"{cid}_guichet", (ccx, ccy, 0.0), math.pi, m, k.coll, length=cl, role="contracts", variant="a"))
@@ -1266,16 +1646,14 @@ def build_bureau(m: dict) -> Cell:
     for x in (ccx - 0.8, ccx + 1.0):
         k.add(kit.wall_screen(k.nm("back_screen"), (x, y1, 1.75), FACE_N, m, k.coll, size=(0.8, 0.5)))
     k.add(kit.cabinet(k.nm("cabinet"), (-23.62, y1, 0.0), FACE_N, m, k.coll, size=(0.7, 0.32, 1.7)))
-    # Guichet de la Banque : comptoir contre le mur est, cloisons vitrées au nord et au sud.
-    bcx, bcy, bl = -17.05, 10.8, 2.4
-    k.add(kit.counter(f"{cid}_banque", (bcx, bcy, 0.0), FACE_E, m, k.coll, length=bl, role="bank", variant="a"))
-    partition(k, "part_bn", (bcx, bcy + bl / 2), (bcx, y1))
-    partition(k, "part_bs", (bcx, y0), (bcx, bcy - bl / 2))
-    k.box("bank_fascia", (0.45, bl + 0.2, 0.36), (bcx + 0.2, bcy, 2.6), "paint_black", bevel=0.012, structure=True)
-    k.ori("bank_fascia_stripe", (bl + 0.16, 0.07, 0.01), (bcx - 0.031, bcy, 2.72), (0, -1, 0), (0, 0, 1), "crate_slate")
-    k.ori("bank_fascia_label", (1.2, 0.11, 0.006), (bcx - 0.03, bcy, 2.58), (0, -1, 0), (0, 0, 1), "trim_sheet", "stencils")
-    k.ori("bank_fascia_glow", (bl - 0.1, 0.08, 0.02), (bcx + 0.08, bcy, 2.41), (0, 1, 0), (1, 0, 0), "band_cool", ("strip", 1.0))
-    k.add(kit.wall_screen(k.nm("bank_screen"), (x1, bcy, 1.8), FACE_E, m, k.coll, size=(0.9, 0.5)))
+    # Mur est (l'ancien guichet de la Banque, M10) : tableau d'affichage des contrats (écrans à
+    # lignes de glyphes), armoire, bac à plantes ; les pilastres du mur sont en y ≈ 10,1 et 12,7.
+    k.box("notice_case", (0.1, 1.5, 1.0), (x1 - 0.05, 11.4, 1.75), "paint_black", bevel=0.012)
+    for i, (y, tile) in enumerate(((11.75, "text_green"), (11.05, "status_green"))):
+        k.screen("notice_scr", (0.62, 0.84), (x1 - 0.106, y, 1.75), (0, -1, 0), (0, 0, 1), tile)
+    k.box("notice_head", (0.11, 1.5, 0.08), (x1 - 0.06, 11.4, 2.3), "paint_yellow")
+    k.add(kit.cabinet(k.nm("cabinet"), (x1, 8.6, 0.0), FACE_E, m, k.coll, size=(0.9, 0.32, 1.6)))
+    planter(k, "planter", (x1 - 0.45, y1 - 0.45, 0.0), size=(0.55, 0.55, 0.5), height=1.0, blades=12, seed=3)
     # Salle d'attente : sièges contre le mur ouest, tableau d'affichage, corbeille.
     for i, y in enumerate((8.9, 9.65, 10.4)):
         k.add(kit.seat(f"{cid}_seat{i}", (-23.55, y, 0.0), FACE_W, m, k.coll))
@@ -1291,17 +1669,24 @@ def build_bureau(m: dict) -> Cell:
         for x, w_ in ((ccx - 1.1, 0.42), (ccx + 1.2, 0.3)):
             k.box("binder", (w_, 0.26, 0.16), (x, ccy + 0.12, 1.13), "crate_slate", bevel=0.005)
     with k.detail(2):
-        k.add(kit.pipe(k.nm("pipe"), (x0 + 0.2, y0 + 0.25, 2.75), (bcx - 0.3, y0 + 0.25, 2.75), m, k.coll, radius=0.05, hang_to=h))
-        k.box("tray_papers", (0.3, 0.22, 0.05), (bcx + 0.02, bcy + 0.85, 1.075), "fabric_light", bevel=0.005)
+        k.add(kit.pipe(k.nm("pipe"), (x0 + 0.2, y0 + 0.25, 2.75), (x1 - 0.2, y0 + 0.25, 2.75), m, k.coll, radius=0.05, hang_to=h))
         bin_(k, "bin", -18.2, 7.9)
     return k
+
+
+# Tables de la taverne (centres) : M10 (retour 14), la seconde table et ses sièges, qui barraient
+# l'axe de la porte (x = −20), passent à l'est (à gauche en entrant) : de la porte au tavernier,
+# un passage libre de x ≈ −21,0 (siège de la première table) à x ≈ −19,15 (siège de la seconde).
+TAVERN_TABLES = ((-22.4, -9.6), (-17.75, -9.6))
+# Tabourets du bar : aucun dans le passage, ni devant le tavernier (x = −20,6).
+TAVERN_STOOLS = (-22.35, -21.5, -18.95)
 
 
 def build_taverne(m: dict) -> Cell:
     cid = "taverne"
     x0, x1, y0, y1, h = CELLS[cid]
     k = Cell(cid, m)
-    lamps = [(-22.4, -9.6), (-19.0, -9.6), (-21.0, -12.0), (-17.0, -8.2)]
+    lamps = [TAVERN_TABLES[0], TAVERN_TABLES[1], (-21.0, -12.0), (-17.0, -8.2)]
     k.shell(kit.room_shell(cid, x0, x1, y0, y1, 0.0, h, st.openings_for(cid, CELLS, WALL_PORTALS, WINDOWS), m, k.coll,
                            style="station", avoid=lamps))
     for i, (x, y) in enumerate(lamps[:2]):
@@ -1322,9 +1707,9 @@ def build_taverne(m: dict) -> Cell:
     back_bar(k, "backbar_w", -23.6, -20.35, y0)
     back_bar(k, "backbar_e", -19.65, -18.4, y0)
     k.add(kit.wall_screen(k.nm("menu"), (-24.0, -10.5, 1.75), FACE_W, m, k.coll, size=(1.0, 0.6)))
-    for i, x in enumerate((-22.2, -21.2, -20.2, -19.2)):
+    for i, x in enumerate(TAVERN_STOOLS):
         stool(k, f"stool{i}", x, -11.35)
-    for i, (x, y) in enumerate(((-22.4, -9.6), (-19.0, -9.6))):
+    for i, (x, y) in enumerate(TAVERN_TABLES):
         k.add(kit.table(f"{cid}_table{i}", (x, y, 0.0), 0.0, m, k.coll, size=(1.2, 1.2)))
         k.add(kit.seat(f"{cid}_seat{i}a", (x - 1.0, y, 0.0), -math.pi / 2, m, k.coll))
         k.add(kit.seat(f"{cid}_seat{i}b", (x + 1.0, y, 0.0), math.pi / 2, m, k.coll))
@@ -1412,6 +1797,149 @@ def build_marche(m: dict) -> Cell:
     return k
 
 
+def deposit_wall(k: Cell, tag, center, facing, width=2.2, height=2.2, cols=5, rows=7):
+    """Mur de coffres individuels (décor de la Banque), face vers +Y local, `center` au pied du
+    mur : bâti sombre, portes de tôle peinte décalées, boutons de laiton, socle ; collider."""
+    k.begin()
+    k.box(f"{tag}_body", (width, 0.45, height), (0, 0.225, height / 2), "dark", bevel=0.01, structure=True)
+    dw, dh = (width - 0.1) / cols, (height - 0.25) / rows
+    for j in range(rows):
+        for i in range(cols):
+            x = -width / 2 + 0.05 + dw * (i + 0.5)
+            z = 0.18 + dh * (j + 0.5)
+            k.plate(f"{tag}_door", (dw - 0.035, dh - 0.035), (x, 0.455, z), "panel", ("box", (0.31 * i, 0.17 * j)), th=0.008)
+            k.box(f"{tag}_knob", (0.05, 0.02, 0.025), (x + dw * 0.3, 0.467, z), "brass")
+    k.box(f"{tag}_plinth", (width + 0.01, 0.46, 0.1), (0, 0.23, 0.05), "rubber")
+    k.box(f"{tag}_crown", (width + 0.04, 0.48, 0.06), (0, 0.24, height + 0.03), "brass")
+    k.col(f"{tag}", (width, 0.47, height + 0.06), (0, 0.235, (height + 0.06) / 2))
+    k.end(center, facing)
+
+
+def build_banque(m: dict) -> Cell:
+    """Salle de la Banque (M10, retour 16 ; Banque d'Hexa-Corp, P25) : on entre par le hall
+    (ouest) face au guichet. « Futur usé » mais cossu : dalles sombres, murs de tôle peinte gris
+    bleu, laiton, colonnes rondes, bandeaux chauds.
+
+    - ligne des guichets (x = −6,6) : guichet de la Banque (PNJ `bank`, comptoir du kit, vitre
+      au-dessus du plateau), guichet fermé (rideau de tôle derrière la vitre), cloisons vitrées,
+      fronton à écrans de cours (barres, courbes : aucun texte lisible) ; derrière, le personnel :
+      mur de coffres individuels, bureau, armoire (on n'y passe pas) ;
+    - au sud, la porte de coffre massive (décor) entre deux colonnes, derrière une barrière de
+      potelets ; banquette et écran de cours le long du mur ouest ;
+    - au nord, banquette d'attente tournée vers les guichets, écrans de cours, bacs à plantes."""
+    cid = "banque"
+    x0, x1, y0, y1, h = CELLS[cid]
+    k = Cell(cid, m)
+    # Coque de station, mais sol de dalles sombres et murs de tôle peinte (palette surchargée).
+    mb = dict(m)
+    mb["tiles"] = m["bank_floor"]
+    mb["concrete"] = m["bank_wall"]
+    lamps = [(-10.3, -3.0), (-9.4, -5.6), (-5.5, -4.6), (-8.2, -9.3), (-5.4, -9.9)]
+    # Pilastres tous les 3,8 m : un au milieu des murs nord et sud (celui du sud couronne le
+    # coffre), deux sur le mur est, un sur le mur ouest (l'autre tombe sur la porte).
+    k.shell(kit.room_shell(cid, x0, x1, y0, y1, 0.0, h, st.openings_for(cid, CELLS, WALL_PORTALS, WINDOWS), mb, k.coll,
+                           style="station", rib_every=3.8, avoid=lamps))
+    k.light("l_client0", *lamps[0], h, 9000.0, 8.0, WARM, lens="light_amber", drop=0.9)
+    k.light("l_client1", *lamps[1], h, 9000.0, 8.0, WARM, lens="light_amber", drop=0.9)
+    k.light("l_staff", *lamps[2], h, 4000.0, 6.0, COOL, facing=math.pi / 2)
+    k.light("l_vault", *lamps[3], h, 9000.0, 8.0, COOL_W, drop=0.4)
+    k.light("l_corner", *lamps[4], h, 2500.0, 6.0, WARM, lens="light_amber")
+
+    # --- Ligne des guichets : client à l'ouest, personnel à l'est. --------------------------------
+    xc = -6.6
+    gy, gl = -4.6, 2.0  # guichet de la Banque : face à la porte du hall
+    k.add(kit.counter(f"{cid}_guichet", (xc, gy, 0.0), FACE_E, m, k.coll, length=gl, role="bank", variant="a"))
+    # Vitre au-dessus du plateau (on parle par l'interstice de 20 cm) : visuelle seulement.
+    k.box("guichet_glass", (0.012, gl - 0.08, 0.85), (xc - 0.05, gy, 1.675), "glass")
+    k.box("guichet_sill", (0.05, gl, 0.03), (xc - 0.05, gy, 1.235), "brass")
+    for s in (-1, 1):
+        k.box("guichet_post", (0.07, 0.07, 1.05), (xc - 0.05, gy + s * gl / 2, 1.575), "paint_black")
+    # Guichet fermé : caisson bas, vitre, rideau de tôle baissé derrière.
+    fa, fb = gy + gl / 2 + 0.05, -2.2
+    fm, fl = (fa + fb) / 2, fb - fa
+    k.box("closed_body", (0.6, fl, 1.03), (xc, fm, 0.515), "paint_black", bevel=0.01, structure=True)
+    k.box("closed_top", (0.72, fl + 0.04, 0.04), (xc - 0.04, fm, 1.05), "dark", bevel=0.008)
+    k.box("closed_edge", (0.03, fl + 0.06, 0.03), (xc - 0.4, fm, 1.05), "brass")
+    k.box("closed_kick", (0.02, fl - 0.02, 0.1), (xc - 0.305, fm, 0.05), "rubber")
+    k.box("closed_glass", (0.012, fl - 0.06, 0.95), (xc - 0.05, fm, 1.6), "glass")
+    k.box("closed_shutter", (0.03, fl - 0.06, 0.95), (xc + 0.06, fm, 1.6), "crate_slate")
+    k.box("closed_post", (0.07, 0.07, 1.07), (xc - 0.05, fb, 1.585), "paint_black")
+    k.col("closed", (0.72, fl, 2.12), (xc, fm, 1.06))
+    partition(k, "part_n", (xc, fb), (xc, y1))
+    partition(k, "part_s", (xc, -6.8), (xc, gy - gl / 2))
+    partition(k, "part_staff", (xc, -6.8), (x1, -6.8))
+    # Fronton : caisson noir à chants de laiton, écrans de cours tournés vers les clients,
+    # bandeau chaud dessous (cuit, il éclaire les plateaux).
+    fy0, fy1 = -6.8, y1
+    fc, flen = (fy0 + fy1) / 2, fy1 - fy0
+    k.box("fascia", (0.5, flen, 0.8), (xc + 0.1, fc, 2.5), "paint_black", bevel=0.015, structure=True)
+    for z in (2.12, 2.88):
+        k.box("fascia_rim", (0.04, flen, 0.04), (xc - 0.16, fc, z), "brass")
+    for i, tile in enumerate(("bars_green", "wave_orange", "bars_orange", "wave_cyan", "bars_cyan")):
+        y = fy1 - 0.55 - i * (flen - 1.1) / 4
+        k.screen("fascia_scr", (0.8, 0.46), (xc - 0.156, y, 2.5), (0, -1, 0), (0, 0, 1), tile)
+    k.ori("fascia_glow", (flen - 0.3, 0.06, 0.02), (xc - 0.02, fc, 2.085), (0, 1, 0), (1, 0, 0), "band_warm", ("strip", 1.0))
+    # Côté personnel : mur de coffres individuels, bureau, armoire.
+    deposit_wall(k, "deposit", (x1, -5.55, 0.0), FACE_E, width=2.2, height=2.2)
+    k.add(kit.wall_desk(k.nm("desk"), (x1, -2.75, 0.0), FACE_E, m, k.coll, width=1.4, items_detail=1))
+    k.add(kit.cabinet(k.nm("cabinet"), (-5.35, y1, 0.0), FACE_N, m, k.coll, size=(0.9, 0.32, 1.6)))
+
+    # --- Le coffre : porte massive entre deux colonnes, barrière de potelets. --------------------
+    vault_door(k, "vault", (-8.2, y0, 0.0), FACE_S)
+    # Colonnes symétriques par rapport au coffre, hors de la vue de la porte vers le coffre.
+    for i, x in enumerate((-11.2, -5.2)):
+        column_round(k, f"column{i}", x, -7.2, h)
+    stanchions(k, "barrier", [(-10.1, y0 + 0.3), (-10.1, -9.7), (-8.2, -9.7), (-6.3, -9.7), (-6.3, y0 + 0.3)])
+    k.box("vault_line", (x1 - x0 - 0.1, 0.05, 0.006), ((x0 + x1) / 2, -7.2, 0.003), "brass")
+    # Lambris noir à lisse de laiton (1,36 m) le long des murs de la salle des clients et du
+    # coffre ; il couvre la bande de danger du style « station ».
+    lam = [("W", y0, -8.1), ("W", -7.5, -5.65), ("W", -3.55, y1), ("N", x0, -8.5), ("N", -7.9, xc - 0.08),
+           ("S", x0, -9.75), ("S", -6.65, x1), ("E", y0, -8.1), ("E", -7.5, -6.88)]
+    for side, a, b in lam:
+        ln, mid = b - a, (a + b) / 2
+        if side in "NS":
+            sgn = -1 if side == "N" else 1
+            yw = y1 if side == "N" else y0
+            k.box("wainscot", (ln, 0.04, 1.36), (mid, yw + sgn * 0.08, 0.68), "paint_black")
+            k.box("wainscot_cap", (ln, 0.07, 0.04), (mid, yw + sgn * 0.075, 1.38), "brass")
+        else:
+            sgn = 1 if side == "W" else -1
+            xw = x0 if side == "W" else x1
+            k.box("wainscot", (0.04, ln, 1.36), (xw + sgn * 0.08, mid, 0.68), "paint_black")
+            k.box("wainscot_cap", (0.07, ln, 0.04), (xw + sgn * 0.075, mid, 1.38), "brass")
+
+    # --- Attente : banquettes, écrans de cours, plantes, tapis jusqu'au guichet. -----------------
+    bench_block(k, "bench_n", (-10.25, y1 - 0.55, 0.0), math.pi, seats=3, rows=1)
+    planter(k, "planter_nw", (-11.6, y1 - 0.4, 0.0), size=(0.5, 0.5, 0.5), height=0.95, blades=11, seed=1)
+    planter(k, "planter_n", (-8.9, y1 - 0.4, 0.0), size=(0.5, 0.5, 0.5), height=0.95, blades=11, seed=2)
+    k.box("rates_case", (2.7, 0.06, 0.78), (-10.25, y1 - 0.03, 2.35), "paint_black", bevel=0.01)
+    for z in (1.95, 2.75):
+        k.box("rates_rim", (2.74, 0.07, 0.03), (-10.25, y1 - 0.035, z), "brass")
+    for i, tile in enumerate(("wave_green", "bars_orange", "wave_cyan")):
+        k.screen("rates_scr", (0.78, 0.52), (-11.1 + i * 0.85, y1 - 0.066, 2.35), *BACK, tile)
+    k.add(kit.light_band(k.nm("band"), (-11.5, y1 - 0.02, 3.0), (-9.0, y1 - 0.02, 3.0), m, k.coll, normal=(0, -0.6, -0.8), tone="warm"))
+    bench_block(k, "bench_w", (x0 + 0.53, -9.8, 0.0), FACE_W, seats=2, rows=1)
+    planter(k, "planter_sw", (x0 + 0.45, y0 + 0.45, 0.0), size=(0.6, 0.6, 0.5), height=1.15, blades=13, seed=4)
+    planter(k, "planter_se", (x1 - 0.5, y0 + 0.5, 0.0), size=(0.7, 0.7, 0.55), height=1.3, blades=15, seed=9)
+    k.box("rates_tall_case", (0.06, 1.0, 1.45), (x0 + 0.03, -6.65, 2.3), "paint_black", bevel=0.01)
+    k.screen("rates_tall", (0.86, 1.3), (x0 + 0.066, -6.65, 2.3), (0, 1, 0), (0, 0, 1), "bars_green")
+    k.add(kit.wall_screen(k.nm("screen"), (x1, -9.8, 1.8), FACE_E, m, k.coll, size=(1.0, 0.6)))
+    # Tapis de dalles claires bordé de laiton, de la porte au guichet.
+    rx0, rx1 = x0 + 0.05, xc - 0.42
+    k.box("runner", (rx1 - rx0, 1.3, 0.006), ((rx0 + rx1) / 2, gy, 0.003), "tiles")
+    for s in (-1, 1):
+        k.box("runner_edge", (rx1 - rx0, 0.04, 0.008), ((rx0 + rx1) / 2, gy + s * 0.67, 0.004), "brass")
+    door_sign(k, "sign_hall", x0, gy, 2.95, FACE_W, accent="paint_yellow", width=1.4)
+    k.add(kit.vent(k.nm("vent"), (-10.6, y0, 3.2), FACE_S, m, k.coll, size=(0.8, 0.3)))
+    with k.detail(1):
+        k.add(kit.wall_screen(k.nm("screen"), (x0, -2.9, 2.1), FACE_W, m, k.coll, size=(0.7, 0.45)))
+        k.box("closed_papers", (0.22, 0.3, 0.02), (xc - 0.15, fm, 1.08), "fabric_light", bevel=0.004)
+        k.add(kit.light_band(k.nm("band"), (-9.6, y0 + 0.02, 3.3), (-6.8, y0 + 0.02, 3.3), m, k.coll, normal=(0, 0.6, -0.8), tone="warm"))
+    with k.detail(2):
+        k.add(kit.junction_box(k.nm("jbox"), (-5.0, -6.8, 1.4), FACE_S, m, k.coll, size=(0.4, 0.14, 0.5)))
+    return k
+
+
 BUILDERS = {
     "hangar": build_hangar,
     "couloir": build_couloir,
@@ -1420,6 +1948,7 @@ BUILDERS = {
     "bureau": build_bureau,
     "taverne": build_taverne,
     "marche": build_marche,
+    "banque": build_banque,
 }
 
 
@@ -1526,6 +2055,20 @@ def fix_mirrored(objects) -> int:
 
 
 
+def check_saddles(cells: dict) -> float:
+    """Le dessus des patins de caoutchouc des sabots est exactement sous la coque (M10) : renvoie
+    sa hauteur, erreur si elle s'écarte de plus de 2 mm du dessous de la coque."""
+    bpy.context.view_layer.update()
+    pads = [o for o in cells["hangar"].visual if o.type == "MESH" and "saddle_pad" in o.name]
+    if not pads:
+        raise RuntimeError("berceau : aucun patin de sabot (`saddle_pad`) trouvé")
+    top = max((o.matrix_world @ Vector(b)).z for o in pads for b in o.bound_box)
+    want = LAYOUT["hull_z"][0]
+    if abs(top - want) > 0.002:
+        raise RuntimeError(f"berceau : dessus des patins à {top:.3f} m, coque à {want:.3f} m (SADDLE_PAD à revoir)")
+    return top
+
+
 def check_marks(cells: dict) -> None:
     """Tout siège, console, casier ou PNJ a son volume et ses sockets (`kit._check_interactions`) ;
     noms de repères uniques dans le secteur."""
@@ -1590,9 +2133,11 @@ def shots() -> dict:
     hx, hy = L["hatch"]
     x0, x1, y0, y1, h = CELLS["hangar"]
     quai = (px0 - 2.2, hy, EYE)
+    saddle_y = py0 + (py1 - py0) * 0.2  # premier sabot (`docking_cradle`, 4 sabots)
 
-    def s(eye, target, lens=16.0, level=2, hull=True, plan=False):
-        return {"eye": eye, "target": target, "lens": lens, "level": level, "hull": hull, "plan": plan}
+    def s(eye, target, lens=16.0, level=2, hull=True, plan=False, ortho=False, ambient=0.0, isolate=None):
+        return {"eye": eye, "target": target, "lens": lens, "level": level, "hull": hull, "plan": plan, "ortho": ortho,
+                "ambient": ambient, "isolate": isolate}
 
     over = ((x0 + 3.6, y0 + 2.2, 8.4), ((px0 + px1) / 2 + 1.0, py1 - 14.0, 0.0))
     cx_all, cy_all = (-40.0 + x1) / 2, (y0 + y1) / 2
@@ -1622,12 +2167,32 @@ def shots() -> dict:
         "chantier": s((-4.9, 7.1, EYE), (-10.5, 3.4, 1.1), 14.0),
         "chantier_comptoir": s((-8.0, 4.6, EYE), (-10.5, 4.6, 1.2), 18.0),
         "chantier_fenetre": s((-9.2, 6.6, EYE), (-4.4, 2.6, 1.6), 14.0),
+        # Hall (M10) : depuis l'entrée (comme la capture 13 de l'auteur), depuis l'angle sud-est,
+        # depuis l'angle sud-ouest vers l'entrée, vers le couloir.
+        "hall_entree": s((-12.9, 0.0, EYE), _look((-12.9, 0.0, EYE), 90.0, -4.0), GAME_LENS),
         "hall": s((-13.0, -6.5, EYE), _look((-13.0, -6.5, EYE), 45.0), GAME_LENS),
+        "hall_ouest": s((-24.4, -5.2, EYE), (-13.0, 2.5, 1.8), GAME_LENS),
         "hall_vers_couloir": s((-24.5, 1.0, EYE), (-12.4, -1.5, 1.6), 16.0),
+        "hall_banquettes": s((-20.0, -1.0, EYE), (-16.6, 4.6, 0.8), 18.0),
         "bureau": s((-20.0, 7.9, EYE), _look((-20.0, 7.9, EYE), 0.0, -5.0), GAME_LENS),
         "bureau_contrats": s((-21.0, 9.9, EYE), (-21.6, 12.8, 1.2), 18.0),
-        "bureau_banque": s((-19.6, 10.2, EYE), (-16.4, 10.8, 1.2), 18.0),
+        "bureau_est": s((-19.6, 10.2, EYE), (-16.0, 11.0, 1.4), 18.0),
+        # Taverne depuis la porte du hall : le passage jusqu'au tavernier.
         "taverne": s((-20.0, -7.9, EYE), (-20.6, -13.0, 1.1), 15.0),
+        # Banque (M10) : depuis la porte, vers le coffre, le guichet de près, vue d'ensemble.
+        "banque": s((-11.7, -4.6, EYE), _look((-11.7, -4.6, EYE), -90.0, -4.0), GAME_LENS),
+        "banque_coffre": s((-10.9, -2.4, EYE), (-8.2, -11.6, 1.3), GAME_LENS),
+        "banque_guichet": s((-8.6, -4.0, EYE), (-6.2, -4.7, 1.3), 18.0),
+        "banque_ensemble": s((-11.7, -2.0, 3.6), (-6.4, -8.6, 0.6), 12.0),
+        # Berceau en coupe : un sabot vu de profil sous la coque grise (dessus du patin = −1,70).
+        # Vue orthographique de profil (vers +Y), 2,4 m de large : sabots, patins, fond de fosse et
+        # coque grise seuls, à la lumière d'ambiance (`--quick` : noms des objets non fusionnés).
+        "berceau_coupe": s((px0 + 1.4, saddle_y - 3.0, -1.7), (px0 + 1.4, saddle_y, -1.7), 2.4, ortho=True, ambient=1.0,
+                           isolate=("cradle_saddle", "cradle_floor")),
+        "berceau_patin": s((px0 + 0.3, saddle_y - 1.5, -1.4), (px0 + 1.4, saddle_y, -1.74), 30.0, ambient=1.0,
+                           isolate=("cradle_saddle", "cradle_floor")),
+        # Plan des salles (vue de dessus en coupe, plus serrée que « plan »).
+        "plan_salles": s((-21.5, -0.01, 120.0), (-21.5, 0.0, 0.0), 48.0, plan=True),
         "taverne_bar": s((-20.6, -9.6, EYE), (-20.6, -12.8, 1.2), 18.0),
         "marche": s((-26.9, 0.4, EYE), (-38.0, 0.0, 1.5), 15.0),
         "marche_comptoir": s((-31.0, -0.4, EYE), (-31.5, -3.8, 1.15), 18.0),
@@ -1668,6 +2233,11 @@ def render_shots(shots_: dict, prefix: str, merged, lamps, proxy, only, plan_obj
         if spec["plan"] and plan_objs is None:
             continue
         _apply_shot(spec, merged, lamps, proxy)
+        if spec.get("isolate"):
+            if not any(t in o.name for o in merged for t in spec["isolate"]):
+                continue  # objets fusionnés : la prise ne se fait qu'en `--quick`
+            for obj in merged:
+                obj.hide_render = obj.hide_render or not any(t in obj.name for t in spec["isolate"])
         if spec["plan"]:
             # Plan : vue de dessus orthographique en coupe, coque grise comprise.
             for obj in merged:
@@ -1677,9 +2247,13 @@ def render_shots(shots_: dict, prefix: str, merged, lamps, proxy, only, plan_obj
             pv.world((0.7, 0.72, 0.75), 0.45)
             pv.camera("cam", spec["eye"], spec["target"], ortho=spec["lens"])
         else:
-            pv.world((0, 0, 0), 0.0)
-            pv.camera("cam", spec["eye"], spec["target"], lens=spec["lens"])
-            bpy.data.cameras["cam"].type = "PERSP"
+            amb = spec.get("ambient", 0.0)
+            pv.world((0.7, 0.72, 0.75) if amb else (0, 0, 0), amb)
+            if spec.get("ortho"):
+                pv.camera("cam", spec["eye"], spec["target"], ortho=spec["lens"])
+            else:
+                pv.camera("cam", spec["eye"], spec["target"], lens=spec["lens"])
+                bpy.data.cameras["cam"].type = "PERSP"
         pv.render(PREVIEWS / f"{prefix}{name}.png")
         print(f"aperçu : {prefix}{name}.png")
         for obj in low:
@@ -1749,14 +2323,35 @@ def main(argv) -> None:
     rw, rh = (int(v) for v in _arg(argv, "--res", "1280x720").split("x"))
     only = _arg(argv, "--only", None)
     only = only.split(",") if only else None
+    quick = "--quick" in argv
+    keep_cells = _arg(argv, "--cells", None)
+    keep_cells = keep_cells.split(",") if keep_cells else None
     c.reset_scene()
     m = palette()
     proxy = ship_proxy() if BAKE_SHIP_OCCLUDER or "--lit" in argv or "--previews" in argv else []
-    cells = {cid: build(m) for cid, build in BUILDERS.items()}
+    if quick and keep_cells:
+        cells = {cid: build(m) for cid, build in BUILDERS.items() if cid in keep_cells}
+    else:
+        cells = {cid: build(m) for cid, build in BUILDERS.items()}
     bpy.context.view_layer.update()
     mirrored = fix_mirrored([o for k in cells.values() for o in k.visual])
     print(f"maillages en miroir corrigés (barres du kit) : {mirrored}")
+    if "hangar" in cells:
+        print(f"berceau : dessus des patins à {check_saddles(cells):.3f} m (dessous de la coque {LAYOUT['hull_z'][0]:.3f} m)")
     check_marks(cells)
+    if quick:
+        # Itération (`--quick [--cells a,b]`) : ni export ni bake, aperçus éclairés (Cycles, lampes)
+        # des objets bruts ; rien n'est écrit dans assets/.
+        visual = [o for k in cells.values() for o in k.visual]
+        for k in cells.values():
+            print(f"cellule {k.cid} : {kit._tris(k.visual)} triangles (avant fusion), {len(k.colliders)} colliders, "
+                  f"{sum(1 for mk in k.marks if mk.name.startswith('INTERACT_'))} interactions")
+        doors = st.door_panels([p for p in WALL_PORTALS if p[0] in cells or p[1] in cells], CELLS, m, c.collection("PREVIEW_DOORS"), style="station")
+        marks = [mk for k in cells.values() for mk in k.marks]
+        npc_proxies(marks)
+        bpy.context.view_layer.update()
+        preview_lit(shots(), visual, marks, proxy, samples, (rw, rh), only, plan_objs=visual + doors)
+        return
     built = {cid: k.parts() for cid, k in cells.items()}
     L = LAYOUT
     meta = {
