@@ -7,6 +7,13 @@
 //!   hyperespace sont chiffrés ([`RoutePlan`], `sh_sim::travel`) ; `1` ou `2` part.
 //! - Le départ est une transition ([`crate::transition::Sequence::Travel`]) : la date avance de
 //!   la durée du voyage, le carburant baisse, et l'on arrive en vue Globale à destination.
+//! - **Autopilote depuis la carte** (M10) : au plus près, la carte montre les astres, stations
+//!   et points de livraison des systèmes. Dans le lieu où est le vaisseau **seulement**
+//!   (`sh_data::map::target_click`), un clic choisit une cible ([`MapTarget`]) ; `1` (la touche du
+//!   départ par Portail, libre quand on ne part pas) ou le bouton du panneau pose
+//!   [`crate::ship::AutopilotRequest`] et referme la carte comme `M` (le vaisseau reprend sa pose,
+//!   [`ResumeFlight`], puis l'autopilote vole). Une cible d'un autre système trace un itinéraire
+//!   vers ce système, comme un clic sur lui.
 
 use bevy::prelude::*;
 use bevy_enhanced_input::prelude::*;
@@ -27,7 +34,11 @@ pub struct VoyagePlugin;
 impl Plugin for VoyagePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<HoveredEntry>()
+            .init_resource::<HoveredTarget>()
+            .init_resource::<MapTarget>()
             .add_systems(OnEnter(AppState::InGame), init_voyage)
+            // Une cible choisie ne survit pas à la carte.
+            .add_systems(OnExit(ViewLevel::Galaxy), forget_map_target)
             .add_observer(on_toggle_map)
             .add_observer(on_select)
             .add_observer(on_travel_portal)
@@ -69,6 +80,27 @@ pub struct ResumeFlight {
 /// L'entrée de la carte sous le curseur (posée par la vue Galaxie).
 #[derive(Resource, Default, Clone, Debug)]
 pub struct HoveredEntry(pub Option<sh_data::MapEntry>);
+
+/// Une cible de navigation montrée par la carte (astre, station, structure, port).
+#[derive(Clone, Debug, PartialEq)]
+pub struct NavChoice {
+    /// L'identifiant de navigation (`sh_data::scene::NavPoint::id`).
+    pub id: String,
+    pub name: String,
+    /// Le lieu qui la contient (système, ou monde isolé).
+    pub owner: Id<Place>,
+    /// Que fait un clic sur elle (autopilote dans le lieu courant, itinéraire ailleurs).
+    pub click: sh_data::map::TargetClick,
+}
+
+/// La cible de navigation sous le curseur (posée par la vue Galaxie) : elle passe avant
+/// [`HoveredEntry`].
+#[derive(Resource, Default, Clone, Debug)]
+pub struct HoveredTarget(pub Option<NavChoice>);
+
+/// La cible proposée à l'autopilote (lieu courant seulement) ; exclusive d'un [`RoutePlan`].
+#[derive(Resource, Default, Clone, Debug)]
+pub struct MapTarget(pub Option<NavChoice>);
 
 /// La destination choisie et ses itinéraires.
 #[derive(Resource, Clone, Debug)]
@@ -149,6 +181,7 @@ pub fn toggle_map(world: &mut World) {
             }
             world.resource_mut::<CurrentPlace>().0 = Some(system.to_string());
             world.remove_resource::<RoutePlan>();
+            world.insert_resource(MapTarget::default());
             world
                 .resource_mut::<NextState<ViewLevel>>()
                 .set(ViewLevel::Global);
@@ -157,10 +190,13 @@ pub fn toggle_map(world: &mut World) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn on_select(
     _: On<Start<Select>>,
     data: Res<Data>,
     hovered: Res<HoveredEntry>,
+    hovered_target: Res<HoveredTarget>,
+    mut target: ResMut<MapTarget>,
     location: Option<Res<Location>>,
     view: Res<State<ViewLevel>>,
     mut commands: Commands,
@@ -168,7 +204,26 @@ fn on_select(
     if *view.get() != ViewLevel::Galaxy {
         return;
     }
-    let (Some(entry), Some(location)) = (&hovered.0, location) else {
+    let Some(location) = location else {
+        return;
+    };
+    // Une cible de navigation : l'autopilote dans le lieu courant, sinon un itinéraire vers
+    // son lieu (`sh_data::map::target_click`).
+    if let Some(choice) = &hovered_target.0 {
+        match choice.click {
+            sh_data::map::TargetClick::Autopilot => {
+                target.0 = Some(choice.clone());
+                commands.remove_resource::<RoutePlan>();
+            }
+            sh_data::map::TargetClick::Route if choice.owner != location.system => {
+                target.0 = None;
+                commands.insert_resource(plan_route(&data, &location.system, &choice.owner));
+            }
+            _ => {}
+        }
+        return;
+    }
+    let Some(entry) = &hovered.0 else {
         return;
     };
     // Un système ou un monde isolé public ; ni station, ni phénomène, ni le lieu où l'on est.
@@ -178,7 +233,13 @@ fn on_select(
     {
         return;
     }
+    target.0 = None;
     commands.insert_resource(plan_route(&data, &location.system, &entry.id));
+}
+
+fn forget_map_target(mut target: ResMut<MapTarget>, mut hovered: ResMut<HoveredTarget>) {
+    target.0 = None;
+    hovered.0 = None;
 }
 
 /// Les itinéraires d'un lieu à un autre (systèmes ou mondes isolés), pour le vaisseau du joueur.
@@ -206,8 +267,40 @@ pub fn plan_route(data: &Data, from: &Id<Place>, to: &Id<Place>) -> RoutePlan {
     }
 }
 
+/// `1` : le départ par Portail, ou, quand la carte propose une cible du lieu courant, l'autopilote
+/// (les deux ne vont jamais ensemble : choisir l'un efface l'autre).
 fn on_travel_portal(_: On<Start<TravelPortal>>, mut commands: Commands) {
-    commands.queue(|world: &mut World| depart(world, sh_sim::travel::TravelMode::Portal));
+    commands.queue(|world: &mut World| {
+        if world
+            .get_resource::<MapTarget>()
+            .is_some_and(|t| t.0.is_some())
+        {
+            engage_autopilot(world);
+        } else {
+            depart(world, sh_sim::travel::TravelMode::Portal);
+        }
+    });
+}
+
+/// Engage l'autopilote vers la cible choisie sur la carte, puis referme la carte comme `M` :
+/// le vaisseau reprend sa pose en vol et l'autopilote le mène (`ship::run_autopilot`).
+pub fn engage_autopilot(world: &mut World) {
+    if world.contains_resource::<Sequence>() || !world.contains_resource::<Location>() {
+        return;
+    }
+    let view = world.get_resource::<State<ViewLevel>>().map(|s| *s.get());
+    if view != Some(ViewLevel::Galaxy) {
+        return;
+    }
+    let Some(choice) = world.get_resource::<MapTarget>().and_then(|t| t.0.clone()) else {
+        return;
+    };
+    if choice.click != sh_data::map::TargetClick::Autopilot {
+        return;
+    }
+    info!("carte : autopilote vers {}", choice.id);
+    world.insert_resource(crate::ship::AutopilotRequest(Some(choice.id)));
+    toggle_map(world);
 }
 
 fn on_travel_hyperspace(_: On<Start<TravelHyperspace>>, mut commands: Commands) {

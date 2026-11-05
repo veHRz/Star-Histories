@@ -18,6 +18,19 @@
 //!   échelle, seules les plus importantes restent ; les icônes trop serrées s'éclaircissent ;
 //! - **légende**, infobulle au survol (champs publics seulement), panneau d'itinéraire.
 //!
+//! Depuis M10 :
+//! - **détail des systèmes** au plus près : astres, stations et points de livraison de chaque
+//!   système public (`sh_data::map::system_detail`, mêmes identifiants que l'autopilote), en
+//!   icônes et noms, orbites en traits fins ; fondu enchaîné avec l'icône du système selon le
+//!   zoom (`sh_data::map::detail_fade`). Rien de secret : la disposition publique de la vue
+//!   Globale, et les structures de la mise en scène ;
+//! - **contrats en cours** : un panneau sous la date (émetteur, trajet, échéance) et un losange
+//!   sur chaque destination (sur ses points de livraison au plus près) ;
+//! - **autopilote** : une cible du lieu courant, cliquée, se propose dans le panneau
+//!   d'itinéraire (`voyage::MapTarget`) ; `1` ou le bouton l'engage et referme la carte ;
+//! - les touches ne sont plus écrites dans les panneaux : l'encart des touches
+//!   (`ui::keys_panel::KeyHelp`) les donne, selon ce qui est choisi.
+//!
 //! Les icônes et les étiquettes sont des nœuds d'interface (taille constante à l'écran, nettes
 //! à l'échelle de rendu réduite) dans une couche sous les panneaux ; le fond, les zones et les
 //! traits sont dans la scène 3D vue de dessus. Une poignée d'entités en tout : la carte reste
@@ -30,24 +43,38 @@ use bevy::asset::RenderAssetUsages;
 use bevy::mesh::Indices;
 use bevy::prelude::*;
 use bevy::render::render_resource::PrimitiveTopology;
+use bevy::ui_widgets::Activate;
 use bevy::window::PrimaryWindow;
 use bevy_enhanced_input::prelude::*;
 use sh_core::MapPos;
 use sh_core::grid::{CELL_SIZE, COLUMNS, MAP_HEIGHT, MAP_WIDTH, ROWS};
-use sh_data::map::{LabelRequest, ScreenRect, layout_labels, thin_markers, triangulate};
+use sh_data::map::{
+    DETAIL_RADIUS, DetailPoint, LabelRequest, ScreenRect, TargetClick, detail_fade, layout_labels,
+    system_detail, target_click, thin_markers, triangulate,
+};
+use sh_data::scene::{NavKind, NavPoint, nav_points};
 use sh_data::travel::endpoint;
-use sh_data::{Faction, Galaxy, MapEntry, MapKind, Place, public_map};
+use sh_data::{Faction, Galaxy, MapEntry, MapKind, Place, PlacedKind, StructureKind, public_map};
+use sh_sim::ContractState;
 use sh_sim::travel::{blocking_nebulae, hyperspace_path};
 
-use crate::clock::GameClock;
+use crate::career::{Career, contract_title};
+use crate::clock::{GameClock, HudCorner, format_date};
 use crate::data::{Data, Texts};
 use crate::graphics::WorldCamera;
-use crate::input::{Pan, Zoom};
-use crate::living::PlayerKnowledge;
+use crate::input::{
+    Pan, Pause, Select, SkipTutorial, ToggleMap, TravelHyperspace, TravelPortal, Zoom,
+};
+use crate::living::{PlayerKnowledge, display_name};
+use crate::options::UserSettings;
 use crate::state::{ControlMode, ViewLevel};
-use crate::ui::theme::{self, Frame, UiFonts};
+use crate::tutorial::Tutorial;
+use crate::ui::keys_panel::{KeyHelp, KeyHint};
+use crate::ui::theme::{self, Frame, MenuButton, UiFonts};
 use crate::views::view_banner;
-use crate::voyage::{HoveredEntry, Location, RoutePlan, ShipFuel};
+use crate::voyage::{
+    HoveredEntry, HoveredTarget, Location, MapTarget, NavChoice, ResumeFlight, RoutePlan, ShipFuel,
+};
 
 pub struct GalaxyViewPlugin;
 
@@ -57,7 +84,9 @@ impl Plugin for GalaxyViewPlugin {
         app.init_gizmo_group::<RouteGizmos>()
             .init_gizmo_group::<DashedRouteGizmos>()
             .init_gizmo_group::<RouteGlowGizmos>()
+            .init_gizmo_group::<OrbitGizmos>()
             .init_resource::<MapScreen>()
+            .add_observer(on_autopilot_button)
             .add_systems(Startup, configure_route_gizmos)
             .add_systems(OnEnter(ViewLevel::Galaxy), spawn_galaxy)
             .add_systems(
@@ -71,8 +100,13 @@ impl Plugin for GalaxyViewPlugin {
                     place_map_labels.run_if(in_map.clone()),
                     show_tooltip.run_if(in_map.clone()),
                     show_route.run_if(in_map.clone()),
+                    give_test_contract.run_if(in_map.clone()),
+                    engage_on_request.run_if(in_map.clone()),
+                    show_contracts.run_if(in_map.clone()),
+                    update_map_keys.run_if(in_map.clone()),
                     animate_dashes.run_if(in_map.clone()),
-                    draw_route.run_if(in_map),
+                    draw_route.run_if(in_map.clone()),
+                    draw_orbits.run_if(in_map),
                 )
                     .chain(),
             );
@@ -81,7 +115,8 @@ impl Plugin for GalaxyViewPlugin {
 
 const SCOPE: DespawnOnExit<ViewLevel> = DespawnOnExit(ViewLevel::Galaxy);
 const CENTER: Vec2 = Vec2::new(500.0, 330.0);
-const MIN_HEIGHT: f32 = 60.0;
+/// Au plus près (M10), le disque d'un système (`DETAIL_RADIUS`) remplit presque l'écran.
+const MIN_HEIGHT: f32 = 16.0;
 const MAX_HEIGHT: f32 = 1400.0;
 /// Le fond de la caméra : exactement le bord de `galaxy.png` (`BACKGROUND` de
 /// `tools/map/map_art.py`), pour qu'aucune couture ne se voie.
@@ -96,6 +131,12 @@ const PAN_LIMIT: Vec2 = Vec2::new(650.0, 450.0);
 const ZONE_LABEL_MAX_SCALE: f32 = 3.5;
 /// Âge (jours) au-delà duquel une flotte connue est au plus pâle.
 const FLEET_STALE_DAYS: f32 = 120.0;
+/// Les noms du détail d'un système n'apparaissent qu'au-delà de cette opacité.
+const DETAIL_LABEL_MIN: f32 = 0.35;
+/// Le détail se survole (et l'icône du système ne se survole plus) au-delà de cette opacité.
+const DETAIL_HOVER_MIN: f32 = 0.5;
+/// Contrats listés au plus dans le panneau (les autres se comptent).
+const CONTRACTS_SHOWN: usize = 4;
 
 /// Les traits de l'itinéraire : Portail (trait plein), hyperespace (tirets), halo dessous.
 #[derive(Default, Reflect, GizmoConfigGroup)]
@@ -106,6 +147,38 @@ struct DashedRouteGizmos;
 
 #[derive(Default, Reflect, GizmoConfigGroup)]
 struct RouteGlowGizmos;
+
+/// Les orbites du détail des systèmes, en traits fins.
+#[derive(Default, Reflect, GizmoConfigGroup)]
+struct OrbitGizmos;
+
+/// Un point du détail d'un système, à sa place sur la carte.
+struct DetailMarker {
+    /// L'entrée de la carte du système qui le contient.
+    entry: usize,
+    owner: sh_core::Id<Place>,
+    point: DetailPoint,
+    pos: MapPos,
+    /// Le centre de son orbite sur la carte (son parent, ou le centre du système).
+    orbit_center: MapPos,
+}
+
+/// Le détail des systèmes (calculé une fois à l'entrée de la vue) et les cibles du lieu courant.
+#[derive(Resource)]
+struct SystemDetails {
+    points: Vec<DetailMarker>,
+    /// L'ordre d'importance des points (icônes gardées et noms placés en premier).
+    order: Vec<usize>,
+    /// Le point le plus proche du vaisseau, quand la carte a été ouverte en vol dans ce système :
+    /// le repère « vous êtes ici » s'y pose au plus près.
+    here: Option<usize>,
+    /// Les cibles du lieu courant (système ou monde isolé), pour l'autopilote.
+    local: Vec<NavPoint>,
+}
+
+/// Survol imposé d'un point du détail (autopilote : `SH_HOVER=<cible>`).
+#[derive(Resource, Default)]
+struct ForcedTarget(Option<usize>);
 
 /// Les entrées de la carte (calculées une fois à l'entrée de la vue), et l'ordre d'importance
 /// de leurs icônes et étiquettes.
@@ -169,6 +242,15 @@ struct MapScreen {
     grid_left: f32,
     here: Option<Vec2>,
     dest: Option<Vec2>,
+    /// Opacité du détail des systèmes (0 : la galaxie seule ; 1 : le détail seul).
+    detail: f32,
+    /// Position de chaque point du détail (`None` : hors de l'écran, ou détail invisible), et
+    /// si son icône est montrée.
+    details: Vec<Option<Vec2>>,
+    detail_shown: Vec<bool>,
+    /// Les entrées et les points du détail qui sont la destination d'un contrat en cours.
+    contract_entries: Vec<bool>,
+    contract_points: Vec<bool>,
 }
 
 /// La couche des icônes et des étiquettes, sous tous les panneaux.
@@ -184,7 +266,32 @@ enum MapIcon {
     Fleet(usize),
     Here,
     Destination,
+    /// Un point du détail d'un système.
+    Detail(usize),
+    /// Le losange d'une destination de contrat : sur l'icône d'un système, ou sur un point de
+    /// livraison de son détail.
+    ContractEntry(usize),
+    ContractPoint(usize),
 }
+
+/// La couleur d'origine d'un repère qui s'efface en fondu (icône ou nom).
+#[derive(Component, Clone, Copy)]
+struct BaseColor(Color);
+
+/// Le bouton « Autopilote vers … » du panneau d'itinéraire.
+#[derive(Component)]
+struct AutopilotButton;
+
+#[derive(Component)]
+struct AutopilotButtonText;
+
+/// Le panneau des contrats en cours, et la liste qu'il reconstruit quand elle change.
+#[derive(Component)]
+struct ContractsPanel;
+
+/// Porte l'encart des touches de la carte (`KeyHelp`), tenu à jour selon ce qui est choisi.
+#[derive(Component)]
+struct MapKeys;
 
 /// Ce que nomme une étiquette de la carte.
 #[derive(Component, Clone, Copy, Debug)]
@@ -200,6 +307,7 @@ enum LabelTarget {
     Zone(usize),
     Column(usize),
     Row(usize),
+    Detail(usize),
 }
 
 /// Les panneaux de la carte que les étiquettes évitent.
@@ -273,6 +381,89 @@ fn icon_size(entry: &MapEntry) -> f32 {
     entry_icon(entry).map_or(0.0, |(_, size)| size)
 }
 
+/// L'icône d'un point du détail d'un système : image, taille à l'écran, couleur. Les points de
+/// livraison (structures) en ambre, le hub de Portails et le port en cyan des écrans.
+fn detail_icon(kind: NavKind) -> (&'static str, f32, Color) {
+    match kind {
+        NavKind::Body(PlacedKind::Star) => ("ui/map/world.png", 24.0, Color::srgb(1.0, 0.84, 0.50)),
+        NavKind::Body(PlacedKind::GasGiant) => {
+            ("ui/map/world.png", 22.0, Color::srgb(0.86, 0.76, 0.60))
+        }
+        NavKind::Body(PlacedKind::Planet) => ("ui/map/world.png", 18.0, theme::TEXT),
+        NavKind::Body(PlacedKind::Moon) => ("ui/map/world.png", 12.0, theme::TEXT_DIM),
+        NavKind::Body(PlacedKind::Station) => ("ui/map/station.png", 16.0, theme::TEXT),
+        NavKind::Structure(StructureKind::PortalHub) => ("ui/map/hub.png", 16.0, theme::SCREEN),
+        NavKind::Structure(_) => ("ui/map/station.png", 16.0, theme::ACCENT),
+        NavKind::Dock => ("ui/map/station.png", 14.0, theme::SCREEN),
+    }
+}
+
+/// Le genre d'un point du détail, en clair (infobulle, panneau de la cible).
+fn detail_kind_key(kind: NavKind) -> &'static str {
+    match kind {
+        NavKind::Body(PlacedKind::Star) => "map.detail.kind.star",
+        NavKind::Body(PlacedKind::Planet) => "map.detail.kind.planet",
+        NavKind::Body(PlacedKind::GasGiant) => "map.detail.kind.gas_giant",
+        NavKind::Body(PlacedKind::Moon) => "map.detail.kind.moon",
+        NavKind::Body(PlacedKind::Station) => "map.detail.kind.station",
+        NavKind::Structure(StructureKind::PortalHub) => "map.detail.kind.portal_hub",
+        NavKind::Structure(StructureKind::Shipyard) => "map.detail.kind.shipyard",
+        NavKind::Structure(StructureKind::Depot) => "map.detail.kind.depot",
+        NavKind::Dock => "map.detail.kind.dock",
+    }
+}
+
+/// L'ordre d'importance des points du détail : étoiles, planètes, points de livraison, ports,
+/// stations, lunes.
+fn detail_rank(kind: NavKind) -> u8 {
+    match kind {
+        NavKind::Body(PlacedKind::Star) => 0,
+        NavKind::Body(PlacedKind::Planet | PlacedKind::GasGiant) => 1,
+        NavKind::Structure(_) => 2,
+        NavKind::Dock => 3,
+        NavKind::Body(PlacedKind::Station) => 4,
+        NavKind::Body(PlacedKind::Moon) => 5,
+    }
+}
+
+/// Le détail de tous les systèmes publics de la carte, chaque point à sa place.
+fn build_details(data: &Data, texts: &Texts, entries: &[MapEntry]) -> Vec<DetailMarker> {
+    let mut out = Vec::new();
+    for (i, entry) in entries.iter().enumerate() {
+        if entry.kind != MapKind::System {
+            continue;
+        }
+        let Some(system) = data.galaxy.system(&entry.id) else {
+            continue;
+        };
+        let points = system_detail(data, texts, system);
+        let positions: Vec<MapPos> = points.iter().map(|p| p.map_pos(entry.pos)).collect();
+        for point in points {
+            let pos = point.map_pos(entry.pos);
+            let orbit_center = point
+                .parent
+                .and_then(|p| positions.get(p).copied())
+                .unwrap_or(entry.pos);
+            out.push(DetailMarker {
+                entry: i,
+                owner: entry.id.clone(),
+                point,
+                pos,
+                orbit_center,
+            });
+        }
+    }
+    out
+}
+
+/// Une distance de l'espace, lisible : en kilomètres, sans décimale.
+fn distance_text(texts: &Texts, meters: f64) -> String {
+    texts.format(
+        "map.target.distance",
+        &[("km", &texts.number((meters / 1000.0).max(0.0), 0))],
+    )
+}
+
 /// L'ordre d'importance des entrées (icônes gardées et étiquettes placées en premier) :
 /// systèmes, mondes isolés, stations, phénomènes, puis les lunes ; les plus peuplés d'abord.
 fn importance(entries: &[MapEntry]) -> Vec<usize> {
@@ -308,6 +499,15 @@ fn entry_for_place(
             .or_else(|| galaxy.station(at).and_then(|s| s.system.clone()))?;
         find(&system)
     })
+}
+
+/// Le système qui contient un lieu (un astre ou une station d'un système), sinon le lieu même.
+fn system_of(galaxy: &Galaxy, id: &sh_core::Id<Place>) -> sh_core::Id<Place> {
+    galaxy
+        .body(id)
+        .and_then(|b| b.system.clone())
+        .or_else(|| galaxy.station(id).and_then(|s| s.system.clone()))
+        .unwrap_or_else(|| id.clone())
 }
 
 /// Population lisible : « 3,4 milliard(s) », « 250 million(s) ».
@@ -412,6 +612,8 @@ fn configure_route_gizmos(mut store: ResMut<GizmoConfigStore>) {
     let (config, _) = store.config_mut::<RouteGlowGizmos>();
     config.line.width = 10.0;
     config.line.joints = GizmoLineJoint::Round(4);
+    let (config, _) = store.config_mut::<OrbitGizmos>();
+    config.line.width = 1.2;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -421,10 +623,12 @@ fn spawn_galaxy(
     texts: Res<Texts>,
     fonts: Res<UiFonts>,
     asset_server: Res<AssetServer>,
-    (location, knowledge, clock): (
+    (location, knowledge, clock, resume, corner): (
         Option<Res<Location>>,
         Option<Res<PlayerKnowledge>>,
         Option<Res<GameClock>>,
+        Option<Res<ResumeFlight>>,
+        Option<Single<Entity, With<HudCorner>>>,
     ),
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -495,6 +699,7 @@ fn spawn_galaxy(
     let icon = |path: &'static str, size: f32, color: Color, target: MapIcon| {
         (
             target,
+            BaseColor(color),
             ChildOf(layer),
             Pickable::IGNORE,
             ImageNode::new(asset_server.load(path)).with_color(color),
@@ -514,6 +719,7 @@ fn spawn_galaxy(
                 target,
                 font_size: size,
             },
+            BaseColor(color),
             ChildOf(layer),
             Pickable::IGNORE,
             Text::new(text),
@@ -580,6 +786,58 @@ fn spawn_galaxy(
         let color = faction_color(fleet.faction.as_ref()).with_alpha(1.0 - 0.65 * age);
         commands.spawn(icon("ui/map/fleet.png", 18.0, color, MapIcon::Fleet(i)));
     }
+    // Le détail des systèmes : une icône et un nom par point, cachés jusqu'au zoom.
+    let details = build_details(&data, &texts, &entries);
+    for (k, marker) in details.iter().enumerate() {
+        let (path, size, color) = detail_icon(marker.point.kind);
+        commands.spawn(icon(path, size, color, MapIcon::Detail(k)));
+        if let Some(name) = &marker.point.name {
+            let (font, color, size) = match marker.point.kind {
+                NavKind::Body(PlacedKind::Planet | PlacedKind::GasGiant | PlacedKind::Star) => {
+                    (fonts.body(13.0), theme::TEXT, 13.0)
+                }
+                NavKind::Structure(_) => (fonts.body(12.0), theme::ACCENT, 12.0),
+                _ => (fonts.body(12.0), theme::TEXT_DIM, 12.0),
+            };
+            commands.spawn(label(
+                name.clone(),
+                font,
+                color,
+                LabelTarget::Detail(k),
+                size,
+            ));
+        }
+    }
+    // Les losanges des destinations de contrat : un par système, un par point de livraison ;
+    // montrés selon les contrats en cours (`project_map`).
+    let diamond = |size: f32, target: MapIcon| {
+        (
+            target,
+            BaseColor(theme::ACCENT),
+            ChildOf(layer),
+            Pickable::IGNORE,
+            Node {
+                position_type: PositionType::Absolute,
+                width: px(size),
+                height: px(size),
+                border: UiRect::all(px(2)),
+                ..default()
+            },
+            BorderColor::all(theme::ACCENT),
+            UiTransform::from_rotation(Rot2::degrees(45.0)),
+            Visibility::Hidden,
+        )
+    };
+    for (i, entry) in entries.iter().enumerate() {
+        if entry.kind == MapKind::System {
+            commands.spawn(diamond(30.0, MapIcon::ContractEntry(i)));
+        }
+    }
+    for (k, marker) in details.iter().enumerate() {
+        if marker.point.delivery {
+            commands.spawn(diamond(22.0, MapIcon::ContractPoint(k)));
+        }
+    }
     commands.spawn(icon(
         "ui/map/target.png",
         40.0,
@@ -589,20 +847,81 @@ fn spawn_galaxy(
     commands.spawn(icon("ui/map/here.png", 40.0, theme::ACCENT, MapIcon::Here));
 
     spawn_panels(&mut commands, &texts, &fonts, &asset_server);
+    spawn_contracts_panel(&mut commands, &fonts, corner.as_deref().copied());
+    commands.spawn((
+        Name::new("Touches de la carte"),
+        SCOPE,
+        MapKeys,
+        KeyHelp::default(),
+    ));
 
-    // Autopilote (captures) : `SH_HOVER=<lieu>` simule le survol, `SH_ROUTE=<lieu>` pose un
-    // itinéraire (système ou monde isolé).
+    // Les cibles du lieu courant, et le point du détail le plus proche du vaisseau quand la
+    // carte a été ouverte en vol dans ce système.
+    let local = location_id
+        .as_ref()
+        .map(|here| nav_points(&data, &texts, here))
+        .unwrap_or_default();
+    let here_point = match (&location_id, resume.as_deref()) {
+        (Some(here), Some(resume)) if &resume.system == here => details
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| &m.owner == here && m.point.is_target())
+            .min_by(|a, b| {
+                let da = (a.1.point.real - resume.pos).length();
+                let db = (b.1.point.real - resume.pos).length();
+                da.total_cmp(&db)
+            })
+            .map(|(k, _)| k),
+        _ => None,
+    };
+
+    // Autopilote (captures) : `SH_HOVER=<lieu ou cible>` simule le survol, `SH_ROUTE=<lieu>`
+    // pose un itinéraire (système ou monde isolé), `SH_MAP_TARGET=<cible>` propose une cible du
+    // lieu courant à l'autopilote (panneau d'itinéraire).
     let pick = |var: &str| {
         let id = std::env::var(var).ok()?;
         entries.iter().find(|e| e.id.as_str() == id).cloned()
     };
+    let pick_detail = |var: &str| {
+        let id = std::env::var(var).ok()?;
+        let id = id.trim();
+        details
+            .iter()
+            .position(|m| m.point.id.as_deref() == Some(id))
+    };
     let forced_hover = pick("SH_HOVER");
-    if let (Some(dest), Some(here)) = (pick("SH_ROUTE"), location_id)
+    let forced_target = forced_hover
+        .is_none()
+        .then(|| pick_detail("SH_HOVER"))
+        .flatten();
+    if let (Some(dest), Some(here)) = (pick("SH_ROUTE"), location_id.clone())
         && dest.destination
         && dest.id != here
     {
         commands.insert_resource(crate::voyage::plan_route(&data, &here, &dest.id));
     }
+    let mut map_target = MapTarget::default();
+    if let (Ok(id), Some(here)) = (std::env::var("SH_MAP_TARGET"), location_id.as_ref()) {
+        match local.iter().find(|p| p.id == id.trim()) {
+            Some(point) => {
+                map_target.0 = Some(NavChoice {
+                    id: point.id.clone(),
+                    name: point.name.clone(),
+                    owner: here.clone(),
+                    click: TargetClick::Autopilot,
+                });
+            }
+            None => warn!("SH_MAP_TARGET : « {id} » n'est pas une cible du lieu courant"),
+        }
+    }
+    commands.insert_resource(map_target);
+    commands.insert_resource(ForcedTarget(forced_target));
+    commands.insert_resource(SystemDetails {
+        order: detail_order(&details),
+        points: details,
+        here: here_point,
+        local,
+    });
     commands.insert_resource(ForcedHover(forced_hover.clone()));
     commands.insert_resource(HoveredEntry(forced_hover));
     commands.insert_resource(FleetMarkers(fleets));
@@ -909,9 +1228,80 @@ fn spawn_panels(
                 TextColor(theme::TEXT),
                 Pickable::IGNORE,
             ),
+            // « Autopilote vers … » : montré quand une cible du lieu courant est choisie. Le
+            // seul élément de la carte qui retient un clic.
+            (
+                AutopilotButton,
+                MenuButton,
+                bevy::ui_widgets::Button,
+                bevy::ui_widgets::ActivateOnPress,
+                Node {
+                    display: Display::None,
+                    align_self: AlignSelf::FlexStart,
+                    margin: UiRect::top(px(6)),
+                    padding: UiRect::axes(px(18), px(8)),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                fonts.frame(Frame::Button),
+                children![(
+                    AutopilotButtonText,
+                    Text::new(""),
+                    TextLayout::no_wrap(),
+                    fonts.body(15.0),
+                    TextColor(theme::TEXT),
+                    Pickable::IGNORE,
+                )],
+            ),
         ],
     ));
     spawn_legend(commands, texts, fonts, asset_server);
+}
+
+/// Le panneau des contrats en cours : sous la date et les nouvelles, dans la colonne du coin
+/// haut droit (`clock::HudCorner`), qui les empile sans chevauchement ; à sa place si la
+/// colonne n'existe pas. Caché sans contrat ; son contenu suit `show_contracts`.
+fn spawn_contracts_panel(commands: &mut Commands, fonts: &UiFonts, corner: Option<Entity>) {
+    let mut panel = commands.spawn((
+        Name::new("Contrats en cours"),
+        SCOPE,
+        ContractsPanel,
+        MapPanel,
+        Pickable::IGNORE,
+        Node {
+            display: Display::None,
+            flex_direction: FlexDirection::Column,
+            row_gap: px(2),
+            padding: UiRect::new(px(18), px(18), px(11), px(12)),
+            ..default()
+        },
+        fonts.frame(Frame::Readout),
+    ));
+    match corner {
+        Some(corner) => {
+            panel.insert(ChildOf(corner));
+        }
+        None => {
+            panel.insert(Node {
+                display: Display::None,
+                position_type: PositionType::Absolute,
+                right: px(20),
+                top: px(70),
+                flex_direction: FlexDirection::Column,
+                row_gap: px(2),
+                padding: UiRect::new(px(18), px(18), px(11), px(12)),
+                ..default()
+            });
+        }
+    }
+}
+
+/// L'ordre d'importance des points du détail (`detail_rank`, puis l'ordre des données).
+fn detail_order(details: &[DetailMarker]) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..details.len()).collect();
+    order.sort_by_key(|&k| (detail_rank(details[k].point.kind), k));
+    order
 }
 
 /// La légende, en bas à droite : une icône (ou un trait) et son sens par ligne.
@@ -924,6 +1314,8 @@ fn spawn_legend(
     enum Mark {
         Icon(&'static str, Color),
         Line(Color, bool),
+        /// Le losange d'une destination de contrat.
+        Diamond,
     }
     let rows = [
         (
@@ -966,6 +1358,11 @@ fn spawn_legend(
             Mark::Icon("ui/map/target.png", theme::TEXT),
             "map.legend.destination",
         ),
+        (
+            Mark::Icon("ui/map/station.png", theme::ACCENT),
+            "map.legend.delivery",
+        ),
+        (Mark::Diamond, "map.legend.contract"),
         (Mark::Line(theme::SCREEN, false), "map.legend.portal"),
         (Mark::Line(theme::ACCENT, true), "map.legend.hyperspace"),
     ];
@@ -1037,6 +1434,20 @@ fn spawn_legend(
                     },
                 ));
             }
+            Mark::Diamond => {
+                commands.spawn((
+                    ChildOf(slot),
+                    Pickable::IGNORE,
+                    Node {
+                        width: px(11),
+                        height: px(11),
+                        border: UiRect::all(px(2)),
+                        ..default()
+                    },
+                    BorderColor::all(theme::ACCENT),
+                    UiTransform::from_rotation(Rot2::degrees(45.0)),
+                ));
+            }
             // Un trait plein (Portail) ou trois tirets (hyperespace), comme sur la carte.
             Mark::Line(color, dashed) => {
                 let (count, width) = if dashed { (3, 4.0) } else { (1, 20.0) };
@@ -1099,7 +1510,13 @@ fn project_map(
     entries: Res<MapEntries>,
     fleets: Res<FleetMarkers>,
     zones: Res<ZoneLabels>,
-    (location, route): (Option<Res<Location>>, Option<Res<RoutePlan>>),
+    (location, route, details, career, target): (
+        Option<Res<Location>>,
+        Option<Res<RoutePlan>>,
+        Res<SystemDetails>,
+        Option<Res<Career>>,
+        Res<MapTarget>,
+    ),
     mut screen: ResMut<MapScreen>,
 ) {
     let (camera, transform) = *camera;
@@ -1193,25 +1610,135 @@ fn project_map(
     };
     screen.here = location.as_ref().and_then(|l| place(&l.system));
     screen.dest = route.as_ref().and_then(|r| place(&r.dest));
+
+    // Le détail des systèmes, en fondu selon la taille à l'écran du disque d'un système.
+    screen.detail = detail_fade(DETAIL_RADIUS as f32 * screen.scale);
+    let detail = screen.detail;
+    screen.details = details
+        .points
+        .iter()
+        .map(|m| {
+            (detail > 0.0)
+                .then(|| project(world(m.pos)))
+                .flatten()
+                .filter(|p| on_screen(*p, 40.0))
+        })
+        .collect();
+    let mut markers = Vec::new();
+    let mut indices = Vec::new();
+    for &k in &details.order {
+        if let Some(p) = screen.details[k] {
+            let (_, size, _) = detail_icon(details.points[k].point.kind);
+            markers.push((p.x, p.y, size / 2.0));
+            indices.push(k);
+        }
+    }
+    screen.detail_shown = vec![false; details.points.len()];
+    for (k, keep) in indices.into_iter().zip(thin_markers(&markers)) {
+        screen.detail_shown[k] = keep;
+    }
+    // Au plus près, le repère du vaisseau glisse du centre du système vers la cible la plus
+    // proche de lui.
+    if let (Some(center), Some(k)) = (screen.here, details.here)
+        && let Some(near) = screen.details.get(k).copied().flatten()
+    {
+        screen.here = Some(center.lerp(near, detail));
+    }
+    // La cible proposée à l'autopilote porte le repère de la destination : un point du détail,
+    // ou l'entrée d'un monde isolé.
+    if let Some(choice) = &target.0 {
+        let point = details
+            .points
+            .iter()
+            .position(|m| m.owner == choice.owner && m.point.id.as_deref() == Some(&choice.id))
+            .and_then(|k| screen.details.get(k).copied().flatten());
+        let entry = list
+            .iter()
+            .position(|e| e.id.as_str() == choice.id)
+            .and_then(|i| screen.entries.get(i).copied().flatten());
+        screen.dest = point.or(entry);
+    }
+
+    // Les destinations des contrats en cours.
+    screen.contract_entries = vec![false; list.len()];
+    screen.contract_points = vec![false; details.points.len()];
+    let active = career
+        .as_ref()
+        .map(|c| {
+            c.captain
+                .contracts
+                .iter()
+                .filter(|c| c.state == ContractState::Active)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    for contract in active {
+        if let Some(i) = entry_for_place(&data.galaxy, list, &contract.to) {
+            screen.contract_entries[i] = true;
+            for (k, m) in details.points.iter().enumerate() {
+                if m.entry == i && m.point.delivery {
+                    screen.contract_points[k] = true;
+                }
+            }
+        }
+    }
 }
 
-/// L'entrée ou la flotte sous le curseur, à l'écran (à quelques pixels de son icône).
+/// L'entrée, la flotte ou la cible du détail sous le curseur, à l'écran (à quelques pixels de
+/// son icône). Rien au-dessus d'un panneau de la carte (un clic y vise le panneau).
+#[allow(clippy::too_many_arguments)]
 fn hover(
     window: Single<&Window, With<PrimaryWindow>>,
     screen: Res<MapScreen>,
     entries: Res<MapEntries>,
     fleets: Res<FleetMarkers>,
-    forced: Res<ForcedHover>,
+    (forced, forced_target, details, location): (
+        Res<ForcedHover>,
+        Res<ForcedTarget>,
+        Res<SystemDetails>,
+        Option<Res<Location>>,
+    ),
+    panels: Query<(&ComputedNode, &UiGlobalTransform), With<MapPanel>>,
     mut hovered: ResMut<HoveredEntry>,
     mut hovered_fleet: ResMut<HoveredFleet>,
+    mut hovered_target: ResMut<HoveredTarget>,
 ) {
+    let here = location.as_ref().map(|l| &l.system);
+    let choice_for = |k: usize| {
+        let m = &details.points[k];
+        let id = m.point.id.clone()?;
+        let destination = entries.entries.get(m.entry).is_some_and(|e| e.destination);
+        Some(NavChoice {
+            name: m.point.name.clone().unwrap_or_else(|| id.clone()),
+            id,
+            owner: m.owner.clone(),
+            click: target_click(here, &m.owner, destination),
+        })
+    };
     if forced.0.is_some() {
         return;
     }
-    let (entry, fleet) = match window.cursor_position() {
-        None => (None, None),
-        Some(cursor) => {
+    if let Some(k) = forced_target.0 {
+        let choice = choice_for(k);
+        if hovered_target.0 != choice {
+            hovered_target.0 = choice;
+        }
+        return;
+    }
+    let over_panel = |cursor: Vec2| {
+        panels.iter().any(|(computed, transform)| {
+            let scale = computed.inverse_scale_factor();
+            let half = computed.size() * scale / 2.0;
+            let center = transform.translation * scale;
+            computed.size().x > 0.0
+                && (cursor.x - center.x).abs() <= half.x
+                && (cursor.y - center.y).abs() <= half.y
+        })
+    };
+    let (entry, fleet, target) = match window.cursor_position() {
+        Some(cursor) if !over_panel(cursor) => {
             let list = &entries.entries;
+            let detail_on = screen.detail >= DETAIL_HOVER_MIN;
             let nearest_entry = list
                 .iter()
                 .enumerate()
@@ -1238,18 +1765,52 @@ fn hover(
                     (d <= 11.0).then_some((d, f))
                 })
                 .min_by(|a, b| a.0.total_cmp(&b.0));
-            match (nearest_entry, nearest_fleet) {
-                (Some(e), Some(f)) if f.0 < e.0 => (None, Some(f.1.clone())),
-                (None, Some(f)) => (None, Some(f.1.clone())),
-                (e, _) => (e.map(|e| e.1.clone()), None),
+            // Au plus près, les cibles du détail passent avant l'icône du système (effacée) ;
+            // l'étoile sans nom, qui n'est pas une cible, laisse voir le système.
+            let nearest_detail = details
+                .points
+                .iter()
+                .enumerate()
+                .filter(|_| detail_on)
+                .filter(|(k, m)| {
+                    m.point.is_target() && screen.detail_shown.get(*k).copied().unwrap_or(false)
+                })
+                .filter_map(|(k, m)| {
+                    let p = screen.details.get(k).copied().flatten()?;
+                    let d = cursor.distance(p);
+                    let (_, size, _) = detail_icon(m.point.kind);
+                    (d <= size / 2.0 + 5.0).then_some((d, k))
+                })
+                .min_by(|a, b| a.0.total_cmp(&b.0));
+            match (nearest_detail, nearest_entry, nearest_fleet) {
+                (Some(d), e, _) if e.is_none_or(|e| d.0 <= e.0) => (None, None, choice_for(d.1)),
+                (_, Some(e), Some(f)) if f.0 < e.0 => (None, Some(f.1.clone()), None),
+                (_, None, Some(f)) => (None, Some(f.1.clone()), None),
+                (_, e, _) => (e.map(|e| e.1.clone()), None, None),
             }
         }
+        _ => (None, None, None),
     };
+    // Une entrée de la carte qui est une cible du lieu courant (un monde isolé et ses lunes) :
+    // un clic la propose à l'autopilote.
+    let target = target.or_else(|| {
+        let entry = entry.as_ref()?;
+        let point = details.local.iter().find(|p| p.id == entry.id.as_str())?;
+        Some(NavChoice {
+            id: point.id.clone(),
+            name: point.name.clone(),
+            owner: here?.clone(),
+            click: TargetClick::Autopilot,
+        })
+    });
     if hovered.0 != entry {
         hovered.0 = entry;
     }
     if hovered_fleet.0 != fleet {
         hovered_fleet.0 = fleet;
+    }
+    if hovered_target.0 != target {
+        hovered_target.0 = target;
     }
 }
 
@@ -1272,53 +1833,105 @@ fn set_visible(visibility: &mut Mut<Visibility>, visible: bool) {
 }
 
 /// Place les icônes sur leurs repères ; la position du joueur bat doucement, la destination
-/// tourne lentement.
+/// tourne lentement, les losanges des contrats battent. Au zoom, l'icône d'un système s'efface
+/// pendant que son détail apparaît (même fondu, `MapScreen::detail`).
+#[allow(clippy::type_complexity)]
 fn place_markers(
     time: Res<Time>,
     screen: Res<MapScreen>,
     entries: Res<MapEntries>,
     mut icons: Query<(
         &MapIcon,
+        &BaseColor,
         &ComputedNode,
         &mut Node,
         &mut Visibility,
         &mut UiTransform,
+        Option<&mut ImageNode>,
+        Option<&mut BorderColor>,
     )>,
 ) {
     let t = time.elapsed_secs();
-    for (icon, computed, mut node, mut visibility, mut transform) in &mut icons {
+    let detail = screen.detail;
+    let galaxy = 1.0 - detail;
+    let is_system = |i: usize| {
+        entries
+            .entries
+            .get(i)
+            .is_some_and(|e| e.kind == MapKind::System)
+    };
+    let pulse = 0.75 + 0.25 * (t * 2.4).sin();
+    for (icon, base, computed, mut node, mut visibility, mut transform, image, border) in &mut icons
+    {
         let size = computed.size() * computed.inverse_scale_factor();
-        let at = match *icon {
-            MapIcon::Entry(i) => screen
-                .entries
-                .get(i)
-                .copied()
-                .flatten()
-                .filter(|_| screen.shown.get(i).copied().unwrap_or(false)),
-            // Le badge du hub, au coin haut-droit de l'icône du système.
-            MapIcon::Hub(i) => screen
+        let entry_at = |i: usize| {
+            screen
                 .entries
                 .get(i)
                 .copied()
                 .flatten()
                 .filter(|_| screen.shown.get(i).copied().unwrap_or(false))
-                .map(|p| {
+        };
+        let (at, alpha) = match *icon {
+            MapIcon::Entry(i) => (entry_at(i), if is_system(i) { galaxy } else { 1.0 }),
+            // Le badge du hub, au coin haut-droit de l'icône du système.
+            MapIcon::Hub(i) => (
+                entry_at(i).map(|p| {
                     let r = entries.entries.get(i).map_or(14.0, icon_size) / 2.0;
                     p + Vec2::new(r * 0.8, -r * 0.8)
                 }),
-            MapIcon::Fleet(i) => screen.fleets.get(i).copied().flatten(),
-            MapIcon::Here => screen.here,
-            MapIcon::Destination => screen.dest,
+                if is_system(i) { galaxy } else { 1.0 },
+            ),
+            MapIcon::Fleet(i) => (screen.fleets.get(i).copied().flatten(), 1.0),
+            MapIcon::Here => (screen.here, 1.0),
+            MapIcon::Destination => (screen.dest, 1.0),
+            MapIcon::Detail(k) => (
+                screen
+                    .details
+                    .get(k)
+                    .copied()
+                    .flatten()
+                    .filter(|_| screen.detail_shown.get(k).copied().unwrap_or(false)),
+                detail,
+            ),
+            MapIcon::ContractEntry(i) => (
+                entry_at(i).filter(|_| screen.contract_entries.get(i).copied().unwrap_or(false)),
+                galaxy * pulse,
+            ),
+            MapIcon::ContractPoint(k) => (
+                screen
+                    .details
+                    .get(k)
+                    .copied()
+                    .flatten()
+                    .filter(|_| screen.contract_points.get(k).copied().unwrap_or(false)),
+                detail * pulse,
+            ),
         };
+        let at = at.filter(|_| alpha > 0.02);
         set_visible(&mut visibility, at.is_some());
         let Some(at) = at else { continue };
         set_position(&mut node, at.x - size.x / 2.0, at.y - size.y / 2.0);
+        let color = base.0.with_alpha(base.0.alpha() * alpha.min(1.0));
+        if let Some(mut image) = image
+            && image.color != color
+        {
+            image.color = color;
+        }
+        if let Some(mut border) = border
+            && border.top != color
+        {
+            *border = BorderColor::all(color);
+        }
         transform.set_if_neq(match *icon {
             MapIcon::Here => UiTransform {
                 scale: Vec2::splat(1.0 + 0.08 * (t * 3.0).sin()),
                 ..UiTransform::IDENTITY
             },
             MapIcon::Destination => UiTransform::from_rotation(Rot2::radians(0.35 * t)),
+            MapIcon::ContractEntry(_) | MapIcon::ContractPoint(_) => {
+                UiTransform::from_rotation(Rot2::degrees(45.0))
+            }
             _ => UiTransform::IDENTITY,
         });
     }
@@ -1332,6 +1945,7 @@ fn place_map_labels(
     screen: Res<MapScreen>,
     entries: Res<MapEntries>,
     hovered: Res<HoveredEntry>,
+    (hovered_target, details): (Res<HoveredTarget>, Res<SystemDetails>),
     location: Option<Res<Location>>,
     route: Option<Res<RoutePlan>>,
     mut labels: Query<(
@@ -1341,6 +1955,8 @@ fn place_map_labels(
         &ComputedNode,
         &mut Node,
         &mut Visibility,
+        &BaseColor,
+        &mut TextColor,
     )>,
     panels: Query<(&ComputedNode, &UiGlobalTransform), (With<MapPanel>, Without<MapLabel>)>,
 ) {
@@ -1359,9 +1975,15 @@ fn place_map_labels(
     };
     let mut entry_labels: Vec<Option<(Entity, Vec2)>> = vec![None; list.len()];
     let mut zone_labels: Vec<Option<(Entity, Vec2)>> = vec![None; screen.zones.len()];
-    for (entity, label, text, computed, mut node, mut visibility) in &mut labels {
+    let mut detail_labels: Vec<Option<(Entity, Vec2)>> = vec![None; details.points.len()];
+    for (entity, label, text, computed, mut node, mut visibility, _, _) in &mut labels {
         let size = size_of(text, label, computed);
         match label.target {
+            LabelTarget::Detail(k) => {
+                if let Some(slot) = detail_labels.get_mut(k) {
+                    *slot = Some((entity, size));
+                }
+            }
             LabelTarget::Entry(i) => {
                 if let Some(slot) = entry_labels.get_mut(i) {
                     *slot = Some((entity, size));
@@ -1411,6 +2033,17 @@ fn place_map_labels(
             .flatten()
             .map(|p| ScreenRect::around(p.x, p.y, 8.0)),
     );
+    if screen.detail > 0.02 {
+        for (k, m) in details.points.iter().enumerate() {
+            if let (Some(p), true) = (
+                screen.details.get(k).copied().flatten(),
+                screen.detail_shown.get(k).copied().unwrap_or(false),
+            ) {
+                let (_, size, _) = detail_icon(m.point.kind);
+                obstacles.push(ScreenRect::around(p.x, p.y, size / 2.0));
+            }
+        }
+    }
     obstacles.extend(
         [screen.here, screen.dest]
             .into_iter()
@@ -1429,34 +2062,35 @@ fn place_map_labels(
         ));
     }
 
-    // L'ordre de placement.
+    // L'ordre de placement : la position du joueur, la destination, ce qui est survolé, puis
+    // au plus près le détail des systèmes, puis le reste de la carte.
     let find = |id: &sh_core::Id<Place>| list.iter().position(|e| &e.id == id);
-    let mut wanted: Vec<usize> = Vec::new();
-    for i in [
-        location.as_ref().and_then(|l| find(&l.system)),
-        route.as_ref().and_then(|r| find(&r.dest)),
-        hovered.0.as_ref().and_then(|h| find(&h.id)),
-    ]
-    .into_iter()
-    .flatten()
-    .chain(entries.order.iter().copied())
-    {
-        if !wanted.contains(&i) {
-            wanted.push(i);
-        }
-    }
     let mut requests = Vec::new();
     let mut owners = Vec::new();
-    for i in wanted {
+    let mut done_entries = vec![false; list.len()];
+    let mut push_entry = |i: usize, requests: &mut Vec<LabelRequest>, owners: &mut Vec<Entity>| {
+        if done_entries.get(i).copied().unwrap_or(true) {
+            return;
+        }
+        done_entries[i] = true;
         let (Some(anchor), true, Some((entity, size))) = (
             screen.entries.get(i).copied().flatten(),
             screen.shown.get(i).copied().unwrap_or(false),
             entry_labels.get(i).copied().flatten(),
         ) else {
-            continue;
+            return;
         };
         let clearance = if list[i].kind == MapKind::Phenomenon && list[i].radius.is_some() {
             0.0
+        } else if list[i].kind == MapKind::System {
+            // L'icône du système s'efface au profit de l'étoile de son détail (plus petite) ;
+            // le losange d'une destination de contrat déborde de l'icône.
+            let icon = if screen.contract_entries.get(i).copied().unwrap_or(false) {
+                21.0
+            } else {
+                icon_size(&list[i]) / 2.0
+            };
+            icon * (1.0 - screen.detail) + 13.0 * screen.detail
         } else {
             icon_size(&list[i]) / 2.0
         };
@@ -1467,6 +2101,57 @@ fn place_map_labels(
             centered: clearance == 0.0,
         });
         owners.push(entity);
+    };
+    for i in [
+        location.as_ref().and_then(|l| find(&l.system)),
+        route.as_ref().and_then(|r| find(&r.dest)),
+        hovered.0.as_ref().and_then(|h| find(&h.id)),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        push_entry(i, &mut requests, &mut owners);
+    }
+    if screen.detail >= DETAIL_LABEL_MIN {
+        let hovered_detail = hovered_target.0.as_ref().and_then(|t| {
+            details
+                .points
+                .iter()
+                .position(|m| m.owner == t.owner && m.point.id.as_deref() == Some(t.id.as_str()))
+        });
+        let mut done = vec![false; details.points.len()];
+        for k in hovered_detail
+            .into_iter()
+            .chain(details.order.iter().copied())
+        {
+            if std::mem::replace(&mut done[k], true) {
+                continue;
+            }
+            let (Some(anchor), true, Some((entity, size))) = (
+                screen.details.get(k).copied().flatten(),
+                screen.detail_shown.get(k).copied().unwrap_or(false),
+                detail_labels.get(k).copied().flatten(),
+            ) else {
+                continue;
+            };
+            let (_, icon, _) = detail_icon(details.points[k].point.kind);
+            // Le losange d'une destination de contrat déborde de l'icône.
+            let clearance = if screen.contract_points.get(k).copied().unwrap_or(false) {
+                (icon / 2.0).max(15.0)
+            } else {
+                icon / 2.0
+            };
+            requests.push(LabelRequest {
+                anchor: (anchor.x, anchor.y),
+                size: (size.x, size.y),
+                clearance,
+                centered: false,
+            });
+            owners.push(entity);
+        }
+    }
+    for &i in &entries.order {
+        push_entry(i, &mut requests, &mut owners);
     }
     if screen.scale < ZONE_LABEL_MAX_SCALE {
         for (anchor, label) in screen.zones.iter().zip(&zone_labels) {
@@ -1489,7 +2174,7 @@ fn place_map_labels(
             positions.push((entity, at));
         }
     }
-    for (entity, label, _, _, mut node, mut visibility) in &mut labels {
+    for (entity, label, _, _, mut node, mut visibility, base, mut color) in &mut labels {
         if matches!(label.target, LabelTarget::Column(_) | LabelTarget::Row(_)) {
             continue;
         }
@@ -1499,6 +2184,13 @@ fn place_map_labels(
                 set_visible(&mut visibility, true);
             }
             None => set_visible(&mut visibility, false),
+        }
+        // Les noms du détail apparaissent avec lui.
+        if matches!(label.target, LabelTarget::Detail(_)) {
+            let wanted = base.0.with_alpha(base.0.alpha() * screen.detail);
+            if color.0 != wanted {
+                color.0 = wanted;
+            }
         }
     }
 }
@@ -1568,6 +2260,53 @@ fn entry_lines(
     lines
 }
 
+/// Les lignes d'une infobulle de cible du détail : le nom, son genre et son système, puis si
+/// c'est un point de livraison (et s'il est attendu par un contrat), et ce que fait un clic.
+fn target_lines(
+    data: &Data,
+    texts: &Texts,
+    details: &SystemDetails,
+    career: Option<&Career>,
+    target: &NavChoice,
+) -> Vec<String> {
+    let marker = details
+        .points
+        .iter()
+        .find(|m| m.owner == target.owner && m.point.id.as_deref() == Some(target.id.as_str()));
+    let owner = data
+        .galaxy
+        .place_name(&target.owner)
+        .map_or_else(|| target.owner.to_string(), str::to_owned);
+    let mut lines = vec![target.name.clone()];
+    if let Some(marker) = marker {
+        lines.push(texts.format(
+            "map.detail.kind_in",
+            &[
+                ("kind", &texts.get(detail_kind_key(marker.point.kind))),
+                ("place", &owner),
+            ],
+        ));
+        if marker.point.delivery {
+            lines.push(texts.get("map.detail.delivery"));
+            let expected = career.is_some_and(|c| {
+                c.captain.contracts.iter().any(|c| {
+                    c.state == ContractState::Active
+                        && system_of(&data.galaxy, &c.to) == target.owner
+                })
+            });
+            if expected {
+                lines.push(texts.get("map.detail.contract"));
+            }
+        }
+    }
+    lines.push(match target.click {
+        TargetClick::Autopilot => texts.get("map.detail.click_autopilot"),
+        TargetClick::Route => texts.format("map.detail.click_route", &[("place", &owner)]),
+        TargetClick::Nothing => texts.get("map.detail.elsewhere"),
+    });
+    lines
+}
+
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn show_tooltip(
     data: Res<Data>,
@@ -1576,6 +2315,12 @@ fn show_tooltip(
     hovered_fleet: Res<HoveredFleet>,
     forced: Res<ForcedHover>,
     (screen, entries, location): (Res<MapScreen>, Res<MapEntries>, Option<Res<Location>>),
+    (hovered_target, details, forced_target, career): (
+        Res<HoveredTarget>,
+        Res<SystemDetails>,
+        Res<ForcedTarget>,
+        Option<Res<Career>>,
+    ),
     window: Single<&Window, With<PrimaryWindow>>,
     mut tooltip: Single<(&mut Node, &mut Visibility, &ComputedNode), With<Tooltip>>,
     mut title: Single<&mut Text, (With<TooltipTitle>, Without<TooltipBody>)>,
@@ -1599,16 +2344,32 @@ fn show_tooltip(
         lines.push(texts.format("map.tip.age", &[("days", &fleet.age_days.to_string())]));
         lines
     } else if let Some(entry) = &hovered.0 {
-        entry_lines(&data, &texts, entry, location.as_ref().map(|l| &l.system))
+        let mut lines = entry_lines(&data, &texts, entry, location.as_ref().map(|l| &l.system));
+        // Un monde isolé où l'on est (ou l'une de ses lunes) : un clic le propose à
+        // l'autopilote.
+        if hovered_target
+            .0
+            .as_ref()
+            .is_some_and(|t| t.click == TargetClick::Autopilot)
+        {
+            lines.push(texts.get("map.detail.click_autopilot"));
+        }
+        lines
+    } else if let Some(target) = &hovered_target.0 {
+        target_lines(&data, &texts, &details, career.as_deref(), target)
     } else {
         set_visible(visibility, false);
         return;
     };
     // Sous le curseur ; survol imposé par l'autopilote : à côté de l'icône survolée.
-    let forced_at = forced.0.as_ref().and_then(|f| {
-        let i = entries.entries.iter().position(|e| e.id == f.id)?;
-        screen.entries.get(i).copied().flatten()
-    });
+    let forced_at = forced
+        .0
+        .as_ref()
+        .and_then(|f| {
+            let i = entries.entries.iter().position(|e| e.id == f.id)?;
+            screen.entries.get(i).copied().flatten()
+        })
+        .or_else(|| screen.details.get(forced_target.0?).copied().flatten());
     let cursor = forced_at
         .or_else(|| window.cursor_position())
         .unwrap_or(window.size() / 2.0);
@@ -1631,14 +2392,26 @@ fn show_tooltip(
     set_visible(visibility, true);
 }
 
+/// Le panneau d'itinéraire : la position et le carburant, puis la route choisie et ses deux
+/// façons d'y aller, ou la cible proposée à l'autopilote et son bouton. Les touches ne s'y
+/// écrivent pas : l'encart des touches les donne (`update_map_keys`).
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn show_route(
     data: Res<Data>,
     texts: Res<Texts>,
     route: Option<Res<RoutePlan>>,
     fuel: Option<Res<ShipFuel>>,
     location: Option<Res<Location>>,
-    mut lines: Query<(&RouteLine, &mut Text, &mut TextColor, &mut Node)>,
+    (target, details, resume): (
+        Res<MapTarget>,
+        Res<SystemDetails>,
+        Option<Res<ResumeFlight>>,
+    ),
+    mut lines: Query<(&RouteLine, &mut Text, &mut TextColor, &mut Node), Without<AutopilotButton>>,
+    mut button: Query<&mut Node, (With<AutopilotButton>, Without<RouteLine>)>,
+    mut button_text: Query<&mut Text, (With<AutopilotButtonText>, Without<RouteLine>)>,
 ) {
+    let here_id = location.as_ref().map(|l| l.system.clone());
     let here = location
         .and_then(|l| l.endpoint(&data))
         .map_or_else(String::new, |e| e.name().to_owned());
@@ -1648,9 +2421,37 @@ fn show_route(
         texts.format("map.fuel", &[("fuel", &format!("{have:.0}"))]),
     ]
     .join("\n");
-    let (title, title_color, options) = match route {
-        None => (texts.get("map.plan.hint"), theme::TEXT_DIM, Vec::new()),
-        Some(route) => {
+    let choice = target
+        .0
+        .as_ref()
+        .filter(|t| t.click == TargetClick::Autopilot);
+    let (title, title_color, options) = match (choice, route) {
+        (Some(choice), _) => {
+            let point = details.local.iter().find(|p| p.id == choice.id);
+            let mut options = Vec::new();
+            if let Some(point) = point {
+                let kind = texts.get(detail_kind_key(point.kind));
+                options.push(if point.is_delivery() {
+                    texts.format("map.target.kind_delivery", &[("kind", &kind)])
+                } else {
+                    kind
+                });
+                // La distance, quand on sait où est le vaisseau (carte ouverte en vol).
+                if let Some(resume) = resume
+                    .as_ref()
+                    .filter(|r| here_id.as_ref() == Some(&r.system))
+                {
+                    options.push(distance_text(&texts, (point.pos - resume.pos).length()));
+                }
+            }
+            (
+                texts.format("map.target.title", &[("name", &choice.name)]),
+                theme::ACCENT,
+                options,
+            )
+        }
+        (None, None) => (texts.get("map.plan.hint"), theme::TEXT_DIM, Vec::new()),
+        (None, Some(route)) => {
             let dest = endpoint(&data.galaxy, &route.dest);
             let name = dest.map_or_else(String::new, |e| e.name().to_owned());
             let mut options = vec![match &route.portal {
@@ -1715,6 +2516,221 @@ fn show_route(
                 set_text(&mut text, options.join("\n"));
             }
         }
+    }
+    let display = if choice.is_some() {
+        Display::Flex
+    } else {
+        Display::None
+    };
+    for mut node in &mut button {
+        if node.display != display {
+            node.display = display;
+        }
+    }
+    if let Some(choice) = choice {
+        let wanted = texts.format("map.target.engage", &[("name", &choice.name)]);
+        for mut text in &mut button_text {
+            set_text(&mut text, wanted.clone());
+        }
+    }
+}
+
+/// Le bouton « Autopilote vers … » : comme la touche du panneau (`voyage::engage_autopilot`).
+fn on_autopilot_button(
+    event: On<Activate>,
+    buttons: Query<(), With<AutopilotButton>>,
+    mut commands: Commands,
+) {
+    if buttons.contains(event.entity) {
+        commands.queue(crate::voyage::engage_autopilot);
+    }
+}
+
+/// Une ligne du panneau des contrats (comparée d'un frame à l'autre : la liste n'est refaite
+/// qu'au changement).
+#[derive(Clone, Debug, PartialEq)]
+enum ContractLine {
+    Title(String),
+    Detail(String),
+    Deadline(String, Color),
+    More(String),
+}
+
+/// Le panneau des contrats en cours : pour chacun, son titre, son émetteur et son trajet, son
+/// échéance (ambre à deux jours, rouge en retard). Caché sans contrat.
+#[allow(clippy::too_many_arguments)]
+fn show_contracts(
+    mut commands: Commands,
+    data: Res<Data>,
+    texts: Res<Texts>,
+    fonts: Res<UiFonts>,
+    career: Option<Res<Career>>,
+    clock: Option<Res<GameClock>>,
+    mut panel: Query<(Entity, &mut Node), With<ContractsPanel>>,
+    mut built: Local<Option<(Entity, Vec<ContractLine>)>>,
+) {
+    let Ok((entity, mut node)) = panel.single_mut() else {
+        return;
+    };
+    let mut lines = Vec::new();
+    if let (Some(career), Some(clock)) = (career, clock) {
+        let active: Vec<_> = career
+            .captain
+            .contracts
+            .iter()
+            .filter(|c| c.state == ContractState::Active)
+            .collect();
+        for c in active.iter().take(CONTRACTS_SHOWN) {
+            lines.push(ContractLine::Title(contract_title(&texts, &data, c)));
+            lines.push(ContractLine::Detail(texts.format(
+                "map.contract.route",
+                &[
+                    (
+                        "issuer",
+                        &crate::codex::organization_name(&texts, &data, &c.issuer),
+                    ),
+                    ("from", &display_name(&data, c.from.as_str())),
+                    ("to", &display_name(&data, c.to.as_str())),
+                ],
+            )));
+            let days = clock.date.days_until(c.deadline);
+            let (left, color) = match days {
+                ..0 => (texts.get("map.contract.overdue"), theme::DANGER),
+                0 => (texts.get("map.contract.today"), theme::ACCENT),
+                1..=2 => (
+                    texts.format("map.contract.days", &[("days", &days.to_string())]),
+                    theme::ACCENT,
+                ),
+                _ => (
+                    texts.format("map.contract.days", &[("days", &days.to_string())]),
+                    theme::TEXT_DIM,
+                ),
+            };
+            lines.push(ContractLine::Deadline(
+                texts.format(
+                    "map.contract.deadline",
+                    &[("date", &format_date(&texts, c.deadline)), ("left", &left)],
+                ),
+                color,
+            ));
+        }
+        if active.len() > CONTRACTS_SHOWN {
+            lines.push(ContractLine::More(texts.format(
+                "map.contract.more",
+                &[("count", &(active.len() - CONTRACTS_SHOWN).to_string())],
+            )));
+        }
+    }
+    if built
+        .as_ref()
+        .is_some_and(|(e, l)| *e == entity && *l == lines)
+    {
+        return;
+    }
+    let display = if lines.is_empty() {
+        Display::None
+    } else {
+        Display::Flex
+    };
+    if node.display != display {
+        node.display = display;
+    }
+    // Reconstruit la liste : l'en-tête, puis les lignes ; un filet entre deux contrats.
+    commands.entity(entity).despawn_children();
+    if !lines.is_empty() {
+        commands.spawn((
+            ChildOf(entity),
+            Pickable::IGNORE,
+            theme::heading(
+                &fonts,
+                &texts.get("map.contract.header"),
+                12.0,
+                theme::SCREEN,
+            ),
+            Node {
+                margin: UiRect::bottom(px(4)),
+                ..default()
+            },
+        ));
+    }
+    for (n, line) in lines.iter().enumerate() {
+        let (text, font, color, top) = match line {
+            ContractLine::Title(t) => (
+                t.clone(),
+                fonts.title(14.0),
+                theme::TEXT,
+                if n == 0 { 0.0 } else { 7.0 },
+            ),
+            ContractLine::Detail(t) => (t.clone(), fonts.body(13.0), theme::TEXT_DIM, 0.0),
+            ContractLine::Deadline(t, c) => (t.clone(), fonts.body(13.0), *c, 0.0),
+            ContractLine::More(t) => (t.clone(), fonts.body(13.0), theme::TEXT_DIM, 6.0),
+        };
+        commands.spawn((
+            ChildOf(entity),
+            Pickable::IGNORE,
+            Text::new(text),
+            font,
+            TextColor(color),
+            // Les dates et les noms ne passent jamais à la ligne (AGENTS.md §4).
+            TextLayout::no_wrap(),
+            Node {
+                margin: UiRect::top(px(top)),
+                ..default()
+            },
+        ));
+    }
+    *built = Some((entity, lines));
+}
+
+/// L'encart des touches de la carte : déplacer, zoomer, choisir, puis selon ce qui est choisi
+/// partir (Portail, hyperespace) ou engager l'autopilote, et revenir aux commandes. Réécrit
+/// seulement quand il change (l'encart se reconstruit alors).
+fn update_map_keys(
+    texts: Res<Texts>,
+    route: Option<Res<RoutePlan>>,
+    target: Res<MapTarget>,
+    settings: Res<UserSettings>,
+    tutorial: Option<Res<Tutorial>>,
+    mut help: Query<&mut KeyHelp, With<MapKeys>>,
+) {
+    let Ok(mut help) = help.single_mut() else {
+        return;
+    };
+    let mut hints = vec![
+        KeyHint::action::<Pan>(texts.get("map.keys.pan")),
+        KeyHint::action::<Zoom>(texts.get("map.keys.zoom")),
+        KeyHint::action::<Select>(texts.get("map.keys.select")),
+    ];
+    let autopilot = target
+        .0
+        .as_ref()
+        .is_some_and(|t| t.click == TargetClick::Autopilot);
+    if autopilot {
+        hints.push(KeyHint::action::<TravelPortal>(
+            texts.get("map.keys.autopilot"),
+        ));
+    } else if let Some(route) = route {
+        if route.portal.is_some() {
+            hints.push(KeyHint::action::<TravelPortal>(
+                texts.get("map.keys.portal"),
+            ));
+        }
+        if route.hyperspace.is_some() {
+            hints.push(KeyHint::action::<TravelHyperspace>(
+                texts.get("map.keys.hyperspace"),
+            ));
+        }
+    }
+    hints.push(KeyHint::action::<ToggleMap>(texts.get("map.keys.back")));
+    hints.push(KeyHint::action::<Pause>(texts.get("map.keys.pause")));
+    if crate::tutorial::is_active(&settings, tutorial.as_deref()) {
+        hints.push(KeyHint::action::<SkipTutorial>(
+            texts.get("map.keys.skip_tutorial"),
+        ));
+    }
+    let wanted = KeyHelp::new(hints);
+    if *help != wanted {
+        *help = wanted;
     }
 }
 
@@ -1781,5 +2797,130 @@ fn draw_route(
             glow.linestrip(arc.clone(), theme::SCREEN.with_alpha(0.14));
             solid.linestrip(arc, theme::SCREEN);
         }
+    }
+}
+
+/// Les orbites du détail des systèmes, en fondu avec lui : l'orbite de chaque planète autour
+/// du centre, plus pâle celle de chaque satellite autour de son astre. Une cinquantaine de
+/// cercles au plus, seulement au zoom.
+fn draw_orbits(
+    screen: Res<MapScreen>,
+    details: Res<SystemDetails>,
+    mut gizmos: Gizmos<OrbitGizmos>,
+) {
+    let detail = screen.detail;
+    if detail <= 0.02 {
+        return;
+    }
+    let flat = Quat::from_rotation_x(std::f32::consts::FRAC_PI_2);
+    for (k, m) in details.points.iter().enumerate() {
+        // Seulement les systèmes dont un point est à l'écran.
+        if screen.details.get(k).copied().flatten().is_none()
+            && screen
+                .details
+                .get(m.point.parent.unwrap_or(k))
+                .copied()
+                .flatten()
+                .is_none()
+        {
+            continue;
+        }
+        let center = world(m.orbit_center) + Vec3::Y * 0.05;
+        let radius = (m.pos.x - m.orbit_center.x).hypot(m.pos.y - m.orbit_center.y) as f32;
+        if radius < 1e-3 {
+            continue;
+        }
+        let alpha = if m.point.parent.is_none() { 0.22 } else { 0.12 };
+        gizmos
+            .circle(
+                Isometry3d::new(center, flat),
+                radius,
+                theme::SCREEN.with_alpha(alpha * detail),
+            )
+            .resolution(96);
+    }
+}
+
+/// Autopilote (captures) : `SH_MAP_CONTRACT=<système>` accepte, dès que la partie est prête sur
+/// la carte (une fois), un contrat de transport du lieu courant vers ce système (celui du bureau s'il en
+/// propose un, sinon le premier transport offert, détourné), pour montrer le panneau des
+/// contrats et les losanges de destination.
+fn give_test_contract(
+    data: Res<Data>,
+    location: Option<Res<Location>>,
+    clock: Option<Res<GameClock>>,
+    living: Option<Res<crate::living::LivingWorld>>,
+    career: Option<ResMut<Career>>,
+    mut done: Local<bool>,
+) {
+    if *done {
+        return;
+    }
+    let Ok(value) = std::env::var("SH_MAP_CONTRACT") else {
+        *done = true;
+        return;
+    };
+    // La partie s'installe pendant les premiers frames : on attend qu'elle soit prête.
+    let (Some(location), Some(clock), Some(living), Some(mut career)) =
+        (location, clock, living, career)
+    else {
+        return;
+    };
+    *done = true;
+    let Ok(to) = sh_core::Id::<Place>::new(value.trim()) else {
+        warn!("SH_MAP_CONTRACT : identifiant invalide « {value} »");
+        return;
+    };
+    let today = clock.date;
+    let offers = sh_sim::contract_offers(&data, &living.sim, &location.system, today);
+    let contract = offers.iter().find(|c| c.to == to).cloned().or_else(|| {
+        offers
+            .iter()
+            .find(|c| c.kind != sh_sim::ContractKind::Towing)
+            .cloned()
+            .map(|c| sh_sim::Contract {
+                id: format!("CT-{}-{to}-carte-{}", location.system, today.day_index()),
+                to: to.clone(),
+                deadline: today.add_days(30),
+                ..c
+            })
+    });
+    let Some(contract) = contract else {
+        warn!(
+            "SH_MAP_CONTRACT : aucun transport proposé à {}",
+            location.system
+        );
+        return;
+    };
+    match career.captain.accept(&data, contract) {
+        Ok(_) => info!("SH_MAP_CONTRACT : contrat vers {to} accepté"),
+        Err(err) => warn!("SH_MAP_CONTRACT : contrat refusé ({err:?})"),
+    }
+}
+
+/// Autopilote (vérification) : `SH_MAP_ENGAGE=<secondes>` engage, une fois, l'autopilote vers
+/// la cible proposée (`SH_MAP_TARGET`) après ce délai sur la carte, comme la touche du
+/// panneau : la carte se referme et l'autopilote vole en vue Globale.
+fn engage_on_request(
+    time: Res<Time>,
+    target: Res<MapTarget>,
+    mut commands: Commands,
+    mut waited: Local<f32>,
+    mut done: Local<bool>,
+) {
+    if *done || target.0.is_none() {
+        return;
+    }
+    let Some(delay) = std::env::var("SH_MAP_ENGAGE")
+        .ok()
+        .and_then(|v| v.trim().parse::<f32>().ok())
+    else {
+        *done = true;
+        return;
+    };
+    *waited += time.delta_secs();
+    if *waited >= delay {
+        *done = true;
+        commands.queue(crate::voyage::engage_autopilot);
     }
 }
