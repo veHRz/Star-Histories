@@ -1,0 +1,47 @@
+// Le bureau du chantier au spatioport d'Hexis (M9, PNJ de comptoir du rôle `shipyard`) :
+// PROPOSITION P25. Canon (§4.4) : la division Chantiers d'Hexa-Corp répare (CRV) ; les règles de
+// réparation (au point de dégât, systèmes où le chantier prend le vaisseau du joueur) sont
+// celles de P26 (`gameplay/combat.ron`) ; il vend aussi le carburant lourd (ravitaillement, M9,
+// `refuel` du même fichier). L'agent est anonyme ; il sert même un traître, comme les chantiers
+// en orbite.
+(
+    id: "hexis_shipyard",
+    status: Proposition("P25"),
+    role: "shipyard",
+    sector: "hexis_spaceport",
+    npc: "hexis_yard_agent",
+    name_key: "dlg.shipyard.name",
+    faction: "hc_chantiers",
+    entries: [
+        (when: [Trait("notorious_traitor")], node: "traitor"),
+        (when: [NotKnows("met")], node: "first"),
+        (node: "again"),
+    ],
+    nodes: {
+        "first": (
+            text: "dlg.shipyard.first",
+            effects: [Remember("met")],
+            choices: [
+                (text: "dlg.shipyard.ask_repair", effects: [Open(Repair)]),
+                (text: "dlg.shipyard.ask_fuel", effects: [Open(Repair)]),
+                (text: "dlg.shipyard.bye"),
+            ],
+        ),
+        "again": (
+            text: "dlg.shipyard.again",
+            choices: [
+                (text: "dlg.shipyard.ask_repair", effects: [Open(Repair)]),
+                (text: "dlg.shipyard.ask_fuel", effects: [Open(Repair)]),
+                (text: "dlg.shipyard.bye"),
+            ],
+        ),
+        "traitor": (
+            text: "dlg.shipyard.traitor",
+            choices: [
+                (text: "dlg.shipyard.ask_repair", effects: [Open(Repair)]),
+                (text: "dlg.shipyard.ask_fuel", effects: [Open(Repair)]),
+                (text: "dlg.shipyard.bye"),
+            ],
+        ),
+    },
+)

@@ -1,0 +1,53 @@
+// Le guichet de la Banque au spatioport d'Hexis (M9, PNJ de comptoir du rôle `bank`) :
+// PROPOSITION P25. Canon (§4.4) : la Banque est l'affaire de la division Finance d'Hexa-Corp
+// (« taux d'Hexis », hypothèque CH à saisie automatique). L'employé est anonyme ; ses
+// répliques sont proposées et n'affirment rien de plus que le canon. La Banque encaisse
+// toujours, même d'un traître (comme le dit le guichetier des contrats).
+(
+    id: "hexis_bank",
+    status: Proposition("P25"),
+    role: "bank",
+    sector: "hexis_spaceport",
+    npc: "hexis_bank_clerk",
+    name_key: "dlg.bank.name",
+    faction: "hc_finance",
+    entries: [
+        (when: [Expelled("hexa_corp")], node: "closed"),
+        (when: [NotKnows("met")], node: "first"),
+        (node: "again"),
+    ],
+    nodes: {
+        "first": (
+            text: "dlg.bank.first",
+            effects: [Remember("met")],
+            choices: [
+                (text: "dlg.bank.show_account", effects: [Open(Bank)]),
+                (text: "dlg.bank.pay", when: [HasDebt], effects: [PayInstallment], next: "paid"),
+                (text: "dlg.bank.bye"),
+            ],
+        ),
+        "again": (
+            text: "dlg.bank.again",
+            choices: [
+                (text: "dlg.bank.show_account", effects: [Open(Bank)]),
+                (text: "dlg.bank.pay", when: [HasDebt], effects: [PayInstallment], next: "paid"),
+                (text: "dlg.bank.bye"),
+            ],
+        ),
+        "closed": (
+            text: "dlg.bank.closed",
+            choices: [
+                (text: "dlg.bank.show_account", effects: [Open(Bank)]),
+                (text: "dlg.bank.pay", when: [HasDebt], effects: [PayInstallment], next: "paid"),
+                (text: "dlg.bank.bye"),
+            ],
+        ),
+        "paid": (
+            text: "dlg.bank.paid",
+            choices: [
+                (text: "dlg.bank.show_account", effects: [Open(Bank)]),
+                (text: "dlg.bank.bye"),
+            ],
+        ),
+    },
+)

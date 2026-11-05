@@ -106,4 +106,12 @@
         // Les chantiers d'Hexis travaillent pour tous ; ceux de Cygnara, pour l'Union.
         systems: ["sys_hexis"],
     ),
+    // Ravitaillement en carburant lourd au chantier (M9) : PROPOSITION, prix à valider. Un jour
+    // de carburant au prix du marché d'Hexis (25 cr l'unité, `sim.ron`) plus le service : le
+    // plein de 60 jours coûte 1 800 cr.
+    refuel: (
+        day_price: 30.0,
+        step_days: 10.0,
+        commodity: "heavy_fuel",
+    ),
 )

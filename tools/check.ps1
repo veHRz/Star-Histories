@@ -115,6 +115,19 @@ foreach ($start in @("new", "sector:hexis_spaceport")) {
     }
 }
 
+# Un objet ramassé l'est pour de bon : la tablette des quartiers, prise à quai, ne revient pas après
+# une sauvegarde et un chargement (et son modèle du catalogue est posé quand il existe).
+Step "scénario pickup_persist" {
+    $env:SH_USER_DIR = "target/pickup-user"
+    $env:SH_START = "sector:hexis_spaceport"
+    $env:SH_SCENARIO = "pickup_persist"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_USER_DIR, Env:SH_START, Env:SH_SCENARIO -ErrorAction SilentlyContinue
+    $log | Select-String -Pattern "ERROR|panicked|pickup_persist" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
 # Parcours scripté du vaisseau du joueur, du sas au cockpit, toutes portes franchies.
 Step "scénario walk_ship" {
     $env:SH_START = "sector:player_ship"

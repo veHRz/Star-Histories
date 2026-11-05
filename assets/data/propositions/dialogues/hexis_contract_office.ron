@@ -1,4 +1,6 @@
 // Le bureau des contrats d'Hexa-Corp au spatioport d'Hexis : PROPOSITION P25.
+// M9 : le guichetier est aussi le PNJ de comptoir du rôle `contracts` (`role`), et son guichet
+// de la Banque ouvre le relevé du compte (`Open(Bank)`).
 // Canon (§4.4) : la Logistique émet les contrats CT, CR, CRS ; la Banque (division Finance)
 // tient l'hypothèque (CH, saisie automatique) ; le Renseignement et la Flotte Beta traquent
 // les mauvais payeurs. Le guichetier est anonyme ; ses répliques sont proposées.
@@ -6,6 +8,7 @@
     id: "hexis_contract_office",
     status: Proposition("P25"),
     console: "contracts",
+    role: "contracts",
     sector: "hexis_spaceport",
     npc: "hexis_clerk",
     name_key: "dlg.office.name",
@@ -63,6 +66,7 @@
             text: "dlg.office.bank",
             choices: [
                 (text: "dlg.office.pay", when: [HasDebt], effects: [PayInstallment], next: "paid"),
+                (text: "dlg.office.show_account", effects: [Open(Bank)]),
                 (text: "dlg.office.back", next: "again"),
             ],
         ),
@@ -85,6 +89,7 @@
             text: "dlg.office.bank_closed",
             choices: [
                 (text: "dlg.office.pay", when: [HasDebt], effects: [PayInstallment], next: "closed"),
+                (text: "dlg.office.show_account", effects: [Open(Bank)]),
                 (text: "dlg.office.bye"),
             ],
         ),

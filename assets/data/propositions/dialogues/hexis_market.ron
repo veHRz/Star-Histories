@@ -1,0 +1,32 @@
+// Le comptoir du marché au spatioport d'Hexis (M9, PNJ de comptoir du rôle `market`) :
+// PROPOSITION P25. Un marchand anonyme, sans organisation : il montre les cours du jour (les
+// prix du monde vivant) ; ses répliques sont génériques.
+(
+    id: "hexis_market",
+    status: Proposition("P25"),
+    role: "market",
+    sector: "hexis_spaceport",
+    npc: "hexis_trader",
+    name_key: "dlg.market.name",
+    entries: [
+        (when: [NotKnows("met")], node: "first"),
+        (node: "again"),
+    ],
+    nodes: {
+        "first": (
+            text: "dlg.market.first",
+            effects: [Remember("met")],
+            choices: [
+                (text: "dlg.market.show_prices", effects: [Open(Market)]),
+                (text: "dlg.market.bye"),
+            ],
+        ),
+        "again": (
+            text: "dlg.market.again",
+            choices: [
+                (text: "dlg.market.show_prices", effects: [Open(Market)]),
+                (text: "dlg.market.bye"),
+            ],
+        ),
+    },
+)

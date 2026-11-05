@@ -29,6 +29,8 @@ pub struct CombatRules {
     pub hull: HullRules,
     pub raid: RaidRules,
     pub repair: RepairRules,
+    /// Le ravitaillement en carburant lourd au chantier (M9).
+    pub refuel: RefuelRules,
 }
 
 /// Comment un impact se répartit (blindage, structure, cœur).
@@ -221,6 +223,18 @@ pub struct RepairRules {
     pub credits_per_point: f64,
     /// Les systèmes dont les chantiers réparent le vaisseau du joueur.
     pub systems: Vec<Id<crate::common::Place>>,
+}
+
+/// Le ravitaillement en carburant lourd au chantier (M9, contenu de gameplay proposé) : la
+/// réserve du vaisseau se compte en jours de carburant (`travel.ron`, `fuel_per_day`).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RefuelRules {
+    /// Prix d'un jour de carburant, en crédits.
+    pub day_price: f64,
+    /// Tranche d'un ravitaillement partiel, en jours.
+    pub step_days: f64,
+    /// La marchandise prélevée sur les stocks du système (le monde vivant la voit partir).
+    pub commodity: String,
 }
 
 impl CombatRules {

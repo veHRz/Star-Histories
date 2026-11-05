@@ -83,6 +83,11 @@ for start in new sector:hexis_spaceport; do
         run_game "ERROR|panicked|save_load termin" SH_USER_DIR=target/test-user SH_START="$start" SH_SCENARIO=save_load
 done
 
+# Un objet ramassé l'est pour de bon : la tablette des quartiers, prise à quai, ne revient pas après
+# une sauvegarde et un chargement (et son modèle du catalogue est posé quand il existe).
+step "scénario pickup_persist" \
+    run_game "ERROR|panicked|pickup_persist" SH_USER_DIR=target/pickup-user SH_START=sector:hexis_spaceport SH_SCENARIO=pickup_persist
+
 # Parcours scripté du vaisseau du joueur, du sas au cockpit, toutes portes franchies.
 step "scénario walk_ship" \
     run_game "ERROR|panicked|sc.{1,3}nario" SH_START=sector:player_ship SH_SCENARIO=walk_ship

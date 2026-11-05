@@ -18,7 +18,19 @@
 //!   `SH_SCENARIO=tutorial` le joue en entier.
 //! - `SH_SCREEN=inventory|skills` : ouvre l'écran du personnage sur cet onglet, 3 s après
 //!   l'entrée en partie (comme `SH_TERMINAL` pour le terminal ; captures).
+//! - `SH_TERMINAL=<écran>` : ouvre cet écran du terminal 3 s après l'entrée en partie (captures) :
+//!   `codex`, `fiche`, `journal`, `contrats`, `marche`, `banque`, `chantier`, `guichet` (le
+//!   bureau des contrats), `taverne`.
+//! - `SH_TALK=<rôle>[:<variante>]` : parle au PNJ de comptoir de ce rôle (`contracts`, `bank`,
+//!   `market`, `shipyard`, `bar`) 3 s après l'entrée en partie, comme `E` en le visant (captures
+//!   de la conversation).
+//! - `SH_SCENARIO=terminal_tour` (avec `SH_START=sector:hexis_spaceport`) : chaque PNJ de
+//!   comptoir, le service qu'il ouvre, puis le journal, la fiche et le codex ; captures
+//!   `target/shots/m9-borne-*.png`.
 //! - `SH_KEYHELP=0|1` : force l'encart des touches replié (0) ou déplié (1).
+//! - `SH_SCENARIO=pickup_persist` (avec `SH_USER_DIR` et `SH_START=sector:hexis_spaceport`) :
+//!   ramasser la tablette des quartiers du vaisseau, sauvegarder, recharger : elle ne revient
+//!   pas sur le bureau et reste dans l'inventaire.
 //!
 //! À la sortie, le temps de frame moyen et maximal est toujours journalisé (hors démarrage).
 
@@ -56,14 +68,36 @@ impl Plugin for AutopilotPlugin {
         }
         if let Ok(value) = std::env::var("SH_TERMINAL") {
             use crate::ui::terminal::Screen;
+            let dialogue = |id: &str| Screen::Dialogue {
+                id: id.to_owned(),
+                node: String::new(),
+            };
             let screen = match value.trim() {
                 "fiche" => Screen::Sheet,
                 "journal" => Screen::Journal,
+                "contrats" => Screen::Contracts,
+                "marche" => Screen::Market,
+                "banque" => Screen::Bank,
+                "chantier" => Screen::Repair,
+                "guichet" => dialogue("hexis_contract_office"),
+                "taverne" => dialogue("hexis_tavern"),
                 _ => Screen::Codex,
             };
             app.insert_resource(TerminalShot(screen)).add_systems(
                 Update,
                 terminal_shot.run_if(resource_exists::<crate::career::Career>),
+            );
+        }
+        // `SH_TALK=<rôle>[:<variante>]` : la conversation d'un PNJ de comptoir (captures).
+        if let Ok(value) = std::env::var("SH_TALK") {
+            let (role, variant) = value.trim().split_once(':').unwrap_or((value.trim(), "a"));
+            app.insert_resource(TalkShot(crate::items::TalkTo {
+                role: role.to_owned(),
+                variant: variant.to_owned(),
+            }))
+            .add_systems(
+                Update,
+                talk_shot.run_if(resource_exists::<crate::career::Career>),
             );
         }
         // `SH_SCREEN=inventory|skills` : l'écran du personnage sur cet onglet (captures).
@@ -290,7 +324,24 @@ struct PauseShot {
     load: bool,
 }
 
-/// `SH_TERMINAL=codex|fiche|journal` : ouvre cet écran du terminal (captures).
+/// `SH_TALK=<rôle>[:<variante>]` : parle au PNJ de comptoir de ce rôle (captures).
+#[derive(Resource)]
+struct TalkShot(crate::items::TalkTo);
+
+fn talk_shot(
+    time: Res<Time<Real>>,
+    shot: Res<TalkShot>,
+    mut talk: MessageWriter<crate::items::TalkTo>,
+    mut since: Local<f32>,
+) {
+    let before = *since;
+    *since += time.delta_secs();
+    if before <= 3.0 && *since > 3.0 {
+        talk.write(shot.0.clone());
+    }
+}
+
+/// `SH_TERMINAL=<écran>` : ouvre cet écran du terminal (captures).
 #[derive(Resource)]
 struct TerminalShot(crate::ui::terminal::Screen);
 
@@ -549,6 +600,9 @@ enum Step {
     Expect(&'static str, f64, f64),
     /// Ouvrir le terminal (raccourci de l'autopilote : comme si l'on avait utilisé la console).
     Open(Terminal),
+    /// Parler au PNJ de comptoir de ce rôle (comme `E` en le visant) ; fini quand le terminal
+    /// montre sa conversation.
+    Talk(&'static str),
     /// Prendre l'option du terminal qui correspond au motif ([`choice_matches`]).
     Choose(&'static str),
     /// Touche d'amarrage aux commandes, une fois (livrer, accrocher une épave).
@@ -615,6 +669,7 @@ enum RaidEnd {
 enum Terminal {
     Dialogue(&'static str),
     Market,
+    Repair,
     Sheet,
     Journal,
     Codex,
@@ -625,6 +680,7 @@ fn is_career_step(step: &Step) -> bool {
     matches!(
         step,
         Step::Open(_)
+            | Step::Talk(_)
             | Step::Choose(_)
             | Step::Hail
             | Step::Assert(..)
@@ -671,7 +727,8 @@ const PORT_LOOP: &[Step] = &[
     w(-8.3, -3.0, None),
 ];
 
-/// `voyage` : Hexis → Cygnara par Portail, puis retour par l'hyperespace (critère de M3).
+/// `voyage` : Hexis → Cygnara par Portail, puis retour par l'hyperespace (critère de M3) ; enfin
+/// le ravitaillement en carburant lourd au chantier d'Hexis (M9 : le saut a entamé la réserve).
 const VOYAGE: &[Step] = &[
     Step::Mark,
     Step::OpenMap,
@@ -683,6 +740,11 @@ const VOYAGE: &[Step] = &[
     Step::Route("sys_hexis"),
     Step::Depart(sh_sim::travel::TravelMode::Hyperspace),
     Step::Expect("sys_hexis", 15.0 * 24.0, 35.0 * 24.0),
+    Step::Open(Terminal::Repair),
+    Step::Shot("m9-chantier-carburant"),
+    Step::Choose("refuel"),
+    Step::Shot("m9-chantier-ravitaille"),
+    Step::Choose("close"),
 ];
 
 /// `contract_loop` : contrat de transport Hexis → Cygnara, livraison, paiement, réputation,
@@ -939,6 +1001,50 @@ const TUTORIAL: &[Step] = &[
     Step::Shot("m8-tuto-fin"),
 ];
 
+/// `terminal_tour` (avec `SH_START=sector:hexis_spaceport`) : chaque PNJ de comptoir (M9), le
+/// service que sa conversation ouvre, le retour à la conversation, puis les onglets de la
+/// tablette ; captures `target/shots/m9-borne-*.png` des écrans refaits.
+const TERMINAL_TOUR: &[Step] = &[
+    Step::Wait(4.0),
+    Step::Talk("contracts"),
+    Step::Shot("m9-borne-pnj-contrats"),
+    Step::Choose("say:dlg.office.ask_work"),
+    Step::Choose("say:dlg.office.show_contracts"),
+    Step::Shot("m9-borne-contrats"),
+    Step::Choose("back"),
+    Step::Shot("m9-borne-retour"),
+    Step::Choose("close"),
+    Step::Talk("bank"),
+    Step::Shot("m9-borne-pnj-banque"),
+    Step::Choose("say:dlg.bank.show_account"),
+    Step::Shot("m9-borne-banque"),
+    Step::Choose("close"),
+    Step::Talk("market"),
+    Step::Shot("m9-borne-pnj-marche"),
+    Step::Choose("say:dlg.market.show_prices"),
+    Step::Shot("m9-borne-marche"),
+    Step::Choose("close"),
+    Step::Talk("shipyard"),
+    Step::Shot("m9-borne-pnj-chantier"),
+    Step::Choose("say:dlg.shipyard.ask_repair"),
+    Step::Shot("m9-borne-chantier"),
+    Step::Choose("close"),
+    Step::Talk("bar"),
+    Step::Shot("m9-borne-pnj-taverne"),
+    Step::Choose("say:dlg.tavern.ask_news"),
+    Step::Shot("m9-borne-taverne-nouvelles"),
+    Step::Choose("close"),
+    Step::Open(Terminal::Journal),
+    Step::Shot("m9-borne-journal"),
+    Step::Choose("close"),
+    Step::Open(Terminal::Sheet),
+    Step::Shot("m9-borne-fiche"),
+    Step::Choose("close"),
+    Step::Open(Terminal::Codex),
+    Step::Shot("m9-borne-codex"),
+    Step::Choose("close"),
+];
+
 /// Distance horizontale (m) à laquelle l'autopilote s'arrête devant une console pour l'utiliser.
 const CONSOLE_DISTANCE: f32 = 1.4;
 
@@ -1010,6 +1116,11 @@ impl Plugin for ScenarioPlugin {
                 .add_systems(PreUpdate, map_key);
             return;
         }
+        if name == "pickup_persist" {
+            app.init_resource::<PickupCheck>()
+                .add_systems(Update, pickup_persist);
+            return;
+        }
         let (steps, flight) = match name.as_str() {
             "walk_ship" => (WALK_SHIP, None),
             "fly_ship" => (FLY_SHIP_WALK, Some(FlightCheck::default())),
@@ -1022,6 +1133,7 @@ impl Plugin for ScenarioPlugin {
             "firefight" => (FIREFIGHT, None),
             "firefight_lose" => (FIREFIGHT_LOSE, None),
             "tutorial" => (TUTORIAL, None),
+            "terminal_tour" => (TERMINAL_TOUR, None),
             _ => (WALK_SHIP, None),
         };
         if !matches!(
@@ -1037,9 +1149,10 @@ impl Plugin for ScenarioPlugin {
                 | "firefight"
                 | "firefight_lose"
                 | "tutorial"
+                | "terminal_tour"
         ) {
             error!(
-                "SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage, contract_loop, raid_win, raid_flee, raid_lose, firefight, firefight_lose, tutorial, menu_return, save_load, pause_escape, map_key)"
+                "SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage, contract_loop, raid_win, raid_flee, raid_lose, firefight, firefight_lose, tutorial, terminal_tour, menu_return, save_load, pause_escape, map_key, pickup_persist)"
             );
             app.add_systems(Startup, |mut exit: MessageWriter<AppExit>| {
                 exit.write(AppExit::error());
@@ -1477,6 +1590,276 @@ fn save_load(world: &mut World) {
     }
 }
 
+/// `pickup_persist` : l'objet ramassé, son point de ramassage et sa cellule (la tablette des
+/// quartiers du vaisseau du joueur).
+const PICKUP_NODE: &str = "INTERACT_quartiers_pickup_datapad";
+const PICKUP_CELL: &str = "quartiers";
+const PICKUP_ITEM: &str = "datapad";
+/// Distance horizontale (m) d'où l'autopilote vise l'objet, du côté du centre de la salle (hors
+/// du tabouret du bureau, à portée de main).
+const PICKUP_STAND: f32 = 1.5;
+
+/// `pickup_persist` : un objet pris ne revient pas, même après un chargement.
+#[derive(Resource, Default)]
+struct PickupCheck {
+    step: u8,
+    since: f32,
+    total: f32,
+    /// Le nœud de ramassage visé, et son identifiant stable.
+    target: Option<(Entity, String)>,
+    /// Exemplaires de l'objet dans l'inventaire avant de le ramasser.
+    held_before: u32,
+}
+
+/// La cellule est-elle chargée en qualité Locale (interactions comprises) ?
+fn cell_local_ready(world: &World, cell: &str) -> bool {
+    world
+        .get_resource::<crate::sector::streaming::CellStates>()
+        .and_then(|states| states.slots.get(cell))
+        .and_then(|slot| slot.full)
+        .is_some_and(|e| {
+            world
+                .get::<crate::sector::streaming::CellReady>(e)
+                .is_some()
+        })
+}
+
+fn held(world: &World, item: &str) -> u32 {
+    world
+        .get_resource::<crate::interaction::Inventory>()
+        .and_then(|inventory| inventory.items.get(item).copied())
+        .unwrap_or(0)
+}
+
+/// Place le joueur debout, pieds en `feet`, et tourne son regard vers `look_at` (comme le ferait
+/// la souris). Faux sans joueur.
+fn place_player(world: &mut World, feet: Vec3, look_at: Option<Vec3>) -> bool {
+    use crate::player::{Player, PlayerController, PlayerMode};
+    let mut query = world.query_filtered::<(&mut Transform, &mut PlayerController), With<Player>>();
+    let Ok((mut transform, mut controller)) = query.single_mut(world) else {
+        return false;
+    };
+    transform.translation = feet;
+    controller.mode = PlayerMode::Walking;
+    controller.velocity = Vec3::ZERO;
+    if let Some(target) = look_at {
+        let eye = feet + Vec3::Y * controller.eye_height();
+        let d = (target - eye).normalize_or(Vec3::NEG_Z);
+        controller.yaw = (-d.x).atan2(-d.z);
+        controller.pitch = d.y.clamp(-1.0, 1.0).asin();
+    }
+    true
+}
+
+/// Place le joueur au centre d'une cellule du secteur chargé, au ras du sol : la cellule se
+/// charge autour de lui. Faux si la cellule ou le joueur manquent.
+fn go_to_cell(world: &mut World, cell: &str) -> bool {
+    let feet = world
+        .get_resource::<crate::sector::ActiveSector>()
+        .and_then(|active| active.sector.cell(cell))
+        .map(|c| {
+            let (x, _, z) = c.center();
+            Vec3::new(x, c.min.1 + 0.25, z)
+        });
+    feet.is_some_and(|feet| place_player(world, feet, None))
+}
+
+/// `pickup_persist` (avec `SH_USER_DIR` et `SH_START=sector:hexis_spaceport`) : à quai, dans les
+/// quartiers du vaisseau, viser la tablette posée (son modèle du catalogue s'il existe) et la
+/// ramasser, sauvegarder, recharger ; la tablette n'est plus sur le bureau, elle est dans
+/// l'inventaire, son point de ramassage dans `items::PickedUp`.
+fn pickup_persist(world: &mut World) {
+    use crate::sector::gltf::{Interactable, PickupId, PickupModel};
+    let dt = world.resource::<Time<Real>>().delta_secs();
+    let in_game = *world.resource::<State<AppState>>().get() == AppState::InGame;
+    let ready = in_game
+        && world.contains_resource::<crate::career::Career>()
+        && world.contains_resource::<crate::sector::ActiveSector>();
+    if ready {
+        // La souris ne doit pas déranger la visée.
+        world.resource_mut::<crate::player::ScriptedControl>().0 = true;
+        *world.resource_mut::<crate::player::PlayerIntent>() = default();
+    }
+    let mut check = world.resource_mut::<PickupCheck>();
+    check.since += dt;
+    check.total += dt;
+    let (step, since, total) = (check.step, check.since, check.total);
+    let fail = |world: &mut World, message: String| {
+        error!("scénario pickup_persist : {message}");
+        world.write_message(AppExit::error());
+        world.resource_mut::<PickupCheck>().step = u8::MAX;
+    };
+    if total > 150.0 && step != u8::MAX {
+        fail(world, format!("bloqué à l'étape {step}"));
+        return;
+    }
+    let next = |world: &mut World| {
+        let mut check = world.resource_mut::<PickupCheck>();
+        (check.step, check.since) = (check.step + 1, 0.0);
+    };
+    match step {
+        // À quai : dans la salle de l'objet (avant, puis après le chargement).
+        0 | 5 if ready && since > 3.0 => {
+            if !go_to_cell(world, PICKUP_CELL) {
+                fail(world, format!("cellule {PICKUP_CELL} introuvable"));
+                return;
+            }
+            next(world);
+        }
+        // La salle chargée et le joueur au sol : viser l'objet depuis le côté de la salle.
+        1 if cell_local_ready(world, PICKUP_CELL) && since > 1.5 => {
+            let mut nodes = world.query::<(
+                Entity,
+                &Name,
+                &Interactable,
+                Option<&PickupId>,
+                Option<&Children>,
+                &GlobalTransform,
+            )>();
+            let found = nodes
+                .iter(world)
+                .find(|(_, name, kind, ..)| {
+                    name.as_str() == PICKUP_NODE && matches!(kind, Interactable::Pickup { .. })
+                })
+                .map(|(entity, _, _, id, children, at)| {
+                    let children: Vec<Entity> = children.into_iter().flatten().copied().collect();
+                    (entity, id.map(|i| i.0.clone()), children, at.translation())
+                });
+            let Some((entity, id, children, at)) = found else {
+                fail(world, format!("{PICKUP_NODE} absent de {PICKUP_CELL}"));
+                return;
+            };
+            let Some(id) = id else {
+                fail(
+                    world,
+                    format!("{PICKUP_NODE} sans identifiant de ramassage"),
+                );
+                return;
+            };
+            // Le modèle du catalogue remplace l'apparence du kit quand il existe.
+            let model = world
+                .resource::<Data>()
+                .items
+                .get(PICKUP_ITEM)
+                .map(|item| item.model_path());
+            let produced = model.is_some_and(|m| crate::data::assets_dir().join(m).is_file());
+            let shown = children
+                .iter()
+                .any(|c| world.get::<PickupModel>(*c).is_some());
+            if produced != shown {
+                fail(
+                    world,
+                    format!("modèle de l'objet : fichier {produced}, posé {shown}"),
+                );
+                return;
+            }
+            let center = world
+                .get_resource::<crate::sector::ActiveSector>()
+                .and_then(|a| crate::sector::streaming::cell_center(&a.sector, PICKUP_CELL));
+            let feet_y = world
+                .query_filtered::<&Transform, With<crate::player::Player>>()
+                .single(world)
+                .map_or(at.y, |t| t.translation.y);
+            let (Some(center), true) = (center, feet_y.is_finite()) else {
+                fail(world, "joueur ou salle introuvable".into());
+                return;
+            };
+            let side = Vec2::new(center.x - at.x, center.z - at.z).normalize_or(Vec2::Y);
+            let stand = Vec3::new(
+                at.x + side.x * PICKUP_STAND,
+                feet_y,
+                at.z + side.y * PICKUP_STAND,
+            );
+            place_player(world, stand, Some(at));
+            info!("scénario pickup_persist : {id} visé (modèle posé : {shown})");
+            let held_before = held(world, PICKUP_ITEM);
+            let mut check = world.resource_mut::<PickupCheck>();
+            check.target = Some((entity, id));
+            check.held_before = held_before;
+            (check.step, check.since) = (2, 0.0);
+        }
+        // La visée désigne l'objet : la touche d'interaction.
+        2 => {
+            let Some((entity, _)) = world.resource::<PickupCheck>().target.clone() else {
+                return;
+            };
+            let aimed = world
+                .resource::<crate::interaction::Focus>()
+                .0
+                .as_ref()
+                .is_some_and(|t| t.entity == entity);
+            if aimed {
+                world.write_message(crate::interaction::InteractRequest);
+                next(world);
+            } else if since > 3.0 {
+                fail(world, "la visée ne désigne pas l'objet".into());
+            }
+        }
+        // Ramassé : retiré du monde, dans l'inventaire, noté pris ; sauvegarder et recharger.
+        3 if since > 0.5 => {
+            let Some((entity, id)) = world.resource::<PickupCheck>().target.clone() else {
+                return;
+            };
+            let before = world.resource::<PickupCheck>().held_before;
+            let gone = world.get::<Interactable>(entity).is_none();
+            let count = held(world, PICKUP_ITEM);
+            let noted = world
+                .get_resource::<crate::items::PickedUp>()
+                .is_some_and(|p| p.contains(&id));
+            if !(gone && count == before + 1 && noted) {
+                fail(
+                    world,
+                    format!(
+                        "ramassage : retiré {gone}, inventaire {before} → {count}, noté pris {noted}"
+                    ),
+                );
+                return;
+            }
+            let Some(path) = crate::save::write_save(world, crate::save::SaveKind::Manual) else {
+                fail(world, "sauvegarde refusée".into());
+                return;
+            };
+            info!(
+                "scénario pickup_persist : ramassé, sauvegarde {}",
+                path.display()
+            );
+            crate::save::request_load(world, &path);
+            next(world);
+        }
+        // Le chargement quitte la partie : on attend d'y être revenu.
+        4 if !in_game => next(world),
+        // Rechargé, la salle de nouveau chargée : l'objet n'y est plus.
+        6 if cell_local_ready(world, PICKUP_CELL) && since > 2.0 => {
+            let Some((_, id)) = world.resource::<PickupCheck>().target.clone() else {
+                return;
+            };
+            let mut nodes = world.query::<(&Name, Option<&PickupId>)>();
+            let back = nodes
+                .iter(world)
+                .any(|(name, pid)| name.as_str() == PICKUP_NODE || pid.is_some_and(|p| p.0 == id));
+            let count = held(world, PICKUP_ITEM);
+            let noted = world
+                .get_resource::<crate::items::PickedUp>()
+                .is_some_and(|p| p.contains(&id));
+            if back || count == 0 || !noted {
+                fail(
+                    world,
+                    format!(
+                        "après chargement : objet revenu {back}, inventaire {count}, noté pris {noted}"
+                    ),
+                );
+                return;
+            }
+            info!(
+                "scénario pickup_persist terminé : {id} ramassé, absent après chargement, {count} dans l'inventaire"
+            );
+            world.write_message(AppExit::Success);
+            world.resource_mut::<PickupCheck>().step = u8::MAX;
+        }
+        _ => {}
+    }
+}
+
 /// Un scénario joue à bord (un secteur est chargé) ou sur la carte.
 fn scenario_can_run(
     sector: Option<Res<crate::sector::ActiveSector>>,
@@ -1830,6 +2213,7 @@ fn run_scenario(
         | Step::Mark
         | Step::Expect(..)
         | Step::Open(_)
+        | Step::Talk(_)
         | Step::Choose(_)
         | Step::Hail
         | Step::Assert(..)
@@ -2082,14 +2466,16 @@ fn voyage_step(
 }
 
 /// Une option du terminal correspond-elle au motif ? `say:<clé>` (réplique), `accept:<lieu>`
-/// ou `accept:any`, `betray`, `close`.
+/// ou `accept:any`, `betray`, `repair`, `back` (reprendre la conversation), `close`.
 fn choice_matches(choice: &crate::ui::terminal::Choice, pattern: &str) -> bool {
-    use crate::ui::terminal::Action;
+    use crate::ui::terminal::{Action, Screen};
     match (&choice.action, pattern.split_once(':')) {
         (Action::Say { key, .. }, Some(("say", k))) => key == k,
         (Action::Accept(c), Some(("accept", to))) => to == "any" || c.to.as_str() == to,
         (Action::Betray(_), None) => pattern == "betray",
         (Action::Repair, None) => pattern == "repair",
+        (Action::Goto(Screen::Dialogue { .. }), None) => pattern == "back",
+        (Action::Refuel(_), None) => pattern == "refuel",
         (action, None) if pattern == "close" => action.closes(),
         _ => false,
     }
@@ -2126,8 +2512,23 @@ fn career_step(world: &mut World, step: Step) {
                         Terminal::Sheet => Screen::Sheet,
                         Terminal::Journal => Screen::Journal,
                         Terminal::Codex => Screen::Codex,
+                        Terminal::Repair => Screen::Repair,
                     };
                     world.write_message(OpenTerminal(screen));
+                    world.resource_mut::<Scenario>().issued = Some(None);
+                }
+                _ => {}
+            }
+        }
+        Step::Talk(role) => {
+            let open = world.get_resource::<Term>().map(|t| t.page.is_some());
+            match (issued, open) {
+                (true, Some(true)) => next(world),
+                (false, None) => {
+                    world.write_message(crate::items::TalkTo {
+                        role: role.to_owned(),
+                        variant: "a".to_owned(),
+                    });
                     world.resource_mut::<Scenario>().issued = Some(None);
                 }
                 _ => {}

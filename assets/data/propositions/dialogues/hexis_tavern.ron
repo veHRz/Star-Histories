@@ -1,9 +1,11 @@
 // Le tavernier du spatioport d'Hexis : PROPOSITION P25. Il donne les nouvelles publiques et
-// se souvient des habitués ; il ne sait aucun secret.
+// se souvient des habitués ; il ne sait aucun secret. M9 : il est aussi le PNJ de comptoir du
+// rôle `bar`.
 (
     id: "hexis_tavern",
     status: Proposition("P25"),
     console: "bar",
+    role: "bar",
     sector: "hexis_spaceport",
     npc: "hexis_barkeep",
     name_key: "dlg.tavern.name",
