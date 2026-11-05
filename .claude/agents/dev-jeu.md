@@ -36,7 +36,12 @@ et rapport en français, identifiants en anglais.
   dossier `target/`, patiente : un autre travail compile.
 - **Arbre de travail séparé** : si tu travailles dans un arbre à part, ton `target/` est neuf et la
   première `cargo lint` recompile Bevy (≈ 13 min, en arrière-plan), sauf si ton brief te donne un
-  `CARGO_TARGET_DIR` à partager.
+  `CARGO_TARGET_DIR` à partager. **`target/` partagé (arbre ou dépôt)** : avant chaque
+  `cargo lint`, remets à l'heure tous les sources Rust de ton dossier, sinon Cargo peut juger « à
+  jour » une compilation d'un autre arbre et vérifier son code au lieu du tien :
+  `Get-ChildItem crates, src, tools -Recurse -Include *.rs -File | ForEach-Object { $_.LastWriteTime = Get-Date }; cargo lint`.
+  Vérifie aussi la base de ton arbre (`git log -1` en lecture) contre celle du brief, et signale
+  un écart au lieu de le corriger toi-même. Fichiers temporaires : noms uniques (dossier partagé).
 - Sous Windows, l'outil PowerShell est Windows PowerShell 5.1 : pas de `&&` (utilise `;`) ; si
   `cargo` est introuvable, ajoute `$env:USERPROFILE\.cargo\bin` au `PATH`.
 - **Pas de `git`.** L'orchestrateur commite après revue. Pas de sous-agent non plus : tu fais ton
