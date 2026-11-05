@@ -925,9 +925,30 @@ mod tests {
             SpacePos::new(1.0e3, 0.0, -1.0e8),
         );
         let waypoint = detour(from, to, &[planet]).unwrap_or_else(|| panic!("pas de détour"));
-        assert!(waypoint.length() > 1.5 * r, "{waypoint:?}");
-        let clear = SpacePos::new(10.0 * r, 0.0, -1.0e8);
-        assert!(detour(from, clear, &[planet]).is_none());
+        // Au large : hors de la zone d'obstacle, à la distance de détour.
+        assert!(waypoint.length() > OBSTACLE_RADII * r, "{waypoint:?}");
+        assert!(
+            (waypoint.length() - DETOUR_RADII * r).abs() < 1.0,
+            "{waypoint:?}"
+        );
+        // Route dégagée : vers le large, la planète dans le dos ; ou une ligne qui la longe
+        // au-delà de la zone d'obstacle.
+        let away = SpacePos::new(0.0, 0.0, 1.0e8);
+        assert!(detour(from, away, &[planet]).is_none());
+        let side = (
+            SpacePos::new(2.2 * r, 0.0, 2.5 * r),
+            SpacePos::new(2.2 * r, 0.0, -1.0e8),
+        );
+        assert!(detour(side.0, side.1, &[planet]).is_none());
+        // La même ligne, plus près : détour.
+        assert!(
+            detour(
+                SpacePos::new(1.8 * r, 0.0, 2.5 * r),
+                SpacePos::new(1.8 * r, 0.0, -1.0e8),
+                &[planet]
+            )
+            .is_some()
+        );
         assert!(detour(from, SpacePos::ZERO, &[planet]).is_none());
         // En vol : on n'entre jamais dans la planète (`autopilot_flight` le vérifie).
         let (time, distance, _) =
