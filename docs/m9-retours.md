@@ -118,10 +118,10 @@ arbre de travail séparé (`CARGO_TARGET_DIR` partagé : `D:\Projets\Star Histor
 | L3 | Objets et interactions : objet posé (modèle), persistance des objets pris, casiers (contenu, sauvegarde), volumes d'interaction, PNJ placés et `TalkTo`, décor filtré par qualité (en direct) | dev (dépôt) | `crates/sh_game/src/{interaction,save,graphics,items,npc,dev}.rs`, `crates/sh_game/src/sector/{gltf,mod}.rs`, `assets/data/gameplay/{graphics,items}.ron`, `tools/check.{ps1,sh}`, `lang/*/world.ron` | L0 | 1 |
 | B | Intérieur type `corvette` : chambre, sas à deux portes, cockpit (sièges près d'une grande vitre sans poutres), console du réacteur au mur, noms de salle, décor par niveaux | artiste | `tools/blender/ships/corvette.py`, `art/ships/corvette.blend`, `assets/models/ships/corvette/**`, `assets/textures/lightmaps/corvette/**`, `assets/data/propositions/sectors/corvette.ron` | A | 2 |
 | D | Spatioport par défaut `spaceport` : hangar et berceau, salles actuelles autour, comptoirs de PNJ, noms de salle, décor par niveaux | artiste | `tools/blender/places/spaceport.py`, `art/places/spaceport.blend`, `assets/models/places/spaceport/**`, `assets/textures/lightmaps/spaceport/**`, `assets/data/propositions/sectors/spaceport.ron` | A (+ cotes de B pour le berceau) | 2 |
-| L4 | Bornes refaites (tous les écrans du terminal) ; conversation avec un PNJ qui ouvre les services ; la fiche (C) ouvre l'écran du personnage | dev (dépôt) | `crates/sh_game/src/ui/{terminal,theme}.rs`, `crates/sh_data/src/dialogue.rs`, `assets/data/propositions/dialogues/**`, `lang/*/terminal.ron` | L0, L3 | 2 |
+| L4 | Bornes refaites (tous les écrans du terminal) ; conversation avec un PNJ qui ouvre les services ; la fiche (C) ouvre l'écran du personnage | dev (dépôt) | `crates/sh_game/src/ui/terminal.rs` (ou `ui/terminal/**`), `crates/sh_data/src/dialogue.rs`, `assets/data/propositions/dialogues/**`, `crates/sh_game/src/dev.rs`, `lang/*/{terminal,world}.ron` ; `ui/theme.rs` en lecture (L2) | L0, L3 | 2 (lancé pendant la vague 1) |
 | L5 | Écran du personnage : inventaire (icônes, équipement, réputations, emprunts), compétences (niveaux, barres d'expérience), rangement des casiers | dev (arbre) | `crates/sh_game/src/ui/character.rs`, `crates/sh_game/src/ui/character/**`, `lang/*/character.ron` | L0, L3, F | 2 |
-| L6 | Hexis, monde-usine : surface urbaine et industrielle, lumières des villes côté nuit, atmosphère | dev (arbre) | `crates/sh_game/src/views/{planet,procedural}.rs`, `assets/shaders/planet*`, `assets/textures/planets/**`, `tools/planets/**` | — | 2 |
-| L8 | Carte galactique refaite (fond, icônes par type, flottes, étiquettes sans chevauchement, légende) ; voyage vers les mondes isolés | dev (arbre) | `crates/sh_game/src/views/{galaxy,global}.rs`, `crates/sh_game/src/voyage.rs`, `crates/sh_sim/src/travel.rs`, `crates/sh_data/src/{travel,map,layout}.rs`, `assets/data/gameplay/travel.ron`, `tools/ui/map*`, `assets/ui/map/**`, `lang/*/map.ron` | — | 2 |
+| L6 | Hexis, monde-usine : surface urbaine et industrielle, lumières des villes côté nuit, atmosphère | dev (arbre) | `crates/sh_game/src/views/{planet,procedural}.rs`, `assets/shaders/planet*`, `assets/textures/planets/**`, `tools/planets/**`, `assets/data/gameplay/planets.ron`, `crates/sh_data/src/planets.rs` (+ une ligne dans `sh_data/src/lib.rs`) | — | 2 (lancé pendant la vague 1) |
+| L8 | Carte galactique refaite (fond, icônes par type, flottes, étiquettes sans chevauchement, légende) ; voyage vers les mondes isolés | dev (arbre) | `crates/sh_game/src/views/{galaxy,global}.rs`, `crates/sh_game/src/voyage.rs`, `crates/sh_sim/src/travel.rs`, `crates/sh_data/src/{travel,map,layout}.rs`, `assets/data/gameplay/travel.ron`, `tools/map/**`, `assets/ui/map/**`, `lang/*/map.ron` | — | 2 (lancé pendant la vague 1) |
 | C | Coque extérieure de la corvette (enveloppe l'intérieur, s'ouvre sur le sas), LOD | artiste | `tools/blender/ships/corvette_hull.py`, `art/ships/corvette_hull.blend`, `assets/models/ships/corvette_hull/**`, textures neuves `hull_*` | B | 3 |
 | L7 | Secteurs types et hangar : `corvette` et `spaceport` remplacent `player_ship` et `hexis_spaceport` (données, sauvegardes, scénarios, scripts), spatioport par défaut ou propre au lieu, arrivée au hangar, coque posée dans le berceau | dev (dépôt) | `crates/sh_data/src/{sector,scene,start,validate}.rs`, `crates/sh_game/src/{transition,save,dev}.rs`, `crates/sh_game/src/sector/**`, `crates/sh_game/src/views/sector.rs`, `assets/data/propositions/{starts,systems}/**`, `tools/{check,perf,captures}.*`, `lang/*/sectors.ron` | B, C, D | 3 |
 | L9 | Tutoriel : départ dans la chambre, tour des salles et de leur rôle, puis la suite actuelle | dev (dépôt) | `crates/sh_game/src/tutorial.rs`, `lang/*/tutorial.ron`, `crates/sh_game/src/dev.rs` (scénario), `assets/data/propositions/starts/**` | L7 | 3 |
@@ -154,3 +154,49 @@ intégré, captures, mesures, commits, docs.
 
 - 05/11/2026 : plan écrit, captures avant prises (poste Windows), `check.ps1` vert sur l'état de
   départ (seuls des docs ont changé depuis le dernier passage).
+- 05/11/2026 : L0 livré, vérifié (`cargo t`, démarrage) et commité (444d88f). Vague 1 lancée :
+  A, E, F (artistes, dossier du dépôt), L3 (dépôt), L1 et L2 (arbres séparés). F livré (9 modèles,
+  9 icônes, atlas `item_gear`). L8 lancé en avance (arbre séparé) sur la place libérée.
+- 05/11/2026 : l'auteur autorise jusqu'à dix sous-agents (skill orchestrateur, 751942c). L5 et L6
+  lancés en avance (arbres séparés) : huit sous-agents en parallèle. B et D attendent A.
+- 05/11/2026 : L3 livré et vérifié à part (`cargo t`, scénario `pickup_persist` vert, tablette posée
+  en capture) ; non commité (commit après le contrôle de fin de vague). Défaut vu : l'objet
+  provisoire du kit laisse une ombre cuite sous l'objet → renvoyé à A (rien d'amovible ne projette
+  d'ombre au bake). L4 lancé dans le dossier du dépôt, `ui/theme.rs` en lecture seule.
+  Point ouvert : objets et PNJ sans lightmap dans les cellules cuites (Bas, Moyen : pas de lumière
+  dynamique) risquent d'être sombres ; à juger sur les captures des PNJ.
+- 05/11/2026 : **piège** : les arbres de travail qui partagent `target/` se contaminent (empreintes
+  Cargo indépendantes du chemin, comparaison de dates) : un binaire d'un autre arbre a tourné.
+  Parade : remettre à l'heure tous les `.rs` du dossier avant chaque compilation (consigne envoyée à
+  tous les `dev-jeu`). Autre piège : les arbres neufs n'ont que des pointeurs LFS (`git lfs
+  checkout` pour y lancer le jeu), et certains sont créés sur un vieux commit (vérifier la base).
+- 05/11/2026 : L1 et L2 testés dans leur arbre (L1 + L2 ensemble), commités et amenés sur main
+  (db733c1, 047f040). L5 testé (inventaire, compétences, casier) : une retouche demandée (colonne des
+  emprunts). E livré (3 PNJ). Reste de la vague 1 : A (kit).
+- 05/11/2026 : L5 corrigé, revu en capture, amené sur main (f40023e, 3ec2e7a). L8 livré (carte
+  refaite, mondes isolés planifiés) ; suite en cours dans son arbre : départ réel vers un monde isolé
+  (`transition.rs`), flottes observées en orbite (`living.rs`), Karza par Portail (canon §3.4 :
+  « grand hub de Portails », fait canon, réglage ouvert). Manque découvert : aucun ravitaillement en
+  carburant lourd → ajouté au chantier par L4 (proposition de prix à inscrire). Scénario
+  `voyage_isolated` de L8 à faire ajouter dans `dev.rs` par son prochain propriétaire.
+  Propositions à inscrire en fin de vague : prix du carburant, éclairage des mondes isolés (étoile
+  lointaine sans nom, bulbe pour les errantes), fond de la carte (prolonge P17), intérieur type
+  (P12), spatioport par défaut (P7), PNJ de comptoir et objets (contenu générique).
+- 05/11/2026, **arrêt sur limite d'usage — état de reprise** :
+  - **Commités sur main (non poussés)** : L0, L1, L2, L5, L8, L6, plus les docs.
+  - **Livrés, vérifiés à part, NON commités** (dans le dossier du dépôt) : L3 (objets et interactions :
+    `cargo t`, `pickup_persist`), L4 (bornes, PNJ, carburant au chantier : `terminal_tour`,
+    `contract_loop`, `raid_win`, `voyage`, `tutorial` verts ; correctif des valeurs brisées capturé
+    dans `target/shots/m9-l4b-*.png`, **pas encore regardé**), E (PNJ), F (objets et icônes),
+    A (kit). Les commiter un par un après `tools/check.ps1` complet (aucun dev ne travaille dans le
+    dossier du dépôt).
+  - **Arrêtés en cours** : B (intérieur `corvette`) et D (spatioport `spaceport`). Leurs fichiers
+    sont neufs et ne sont lus par aucun code : relancer ces deux lots (mêmes briefs) ou reprendre
+    leurs scripts `tools/blender/ships/corvette.py` et `tools/blender/places/spaceport.py` s'ils
+    existent.
+  - **Reste à faire** : B, D, puis C (coque), L7 (secteurs types et hangar), L9 (tutoriel dans la
+    chambre), un lot de branchement (scénario `voyage_isolated`, validation du carburant, `tips.port`,
+    plein en orbite dans `career.rs`, clés `sector.corvette` / `sector.spaceport`, captures Hexis et
+    carte dans `tools/captures.*`), bakes finals, `check.ps1`, captures après, `perf.ps1 -Preset low
+    -Window fullscreen`, AGENTS.md (pièges des arbres de travail, nouvelles variables SH_*), journal,
+    propositions, push. Arbres de travail des agents dans `.claude/worktrees/` : à nettoyer.
