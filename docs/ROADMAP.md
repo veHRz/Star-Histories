@@ -165,7 +165,7 @@ But : traiter la liste de l'auteur du 05/11/2026 (interface, options et touches,
 - [x] Vague 2 : intérieur type `corvette` (B), spatioport par défaut avec hangar (D), bornes et conversation (L4), écran du personnage (L5), Hexis (L6), carte galactique (L8). *B et D relus en jeu et recuits à 512 échantillons sous Linux.*
 - [x] Vague 3 : coque de la corvette (C), secteurs types et arrivée au hangar (L7), tutoriel dans la chambre (L9) ; bakes finals ; anciens secteurs `player_ship` / `hexis_spaceport` retirés. `tools/check.sh` vert (poste Linux).
 - [ ] Intégration et tests par l'orchestrateur à chaque vague : `tools/check.ps1`, captures avant / après, `tools/perf.ps1 -Preset low -Window fullscreen`. *Reste : `check.ps1` et mesures de performance sous Windows (UHD 770), validation des captures par l'auteur.*
-- [ ] Points ouverts de M9 corrigés pendant M10 : berceau recalé de 8 cm (lot D de M10), combat à pied qui résout la bonne salle à quai (lot L1 de M10). Laissés tels quels à la demande de l'auteur : éclairage de l'intérieur en vol, repère hors champ sur le schéma de la coque.
+- [x] Points ouverts de M9 corrigés pendant M10 : berceau recalé de 8 cm (lot D de M10), combat à pied qui résout la bonne salle à quai (lot L1 de M10). Laissés tels quels à la demande de l'auteur : éclairage de l'intérieur en vol, repère hors champ sur le schéma de la coque.
 
 **Fini quand** : chaque point de la liste est traité ou tranché avec l'auteur ; `tools/check.ps1` vert ; ≥ 60 i/s en Bas 1080p sur la machine de référence ; l'auteur valide les captures avant / après.
 
@@ -175,8 +175,8 @@ But : traiter la liste de l'auteur du 05/11/2026 (interface, options et touches,
 
 But : traiter la liste de l'auteur du 05/11/2026 après M9 (sas et casiers, frigo et sous-catégories d'objets, décor de la corvette, noms de salle aux portes, portes jaunes à quai, station orbitale du spatioport, nez de la corvette, hall, taverne et banque du spatioport, invites et encart des touches, fiche du capitaine, codex, carte zoomée et autopilote, livraison dans tous les systèmes). Plan, causes, conventions entre lots et avancement : `docs/m10.md`.
 
-- [ ] Vague 1 : kit (A), nez de la corvette (C), station orbitale (S), spatioport (D), portes (L1), rangements et interactions (L2), écrans et codex (L3), livraison et autopilote (L4).
-- [ ] Vague 2 : intérieur de la corvette (B), carte (L5), branchement et scénarios (L6) ; bakes finals de `corvette` et `spaceport`.
+- [x] Vague 1 : kit (A), nez de la corvette (C), station orbitale (S), spatioport (D), portes (L1), rangements et interactions (L2), écrans et codex (L3), livraison et autopilote (L4).
+- [x] Vague 2 : intérieur de la corvette (B), carte (L5), branchement et scénarios (L6) ; bakes finals de `corvette` et `spaceport`. *`tools/check.sh` vert (poste Linux).*
 - [ ] Intégration et tests par l'orchestrateur à chaque vague : `tools/check.sh` (Linux) puis `tools/check.ps1`, captures avant / après, `tools/perf.ps1 -Preset low -Window fullscreen` sous Windows.
 
 **Fini quand** : chaque point de la liste est traité ou tranché avec l'auteur ; une livraison vers Vorrh se fait de bout en bout (scénario) ; `tools/check.ps1` vert ; ≥ 60 i/s en Bas 1080p sur la machine de référence ; l'auteur valide les captures avant / après.
