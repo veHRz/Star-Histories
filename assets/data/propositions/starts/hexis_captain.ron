@@ -1,12 +1,19 @@
 // Le départ de la v1 (P1, validé par l'auteur) : capitaine indépendant d'un petit vaisseau
-// marchand, endetté auprès de la Banque d'Hexis, aux commandes dans le système d'Hexis.
+// marchand, endetté auprès de la Banque d'Hexis, à bord dans le système d'Hexis.
+// M9 : la partie commence dans la chambre du capitaine, debout (le tutoriel y fait découvrir le
+// vaisseau) ; le vaisseau du joueur est une corvette (P12) : ses statistiques gardent la clé
+// `player_ship` (travel.ron, combat.ron), son intérieur et son maniement sont ceux de
+// l'intérieur type `corvette` (flight.ron), sa coque est posée à quai dans le hangar.
 (
     id: "hexis_captain",
     status: Proposition("P1"),
     system: "sys_hexis",
     ship: "player_ship",
+    interior: "corvette",
+    hull: "models/ships/corvette_hull/corvette_hull.gltf",
+    // Aux commandes (retour de la carte, d'un voyage, d'un amarrage) : le poste de pilotage.
     aboard_spawn: "cockpit",
-    seat_role: "pilot",
+    first_spawn: "chambre",
     // De quoi faire le plein, pas davantage ; le vaisseau est hypothéqué (P1, chiffres P23).
     credits: 3000,
     debt: 45000,

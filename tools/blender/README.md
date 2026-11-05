@@ -19,26 +19,27 @@ source de vérité.
 | `characters/pirate.py`, `characters/mag_pistol.py` | Abordeur pirate et pistolet magnétique du joueur (P26 ; lot F de M8) : `assets/models/characters/pirate.gltf`, `weapons/mag_pistol.gltf`, sources dans `art/characters/` ; textures `char_gear_*` et `char_cloth_*` par `char_atlas.py` et `char_cloth.py` (à lancer avant, ou régénérées si absentes) ; `char_kit.py` (outils), `char_preview.py` (rendus) |
 | `items/*.py` | Objets du catalogue (lot F de M9) : `item_atlas.py` (atlas `item_gear`, régénéré s'il manque), `items.py -- [--only a,b]` (modèles `assets/models/items/<id>.gltf`, sources `art/items/`), `icons.py -- [--only …] [--samples 64]` (icônes 256 px `assets/ui/icons/items/<id>.png` et planche), `previews.py` (aperçus) ; `item_kit.py` (outils communs) |
 | `characters/clerks.py` (+ `clerk_kit.py`, `clerk_face.py`, `clerk_atlas.py`) | PNJ de comptoir (lot E de M9) : `assets/models/characters/clerk_{a,b,c}.gltf` (a : guichetière, contrats et banque ; b : marchand ; c : tenancier), textures `char_clerk_*`, `art/characters/clerks.blend` (`-- --atlas --previews`). Posés par le jeu sur un `SOCKET_<nom>_npc` (`kit.counter` : plateau à 1,05 m, bord côté employé à 0,195 m devant le socket) |
-| `ships/player_ship.py` | Vaisseau du joueur (P12 ; lot B de M8) : une paire de modèles par cellule (`<cellule>.gltf`, `<cellule>_lod.gltf`) dans `assets/models/ships/player_ship/`, une lightmap par cellule dans `assets/textures/lightmaps/player_ship/`, le descripteur `assets/data/propositions/sectors/player_ship.ron`, `art/ships/player_ship.blend` (`-- --no-bake --no-export --lit --game --only a,b --samples N`). Dépliage de `lightmap.py` (`prepare_lightmap`), avec l'estrade du cockpit comme second sol |
-| `places/hexis_spaceport.py`, `sector_tools.py` | Spatioport d'Hexis (P7 ; lot C de M8) et outils de secteur : cellules en style `station`, export glTF séparé (`export_sector`, colliders renommés au nom unique), descripteur, lightmaps, aperçus « comme en jeu » (`-- --no-bake --lit --only a,b --res --samples`). M9 : noms de salle (`meta["rooms"]` → `name_key: Some("room.<usage>")`, `room_key`, `ROOM_USAGES`), `half_extents` / `fit_interact`, `attach_pickup`, LOD sans décor optionnel |
+| `ships/corvette.py` | Intérieur type des corvettes, celui du vaisseau du joueur (P12 ; lot B de M9, qui remplace `ships/player_ship.py` de M8, à retirer) : une paire de modèles par cellule (`<cellule>.gltf`, `<cellule>_lod.gltf`) dans `assets/models/ships/corvette/`, une lightmap par cellule dans `assets/textures/lightmaps/corvette/`, le descripteur `assets/data/propositions/sectors/corvette.ron`, `art/ships/corvette.blend`. Chambre (départ d'une partie), sas à deux portes (`sas__@dock` : la porte extérieure), cockpit sans estrade |
+| `ships/corvette_hull.py` | Coque extérieure de la corvette (lot C de M9) : enveloppe de l'intérieur type `corvette`, tunnel d'embarquement à bâbord, décor par niveaux (`detail`), 9 nœuds `_col` ; `corvette_hull.gltf` + `corvette_hull_lod.gltf` dans `assets/models/ships/corvette_hull/`, textures `hull_corvette_*` (`-- --textures --previews --only … --samples … --res …`) |
+| `places/spaceport.py`, `sector_tools.py` | Spatioport par défaut (P7 ; lot D de M9, qui remplace `places/hexis_spaceport.py` de M8, à retirer) : hangar et berceau où repose le vaisseau, salles du spatioport de M8 autour, comptoirs de PNJ ; outils de secteur : export glTF séparé (`export_sector`, colliders renommés au nom unique), descripteur, lightmaps, aperçus « comme en jeu ». M9 : noms de salle (`meta["rooms"]` → `name_key: Some("room.<usage>")`, `room_key`, `ROOM_USAGES`), `half_extents` / `fit_interact`, `attach_pickup`, LOD sans décor optionnel |
 
 ## Lancer
 
 En arrière-plan (sans interface), sous Windows puis sous Linux :
 
 ```powershell
-& "$env:LOCALAPPDATA\Programs\Blender Foundation\Blender 5.2\blender.exe" --background --factory-startup --python tools/blender/ships/player_ship.py
+& "$env:LOCALAPPDATA\Programs\Blender Foundation\Blender 5.2\blender.exe" --background --factory-startup --python tools/blender/ships/corvette.py
 ```
 
 ```bash
-blender --background --factory-startup --python tools/blender/ships/player_ship.py
+blender --background --factory-startup --python tools/blender/ships/corvette.py
 ```
 
 Dans le Blender ouvert, par le MCP (`execute_blender_code`) :
 
 ```python
 import sys; sys.path.insert(0, r"<racine du dépôt>/tools/blender")  # ex. D:\Projets\Star Histories, ~/Projets/Star-Histories
-import common; common.run_in_open_blender("tools/blender/ships/player_ship.py")
+import common; common.run_in_open_blender("tools/blender/ships/corvette.py")
 ```
 
 Le bake Cycles (CPU) prend ≈ 10 min à 512 échantillons sur le poste Linux (i9-9900K) : lance-le
@@ -52,7 +53,7 @@ fin du journal plutôt que le code de retour. Rediriger la sortie de Blender ver
 (`target/art-previews/<lot>/…log`) : la console est bavarde.
 
 Après un export : `cargo t` (le test `les_modeles_des_secteurs_existent` et la validation des
-secteurs), puis une capture en jeu (`SH_START=sector:player_ship`, `SH_SPAWN=<id>`).
+secteurs), puis une capture en jeu (`SH_START=sector:corvette` ou `sector:spaceport`, `SH_SPAWN=<id>`).
 
 ## Conventions relues par le jeu
 

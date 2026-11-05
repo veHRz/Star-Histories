@@ -5,7 +5,9 @@
     id: "hexis_market",
     status: Proposition("P25"),
     role: "market",
-    sector: "hexis_spaceport",
+    // Le spatioport par défaut (M9), rattaché à Hexis : ailleurs, repli par rôle.
+    sector: "spaceport",
+    place: "sys_hexis",
     npc: "hexis_trader",
     name_key: "dlg.market.name",
     entries: [

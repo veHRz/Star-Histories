@@ -99,7 +99,7 @@ impl Containers {
 
 /// Les objets posés dans le monde qu'on a déjà ramassés, par identifiant stable du point de
 /// ramassage (`sector::gltf::pickup_id` : `<secteur>/<cellule>/<nœud sans INTERACT_>`, par
-/// exemple `player_ship/quartiers/quartiers_pickup_datapad`) : ils ne reviennent plus, la
+/// exemple `corvette/chambre/chambre_pickup_datapad`) : ils ne reviennent plus, la
 /// cellule qui se charge les retire (`sector::gltf`). Sauvegardé (`save`).
 #[derive(Resource, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PickedUp(pub BTreeSet<String>);
@@ -242,10 +242,10 @@ mod tests {
     #[test]
     fn un_objet_pris_le_reste() {
         let mut picked = PickedUp::default();
-        assert!(picked.insert("player_ship/quartiers/tablette"));
-        assert!(!picked.insert("player_ship/quartiers/tablette"));
-        assert!(picked.contains("player_ship/quartiers/tablette"));
-        assert!(!picked.contains("player_ship/soute/tablette"));
+        assert!(picked.insert("corvette/chambre/tablette"));
+        assert!(!picked.insert("corvette/chambre/tablette"));
+        assert!(picked.contains("corvette/chambre/tablette"));
+        assert!(!picked.contains("corvette/soute/tablette"));
     }
 
     #[test]

@@ -5,7 +5,10 @@
 //!
 //! - `SH_START=<vue>[:<lieu>]` : démarre directement dans une vue (`galaxy`, `global:hexis`,
 //!   `sector:test`), dans une nouvelle partie comme le bouton du menu (`new`), dans une
-//!   sauvegarde du dossier du joueur (`load:<fichier>`) ou sur le menu (`menu`).
+//!   sauvegarde du dossier du joueur (`load:<fichier>`) ou sur le menu (`menu`). M9 : `global:`
+//!   place le joueur aux commandes, `new` debout dans la chambre (le départ) ; le vaisseau du
+//!   joueur est `sector:corvette` (intérieur type), le spatioport `sector:spaceport` (le
+//!   vaisseau y est amarré dans le hangar).
 //! - `SH_USER_DIR=<dossier>` : dossier des sauvegardes et réglages (jamais ceux du joueur).
 //! - `SH_EXIT_AFTER_FRAMES=N` : quitte proprement après N frames.
 //! - `SH_SCREENSHOT=chemin.png` : enregistre une capture puis quitte.
@@ -14,8 +17,9 @@
 //! - `SH_WINDOW=<L>x<H>|fullscreen` : taille de la fenêtre, ou plein écran sans bordure (les
 //!   mesures de la machine de référence se font en 1080p).
 //! - `SH_TUTORIAL=1` : le tutoriel guidé tourne (coupé sinon, comme les conseils) ;
-//!   `SH_TUTORIAL_STEP=<n>` le fait commencer à l'étape n (captures du panneau). Le scénario
-//!   `SH_SCENARIO=tutorial` le joue en entier.
+//!   `SH_TUTORIAL_STEP=<n>` le fait commencer à l'étape n, de 1 (la chambre) à 10 (captures du
+//!   panneau). Le scénario `SH_SCENARIO=tutorial` le joue en entier, de la chambre et du tour du
+//!   vaisseau à la sauvegarde.
 //! - `SH_SCREEN=inventory|skills` : ouvre l'écran du personnage sur cet onglet, 3 s après
 //!   l'entrée en partie (comme `SH_TERMINAL` pour le terminal ; captures).
 //! - `SH_TERMINAL=<écran>` : ouvre cet écran du terminal 3 s après l'entrée en partie (captures) :
@@ -24,19 +28,23 @@
 //! - `SH_TALK=<rôle>[:<variante>]` : parle au PNJ de comptoir de ce rôle (`contracts`, `bank`,
 //!   `market`, `shipyard`, `bar`) 3 s après l'entrée en partie, comme `E` en le visant (captures
 //!   de la conversation).
-//! - `SH_SCENARIO=terminal_tour` (avec `SH_START=sector:hexis_spaceport`) : chaque PNJ de
+//! - `SH_SCENARIO=terminal_tour` (avec `SH_START=sector:spaceport`) : chaque PNJ de
 //!   comptoir, le service qu'il ouvre, puis le journal, la fiche et le codex ; captures
 //!   `target/shots/m9-borne-*.png`.
 //! - `SH_KEYHELP=0|1` : force l'encart des touches replié (0) ou déplié (1).
-//! - `SH_SCENARIO=pickup_persist` (avec `SH_USER_DIR` et `SH_START=sector:hexis_spaceport`) :
-//!   ramasser la tablette des quartiers du vaisseau, sauvegarder, recharger : elle ne revient
+//! - `SH_SCENARIO=pickup_persist` (avec `SH_USER_DIR` et `SH_START=sector:spaceport`) :
+//!   ramasser la tablette de la chambre du vaisseau, sauvegarder, recharger : elle ne revient
 //!   pas sur le bureau et reste dans l'inventaire.
 //! - `SH_SCENARIO=voyage_isolated` (avec `SH_START=global:hexis SH_RAID=0`) : Hexis → Calderis
 //!   (monde isolé, sans Portail) par l'hyperespace, capture en orbite, retour ; durées vérifiées.
-//! - `SH_SCENARIO=key_help` (avec `SH_START=sector:hexis_spaceport SH_SPAWN=hall`) : F1 tenue
+//! - `SH_SCENARIO=key_help` (avec `SH_START=sector:spaceport SH_SPAWN=hall`) : F1 tenue
 //!   comme par un joueur bascule l'encart des touches, une fois par appui.
-//! - `SH_SCENARIO=character` (avec `SH_START=sector:player_ship SH_SPAWN=soute`) : I, O, Échap
+//! - `SH_SCENARIO=character` (avec `SH_START=sector:corvette SH_SPAWN=soute`) : I, O, Échap
 //!   dans l'écran du personnage (sans pause derrière), puis un casier : Entrée, E.
+//! - Avec `SH_START=new`, la partie commence debout dans la chambre (M9) : `map_key` prend
+//!   d'abord les commandes ; `save_load` sauvegarde debout et recharge aux commandes (une
+//!   sauvegarde en vol reprend au poste de pilotage) ; `menu_return` et `pause_escape` n'ont
+//!   pas besoin du siège.
 //!
 //! À la sortie, le temps de frame moyen et maximal est toujours journalisé (hors démarrage).
 
@@ -538,9 +546,12 @@ mod tests {
 
 // --- Scénarios ----------------------------------------------------------------------------------
 
-/// Parcours scripté du vaisseau du joueur, du sas au cockpit, en passant par toutes les
-/// cellules et toutes les portes. Coordonnées Blender (x = tribord, y = avant) : le jeu reçoit
-/// (x, −y). `Some(portail)` : porte à ouvrir avant de rejoindre le point.
+/// Parcours scripté du vaisseau du joueur (intérieur type `corvette`, M9), du sas au cockpit, en
+/// passant par toutes les cellules et toutes les portes, jusqu'au siège du pilote. Coordonnées
+/// Blender (x = tribord, y = avant) : le jeu reçoit (x, −y). `Some(portail)` : porte à ouvrir
+/// avant de rejoindre le point. Portes du couloir avant : quartiers (−1,4 ; 4,6), carré
+/// (1,4 ; 5,6), chambre (−1,4 ; 11,0) ; du couloir arrière : sas (−1,4 ; −3), soute (1,4 ; −7),
+/// machines (0 ; −14,2) ; cockpit (0 ; 14,2), sans estrade.
 const WALK_SHIP: &[Step] = &[
     w(-2.4, -3.0, Some("couloir_arriere__sas")),
     w(0.0, -3.0, None),
@@ -550,28 +561,36 @@ const WALK_SHIP: &[Step] = &[
     w(0.0, -12.8, Some("couloir_arriere__machines")),
     w(0.0, -7.0, None),
     w(2.6, -7.0, Some("couloir_arriere__soute")),
-    w(5.2, -7.5, None),
+    w(4.4, -7.8, None),
     w(2.6, -7.0, None),
     w(0.0, -7.0, Some("couloir_arriere__soute")),
-    w(0.0, 6.0, None),
-    w(-2.6, 6.0, Some("couloir_avant__quartiers")),
-    w(-4.5, 5.5, None),
-    w(-2.6, 6.0, None),
-    w(0.0, 6.0, Some("couloir_avant__quartiers")),
-    w(2.6, 6.0, Some("couloir_avant__carre")),
-    w(3.2, 8.5, None),
-    w(2.6, 6.0, None),
-    w(0.0, 6.0, Some("couloir_avant__carre")),
+    w(0.0, 4.6, None),
+    w(-2.6, 4.6, Some("couloir_avant__quartiers")),
+    w(-3.8, 4.6, None),
+    w(-2.6, 4.6, None),
+    w(0.0, 4.6, Some("couloir_avant__quartiers")),
+    w(0.0, 5.6, None),
+    w(2.6, 5.6, Some("couloir_avant__carre")),
+    w(3.0, 4.0, None),
+    w(2.6, 5.6, None),
+    w(0.0, 5.6, Some("couloir_avant__carre")),
+    w(0.0, 11.0, None),
+    w(-2.6, 11.0, Some("couloir_avant__chambre")),
+    w(-4.0, 11.0, None),
+    w(-2.6, 11.0, None),
+    w(0.0, 11.0, Some("couloir_avant__chambre")),
     w(0.0, 12.8, None),
     w(0.0, 15.0, Some("couloir_avant__cockpit")),
     w(0.0, 16.4, None),
     w(0.0, 17.4, None),
     w(0.0, 18.4, None),
+    Step::SitAtHelm,
 ];
 
 /// Fin du scénario `fly_ship` : du poste de pilotage au couloir avant, à pied, en plein vol.
+/// Le joueur se lève devant les sièges (y ≈ 18,6 ; la planche de bord commence à 19,7).
 const FLY_SHIP_WALK: &[Step] = &[
-    w(0.0, 20.3, None),
+    w(0.0, 18.6, None),
     w(0.0, 18.0, None),
     w(0.0, 16.4, None),
     w(0.0, 15.0, Some("couloir_avant__cockpit")),
@@ -646,12 +665,17 @@ enum Step {
     /// Comme [`Step::Walk`], mais en coordonnées du quartier (repère du jeu : x, z), à quai.
     WalkDistrict(f32, f32, Option<&'static str>),
     /// Marcher jusqu'à la console de cette étiquette, la viser et l'utiliser (comme `E`) ;
-    /// fini quand le terminal s'ouvre.
+    /// fini quand le terminal s'ouvre. Plus jouée depuis M9 (le tutoriel parle au guichetier,
+    /// un PNJ de comptoir) ; gardée pour un scénario qui viserait une console.
+    #[allow(dead_code)]
     UseConsole(&'static str),
-    /// Vérifier que le tutoriel est arrivé à l'étape n (9 : terminé).
+    /// Vérifier que le tutoriel est arrivé à l'étape n (11 : terminé).
     Tutorial(usize),
     /// Sauvegarde rapide (comme `F5`).
     QuickSave,
+    /// Une action propre à un scénario, jouée avec le `World` à chaque frame jusqu'à ce qu'elle
+    /// rende `Ok(true)` ; `Err` : échec du scénario. Le texte la nomme dans le journal.
+    Script(&'static str, fn(&mut World) -> Result<bool, String>),
 }
 
 /// La conduite de l'autopilote pendant un raid.
@@ -697,6 +721,7 @@ fn is_career_step(step: &Step) -> bool {
             | Step::FlyToBeacon
             | Step::Tutorial(_)
             | Step::QuickSave
+            | Step::Script(..)
     )
 }
 
@@ -704,33 +729,37 @@ const fn w(x: f32, y: f32, door: Option<&'static str>) -> Step {
     Step::Walk(x, y, door)
 }
 
-/// `port_loop` : du quai au cockpit, départ, vol, amarrage, et retour au quai (critère de M2).
-/// Le quai est à 2,6 m de l'écoutille, côté passerelle (x < −5,8 dans le repère du vaisseau).
+/// `port_loop` (avec `SH_START=sector:spaceport`) : du quai du hangar au cockpit, départ, vol,
+/// amarrage, et retour au quai (critère de M2). Le vaisseau repose dans son berceau (M9) : on
+/// longe la passerelle jusqu'à la porte extérieure du sas (x = −7,7 dans le repère du vaisseau,
+/// portail `sas__hangar` une fois amarré), le sas de 6 m, le couloir, le cockpit ; au retour, le
+/// quai est au-delà de la coque (x < −7,8), au pied de la passerelle.
 const PORT_LOOP: &[Step] = &[
-    w(-6.4, -3.0, Some("sas__passerelle")),
-    w(-3.8, -3.0, None),
+    w(-6.4, -3.0, Some("sas__hangar")),
+    w(-5.4, -3.0, None),
     w(-2.4, -3.0, Some("couloir_arriere__sas")),
     w(0.0, -3.0, None),
     w(0.0, 12.8, None),
     w(0.0, 15.0, Some("couloir_avant__cockpit")),
     w(0.0, 16.4, None),
     w(0.0, 17.4, None),
-    w(0.0, 18.6, None),
+    w(0.0, 18.4, None),
     Step::SitAtHelm,
     Step::DockOrDepart,
     Step::Thrust(4.0),
     Step::DockOrDepart,
     Step::StandUp,
-    w(0.0, 20.3, None),
+    w(0.0, 18.6, None),
     w(0.0, 18.0, None),
     w(0.0, 16.4, None),
     w(0.0, 15.0, Some("couloir_avant__cockpit")),
     w(0.0, 12.8, None),
     w(0.0, -3.0, None),
     w(-2.4, -3.0, Some("couloir_arriere__sas")),
-    w(-3.8, -3.0, None),
-    w(-6.4, -3.0, Some("sas__passerelle")),
+    w(-5.4, -3.0, None),
+    w(-6.4, -3.0, Some("sas__hangar")),
     w(-8.3, -3.0, None),
+    w(-11.5, -3.0, None),
 ];
 
 /// `voyage` : Hexis → Cygnara par Portail, puis retour par l'hyperespace (critère de M3) ; enfin
@@ -910,7 +939,7 @@ const RAID_LOSE: &[Step] = &[
     Step::Shot("m6-mort"),
 ];
 
-/// `firefight` (avec `SH_START=sector:player_ship SH_SPAWN=soute SH_BOARDING=3`) : un abordage
+/// `firefight` (avec `SH_START=sector:corvette SH_SPAWN=soute SH_BOARDING=3`) : un abordage
 /// repoussé dans la soute (critère de M6, à pied).
 const FIREFIGHT: &[Step] = &[
     Step::Wait(2.0),
@@ -928,105 +957,392 @@ const FIREFIGHT_LOSE: &[Step] = &[
 ];
 
 /// `tutorial` (avec `SH_START=new SH_TUTORIAL=1 SH_RAID=0`, et `SH_USER_DIR`) : tout le
-/// tutoriel guidé, par les mêmes actions qu'un joueur (critère de M8). Chaque étape franchie
-/// est vérifiée ([`Step::Tutorial`]) ; captures `target/shots/m8-tuto-*.png`.
+/// tutoriel guidé, par les mêmes actions qu'un joueur (critères de M8 et de M9). Chaque étape
+/// franchie est vérifiée ([`Step::Tutorial`]) ; captures `target/shots/m9-tuto-chambre.png`,
+/// `m9-tuto-tour.png` et `m8-tuto-*.png` (noms de M8 gardés, pour comparer). La partie commence
+/// debout dans la chambre (apparition `chambre`, Blender (−5,3 ; 11,6)) : un casier, la
+/// tablette, l'inventaire ([`tutorial_script`] : viser et la touche d'interaction, vraies
+/// touches I et Échap), puis le tour du vaisseau de porte en porte (portes du couloir avant :
+/// chambre (−1,4 ; 11,0), quartiers (−1,4 ; 4,6), carré (1,4 ; 5,6) ; du couloir arrière : sas
+/// (−1,4 ; −3), soute (1,4 ; −7), machines (0 ; −14,2) ; cockpit (0 ; 14,2)), jusqu'au siège du
+/// pilote. À quai, le chemin de `port_loop` jusqu'au hangar, puis le couloir, le hall et le
+/// bureau, où l'on vise le guichetier.
 const TUTORIAL: &[Step] = &[
     Step::Wait(2.0),
     Step::Tutorial(1),
+    Step::Shot("m9-tuto-chambre"),
+    // 1. La chambre : un casier, la tablette du bureau, l'inventaire.
+    Step::Script("ouvrir un casier", tutorial_script::open_locker),
+    Step::Wait(0.5),
+    Step::Script("refermer le casier (Échap)", tutorial_script::close_screen),
+    Step::Script("ramasser la tablette", tutorial_script::take_pickup),
+    Step::Script("ouvrir l'inventaire (I)", tutorial_script::open_inventory),
+    Step::Wait(0.5),
+    Step::Script(
+        "refermer l'inventaire (Échap)",
+        tutorial_script::close_screen,
+    ),
+    Step::Tutorial(2),
+    // 2. Le tour : quartiers et carré à l'avant, sas, soute et machines à l'arrière, cockpit.
+    w(-4.0, 11.0, None),
+    w(-2.6, 11.0, None),
+    w(0.0, 11.0, Some("couloir_avant__chambre")),
+    w(0.0, 4.6, None),
+    w(-2.6, 4.6, Some("couloir_avant__quartiers")),
+    w(-3.8, 4.6, None),
+    w(-2.6, 4.6, None),
+    w(0.0, 4.6, Some("couloir_avant__quartiers")),
+    w(0.0, 5.6, None),
+    w(2.6, 5.6, Some("couloir_avant__carre")),
+    w(3.0, 4.0, None),
+    w(2.6, 5.6, None),
+    w(0.0, 5.6, Some("couloir_avant__carre")),
+    // Face à l'arrière, le repère sur la porte du sas.
+    w(0.0, 3.0, None),
+    Step::Shot("m9-tuto-tour"),
+    w(0.0, -3.0, None),
+    w(-2.4, -3.0, Some("couloir_arriere__sas")),
+    w(-3.8, -3.0, None),
+    w(-2.4, -3.0, None),
+    w(0.0, -3.0, Some("couloir_arriere__sas")),
+    w(0.0, -7.0, None),
+    w(2.6, -7.0, Some("couloir_arriere__soute")),
+    w(4.4, -7.8, None),
+    w(2.6, -7.0, None),
+    w(0.0, -7.0, Some("couloir_arriere__soute")),
+    w(0.0, -12.6, None),
+    w(0.0, -15.6, Some("couloir_arriere__machines")),
+    w(0.0, -17.0, None),
+    w(0.0, -12.8, Some("couloir_arriere__machines")),
+    w(0.0, 12.8, None),
+    w(0.0, 15.0, Some("couloir_avant__cockpit")),
+    w(0.0, 16.4, None),
+    w(0.0, 17.4, None),
+    w(0.0, 18.4, None),
+    Step::Tutorial(3),
+    // 3. S'asseoir, regarder, pousser, la croisière.
+    Step::SitAtHelm,
+    Step::Wait(1.0),
     Step::Shot("m8-tuto-1-commandes"),
-    // 1. Regarder, pousser, la croisière.
     Step::Turn(3.0),
     Step::Thrust(4.0),
     Step::Cruise(2.0),
-    Step::Tutorial(2),
-    // 2. La balise du spatioport, l'amarrage.
+    Step::Tutorial(4),
+    // 4. La balise du spatioport, l'amarrage.
     Step::JumpAboveBeacon(25_000.0),
     Step::Wait(1.0),
     Step::Shot("m8-tuto-2-balise"),
     Step::FlyToBeacon,
     Step::DockOrDepart,
-    Step::Tutorial(3),
-    // 3. Se lever, sortir par le sas (le chemin de `port_loop`), traverser le hall.
+    Step::Tutorial(5),
+    // 5. Se lever, sortir par le sas et la passerelle (le chemin de `port_loop`), le hangar, le
+    // couloir, le hall (on contourne les bancs), le bureau.
     Step::StandUp,
     Step::Wait(1.0),
     Step::Shot("m8-tuto-3-sas"),
-    w(0.0, 20.3, None),
+    w(0.0, 18.6, None),
     w(0.0, 18.0, None),
     w(0.0, 16.4, None),
     w(0.0, 15.0, Some("couloir_avant__cockpit")),
     w(0.0, 12.8, None),
     w(0.0, -3.0, None),
     w(-2.4, -3.0, Some("couloir_arriere__sas")),
-    w(-3.8, -3.0, None),
-    w(-6.4, -3.0, Some("sas__passerelle")),
+    w(-5.4, -3.0, None),
+    w(-6.4, -3.0, Some("sas__hangar")),
     w(-8.3, -3.0, None),
-    // Dans le quartier : la passerelle, le hall (on contourne les bancs), le bureau.
-    Step::WalkDistrict(-6.0, 0.0, None),
+    w(-11.5, -3.0, None),
+    Step::WalkDistrict(-3.0, 0.0, None),
+    Step::WalkDistrict(-6.0, 0.0, Some("couloir__hangar")),
     Step::WalkDistrict(-15.0, 0.0, None),
     Step::WalkDistrict(-15.0, -4.5, None),
     Step::WalkDistrict(-20.0, -4.5, None),
     Step::WalkDistrict(-20.0, -8.6, Some("hall__bureau")),
     Step::Shot("m8-tuto-3-bureau"),
-    // 4. Le guichetier, un contrat de transport.
-    Step::UseConsole("contracts"),
-    Step::Tutorial(4),
+    Step::Tutorial(6),
+    // 6. Le guichetier, un contrat de transport.
+    Step::Script("parler au guichetier", tutorial_script::talk_to_clerk),
     Step::Choose("say:dlg.office.ask_work"),
     Step::Choose("say:dlg.office.show_contracts"),
     Step::Shot("m8-tuto-4-contrats"),
     Step::Choose("accept:sys_cygnara"),
-    Step::Tutorial(5),
+    Step::Tutorial(7),
     Step::Choose("close"),
     Step::Wait(0.5),
-    // 5. Le journal, la fiche, le codex (comme leurs touches).
+    // 7. Le journal, l'écran du personnage (vraie touche I), le codex.
     Step::Open(Terminal::Journal),
     Step::Choose("close"),
     Step::Wait(0.5),
-    Step::Open(Terminal::Sheet),
-    Step::Choose("close"),
+    Step::Script("ouvrir l'inventaire (I)", tutorial_script::open_inventory),
     Step::Wait(0.5),
+    Step::Script(
+        "refermer l'inventaire (Échap)",
+        tutorial_script::close_screen,
+    ),
     Step::Open(Terminal::Codex),
     Step::Choose("close"),
     Step::Wait(0.5),
-    Step::Tutorial(6),
+    Step::Tutorial(8),
     Step::Shot("m8-tuto-6-depart"),
-    // 6. Retour au cockpit, départ, la carte, la destination du contrat.
+    // 8. Retour au cockpit, départ, la carte, la destination du contrat.
     Step::WalkDistrict(-20.0, -8.6, Some("hall__bureau")),
     Step::WalkDistrict(-20.0, -4.5, None),
     Step::WalkDistrict(-15.0, -4.5, None),
     Step::WalkDistrict(-15.0, 0.0, None),
     Step::WalkDistrict(-6.0, 0.0, None),
-    w(-8.3, -3.0, None),
-    w(-6.4, -3.0, Some("sas__passerelle")),
-    w(-3.8, -3.0, None),
+    Step::WalkDistrict(-3.0, 0.0, Some("couloir__hangar")),
+    Step::WalkDistrict(5.0, 0.0, None),
+    w(-6.4, -3.0, Some("sas__hangar")),
+    w(-5.4, -3.0, None),
     w(-2.4, -3.0, Some("couloir_arriere__sas")),
     w(0.0, -3.0, None),
     w(0.0, 12.8, None),
     w(0.0, 15.0, Some("couloir_avant__cockpit")),
     w(0.0, 16.4, None),
     w(0.0, 17.4, None),
-    w(0.0, 18.6, None),
+    w(0.0, 18.4, None),
     Step::SitAtHelm,
     Step::DockOrDepart,
     Step::OpenMap,
     Step::Route("sys_cygnara"),
     Step::Wait(1.0),
     Step::Shot("m8-tuto-6-carte"),
-    Step::Tutorial(7),
-    // 7. Par Portail, livraison en orbite près du hub, paiement.
+    Step::Tutorial(9),
+    // 9. Par Portail, livraison en orbite près du hub, paiement.
     Step::Depart(sh_sim::travel::TravelMode::Portal),
     Step::Wait(1.0),
     Step::Shot("m8-tuto-7-hub"),
     Step::Hail,
-    Step::Tutorial(8),
+    Step::Tutorial(10),
     Step::Shot("m8-tuto-8-sauvegarde"),
-    // 8. Sauvegarder : fin.
+    // 10. Sauvegarder : fin.
     Step::QuickSave,
-    Step::Tutorial(9),
+    Step::Tutorial(11),
     Step::Wait(1.0),
     Step::Shot("m8-tuto-fin"),
 ];
 
-/// `terminal_tour` (avec `SH_START=sector:hexis_spaceport`) : chaque PNJ de comptoir (M9), le
+/// Les actions propres au scénario `tutorial` ([`Step::Script`]) : ce qu'un joueur fait dans la
+/// chambre et au bureau, que les étapes ordinaires ne savent pas faire. Viser se fait d'une
+/// place d'où le rayon de visée touche l'objet ([`aim_spot`], raccourci : le joueur y est posé,
+/// dans la salle où il se trouve), puis la touche d'interaction comme `E` ; l'inventaire et la
+/// fermeture des écrans passent par de vrais messages clavier (I, Échap), tenus ≈ 150 ms.
+mod tutorial_script {
+    use bevy::prelude::*;
+
+    use super::{
+        KEY_HOLD_SECONDS, KEY_SETTLE_SECONDS, Scenario, aim_spot, cell_local_ready, logical_key,
+        place_player, send_key,
+    };
+    use crate::items::CharacterTab;
+    use crate::sector::gltf::Interactable;
+    use crate::ui::character::{CharacterScreen, ScreenView};
+
+    /// Délai (s) au-delà duquel une action sans effet fait échouer le scénario.
+    const SCRIPT_SECONDS: f32 = 12.0;
+
+    /// L'état de l'action en cours : l'étape du scénario où elle a commencé, sa cible, la touche
+    /// tenue (et depuis quand), le temps écoulé.
+    #[derive(Resource, Default)]
+    struct ScriptState {
+        index: Option<usize>,
+        since: f32,
+        target: Option<Entity>,
+        pressed: Option<f32>,
+        released: bool,
+    }
+
+    /// Le temps écoulé depuis le début de l'action ; une nouvelle étape repart de zéro.
+    fn begin(world: &mut World) -> f32 {
+        let dt = world.resource::<Time<Real>>().delta_secs();
+        let index = world.resource::<Scenario>().index;
+        let mut state = world.get_resource_or_insert_with(ScriptState::default);
+        if state.index != Some(index) {
+            *state = ScriptState {
+                index: Some(index),
+                ..default()
+            };
+        } else {
+            state.since += dt;
+        }
+        state.since
+    }
+
+    /// Appuie sur la touche, la tient ≈ 150 ms, la relâche ; vrai une fois relâchée depuis
+    /// assez longtemps pour que l'écran ait réagi.
+    fn tap(world: &mut World, code: KeyCode, now: f32) -> bool {
+        let state = world.resource::<ScriptState>();
+        match (state.pressed, state.released) {
+            (None, _) => {
+                send_key(world, code, logical_key(code), true);
+                world.resource_mut::<ScriptState>().pressed = Some(now);
+                false
+            }
+            (Some(at), false) if now - at >= KEY_HOLD_SECONDS => {
+                send_key(world, code, logical_key(code), false);
+                world.resource_mut::<ScriptState>().released = true;
+                false
+            }
+            (Some(at), released) => released && now - at >= KEY_HOLD_SECONDS + KEY_SETTLE_SECONDS,
+        }
+    }
+
+    fn character_view(world: &World) -> Option<ScreenView> {
+        world
+            .get_resource::<CharacterScreen>()
+            .map(|s| s.view.clone())
+    }
+
+    /// Vise l'interactif voulu le plus proche du joueur, appuie sur la touche d'interaction (une
+    /// fois par seconde tant que rien ne se passe) ; fini quand `done` le constate.
+    fn interact_with(
+        world: &mut World,
+        wanted: fn(&Interactable) -> bool,
+        done: fn(&mut World, Entity) -> bool,
+    ) -> Result<bool, String> {
+        let now = begin(world);
+        let Some(entity) = world.resource::<ScriptState>().target else {
+            // La salle du joueur prête (ses collisions servent à viser), le joueur au sol.
+            let cell = world
+                .get_resource::<crate::sector::streaming::CellStates>()
+                .and_then(|c| c.current.clone());
+            let player = world
+                .query_filtered::<&Transform, With<crate::player::Player>>()
+                .single(world)
+                .ok()
+                .map(|t| t.translation);
+            let (Some(cell), Some(player)) = (cell, player) else {
+                return Ok(false);
+            };
+            if !cell_local_ready(world, &cell) {
+                return Ok(false);
+            }
+            let found = world
+                .query::<(Entity, &Interactable, &GlobalTransform)>()
+                .iter(world)
+                .filter(|(_, i, _)| wanted(i))
+                .map(|(e, _, t)| (e, t.translation()))
+                .min_by(|a, b| {
+                    a.1.distance_squared(player)
+                        .total_cmp(&b.1.distance_squared(player))
+                });
+            let Some((entity, at)) = found else {
+                return if now > SCRIPT_SECONDS {
+                    Err(format!("rien à viser dans la cellule {cell}"))
+                } else {
+                    Ok(false)
+                };
+            };
+            // D'où viser : du côté du joueur d'abord, puis tout autour.
+            let side = Vec2::new(player.x - at.x, player.z - at.z).normalize_or(Vec2::Y);
+            let Some(stand) = aim_spot(world, entity, at, player.y, side) else {
+                return Err(format!("aucun point d'où viser {entity:?} ({at:?})"));
+            };
+            place_player(world, stand, Some(at));
+            world.resource_mut::<ScriptState>().target = Some(entity);
+            return Ok(false);
+        };
+        if done(world, entity) {
+            return Ok(true);
+        }
+        let aimed = world
+            .resource::<crate::interaction::Focus>()
+            .0
+            .as_ref()
+            .is_some_and(|t| t.entity == entity);
+        let pressed = world.resource::<ScriptState>().pressed;
+        if aimed && pressed.is_none_or(|at| now - at > 1.0) {
+            world.write_message(crate::interaction::InteractRequest);
+            world.resource_mut::<ScriptState>().pressed = Some(now);
+        }
+        if now > SCRIPT_SECONDS {
+            return Err(format!(
+                "sans effet (visée {})",
+                if aimed { "posée" } else { "manquée" }
+            ));
+        }
+        Ok(false)
+    }
+
+    /// Un casier de la chambre : l'écran de rangement s'ouvre.
+    pub(super) fn open_locker(world: &mut World) -> Result<bool, String> {
+        interact_with(
+            world,
+            |i| matches!(i, Interactable::Locker { .. }),
+            |world, _| {
+                matches!(character_view(world), Some(ScreenView::Container(_)))
+                    && crate::ui::character::is_shown(world)
+            },
+        )
+    }
+
+    /// La tablette posée sur le bureau : prise, son point de ramassage disparaît.
+    pub(super) fn take_pickup(world: &mut World) -> Result<bool, String> {
+        interact_with(
+            world,
+            |i| matches!(i, Interactable::Pickup { .. }),
+            |world, entity| world.get::<Interactable>(entity).is_none(),
+        )
+    }
+
+    /// Le guichetier du bureau des contrats (PNJ de comptoir) : sa conversation s'ouvre.
+    pub(super) fn talk_to_clerk(world: &mut World) -> Result<bool, String> {
+        interact_with(
+            world,
+            |i| matches!(i, Interactable::Npc { role, .. } if role == "contracts"),
+            |world, _| {
+                world
+                    .get_resource::<crate::ui::terminal::Terminal>()
+                    .is_some_and(|t| t.page.is_some())
+            },
+        )
+    }
+
+    /// La touche de l'inventaire (I) : l'écran du personnage, sur l'inventaire.
+    pub(super) fn open_inventory(world: &mut World) -> Result<bool, String> {
+        let now = begin(world);
+        if !tap(world, KeyCode::KeyI, now) {
+            return Ok(false);
+        }
+        let view = character_view(world);
+        if view == Some(ScreenView::Tab(CharacterTab::Inventory))
+            && crate::ui::character::is_shown(world)
+        {
+            return Ok(true);
+        }
+        if now > SCRIPT_SECONDS / 2.0 {
+            return Err(format!("I n'ouvre pas l'inventaire (écran {view:?})"));
+        }
+        Ok(false)
+    }
+
+    /// Échap : l'écran du personnage (inventaire ou casier) se ferme, sans pause derrière, et
+    /// le joueur reprend la marche.
+    pub(super) fn close_screen(world: &mut World) -> Result<bool, String> {
+        let now = begin(world);
+        if !tap(world, KeyCode::Escape, now) {
+            return Ok(false);
+        }
+        let paused = world.contains_resource::<crate::ui::pause::Paused>();
+        if paused {
+            return Err("Échap a ouvert la pause".into());
+        }
+        let open = character_view(world).is_some() || crate::ui::character::is_shown(world);
+        let on_foot = world
+            .get_resource::<State<crate::state::ControlMode>>()
+            .is_some_and(|m| *m.get() == crate::state::ControlMode::OnFoot);
+        if !open && on_foot {
+            return Ok(true);
+        }
+        if now > SCRIPT_SECONDS / 2.0 {
+            return Err(format!(
+                "Échap ne referme pas l'écran (ouvert {open}, à pied {on_foot})"
+            ));
+        }
+        Ok(false)
+    }
+}
+
+/// `terminal_tour` (avec `SH_START=sector:spaceport`) : chaque PNJ de comptoir (M9), le
 /// service que sa conversation ouvre, le retour à la conversation, puis les onglets de la
 /// tablette ; captures `target/shots/m9-borne-*.png` des écrans refaits.
 const TERMINAL_TOUR: &[Step] = &[
@@ -1455,8 +1771,9 @@ struct MapKeyCheck {
 
 const KEY_HOLD_SECONDS: f32 = 0.15;
 
-/// `map_key` (avec `SH_START=new`) : M ouvre la carte, qui reste ouverte ; M la referme, retour
-/// aux commandes. La carte se refermait d'elle-même une demi-seconde après son ouverture.
+/// `map_key` (avec `SH_START=new`) : aux commandes ([`take_helm`] : la partie commence debout),
+/// M ouvre la carte, qui reste ouverte ; M la referme, retour aux commandes. La carte se
+/// refermait d'elle-même une demi-seconde après son ouverture.
 fn map_key(world: &mut World) {
     use crate::state::ControlMode;
     let dt = world.resource::<Time<Real>>().delta_secs();
@@ -1490,7 +1807,15 @@ fn map_key(world: &mut World) {
     match step {
         // Aux commandes depuis un moment : M.
         0 if seated && since > 3.0 => {}
-        0 => return,
+        // Une nouvelle partie commence debout dans la chambre (M9) : d'abord les commandes, puis
+        // trois secondes assis.
+        0 => {
+            if view == Some(ViewLevel::Global) && !busy && mode != Some(ControlMode::Piloting) {
+                take_helm(world);
+                world.resource_mut::<MapKeyCheck>().since = 0.0;
+            }
+            return;
+        }
         // Trois secondes plus tard, la carte doit toujours être là.
         1 if since < 3.0 => {
             if view != Some(ViewLevel::Galaxy) && since > 1.0 {
@@ -1592,7 +1917,7 @@ struct KeyHelpCheck {
     initial: bool,
 }
 
-/// `key_help` (avec `SH_START=sector:hexis_spaceport SH_SPAWN=hall`) : à pied, F1 tenue comme
+/// `key_help` (avec `SH_START=sector:spaceport SH_SPAWN=hall`) : à pied, F1 tenue comme
 /// par un joueur bascule l'encart des touches (`ui::keys_panel::KeyHelpVisible`) une seule
 /// fois malgré la touche tenue ; un second appui le remet comme au départ.
 fn key_help(world: &mut World) {
@@ -1699,7 +2024,7 @@ fn locker_and_pack(
     Some((locker, pack))
 }
 
-/// `character` (avec `SH_START=sector:player_ship SH_SPAWN=soute`) : I tenue ouvre l'écran du
+/// `character` (avec `SH_START=sector:corvette SH_SPAWN=soute`) : I tenue ouvre l'écran du
 /// personnage (onglet Inventaire), O passe aux Compétences, Échap le ferme sans ouvrir la
 /// pause derrière, retour à pied ; puis un casier ([`CHARACTER_LOCKER`]) : Entrée prend la case
 /// choisie (comme au clavier dans l'écran), E referme le rangement.
@@ -1769,7 +2094,7 @@ fn character_screen(world: &mut World) {
             KeyCode::Escape
         }
         // Échap a fermé l'écran, sans pause derrière : le casier (comme le ferait la touche
-        // d'interaction en le visant ; le vaisseau de départ n'a pas encore ce casier).
+        // d'interaction en le visant ; il est dans la chambre, le scénario reste dans la soute).
         3 if settled => {
             if !closed {
                 fail(
@@ -1874,7 +2199,7 @@ fn ship_pose(world: &World) -> Option<sh_core::SpacePos> {
     world.get::<crate::space::SpacePosition>(root).map(|p| p.0)
 }
 
-/// `save_load` (avec `SH_USER_DIR` et `SH_START=new` ou `sector:hexis_spaceport`) : sauvegarder,
+/// `save_load` (avec `SH_USER_DIR` et `SH_START=new` ou `sector:spaceport`) : sauvegarder,
 /// tout changer, recharger, retrouver l'argent, la date, la vue et la pose du vaisseau.
 fn save_load(world: &mut World) {
     let dt = world.resource::<Time<Real>>().delta_secs();
@@ -1962,14 +2287,68 @@ fn save_load(world: &mut World) {
     }
 }
 
-/// `pickup_persist` : l'objet ramassé, son point de ramassage et sa cellule (la tablette des
-/// quartiers du vaisseau du joueur).
-const PICKUP_NODE: &str = "INTERACT_quartiers_pickup_datapad";
-const PICKUP_CELL: &str = "quartiers";
+/// `pickup_persist` : l'objet ramassé, son point de ramassage et sa cellule (la tablette posée
+/// sur le bureau de la chambre du vaisseau du joueur, M9).
+const PICKUP_NODE: &str = "INTERACT_chambre_pickup_datapad";
+const PICKUP_CELL: &str = "chambre";
 const PICKUP_ITEM: &str = "datapad";
-/// Distance horizontale (m) d'où l'autopilote vise l'objet, du côté du centre de la salle (hors
-/// du tabouret du bureau, à portée de main).
-const PICKUP_STAND: f32 = 1.5;
+/// Distances horizontales (m) d'où l'autopilote essaie de viser l'objet, à portée de main.
+const PICKUP_STANDS: [f32; 3] = [1.1, 1.4, 0.8];
+
+/// Un point d'où viser l'objet `entity` (en `at`) : à l'une des [`PICKUP_STANDS`], dans l'une de
+/// seize directions en partant de `side`, là où le joueur debout ne touche rien et où le rayon de
+/// visée (celui de `interaction`, depuis l'œil) touche l'objet avant tout obstacle.
+fn aim_spot(world: &mut World, entity: Entity, at: Vec3, feet_y: f32, side: Vec2) -> Option<Vec3> {
+    use crate::player::{RADIUS, STAND_HEIGHT};
+    use crate::sector::Layer;
+    use avian3d::prelude::*;
+    let eye_height = world
+        .query_filtered::<&crate::player::PlayerController, With<crate::player::Player>>()
+        .single(world)
+        .map_or(STAND_HEIGHT - 0.12, |c| c.eye_height());
+    let mut state = bevy::ecs::system::SystemState::<(SpatialQuery, Query<&ChildOf>)>::new(world);
+    let Ok((spatial, parents)) = state.get(world) else {
+        return None;
+    };
+    let body = Collider::capsule(RADIUS, STAND_HEIGHT - 2.0 * RADIUS);
+    let solid = SpatialQueryFilter::from_mask([Layer::Static, Layer::Door]);
+    let sight = SpatialQueryFilter::from_mask([Layer::Static, Layer::Door, Layer::Interact]);
+    // L'objet touché, ou l'un de ses descendants.
+    let is_target = |mut hit: Entity| loop {
+        if hit == entity {
+            return true;
+        }
+        match parents.get(hit) {
+            Ok(parent) => hit = parent.parent(),
+            Err(_) => return false,
+        }
+    };
+    let base = side.y.atan2(side.x);
+    for dist in PICKUP_STANDS {
+        for k in 0..16 {
+            // 0, +1, −1, +2, −2… : d'abord les directions proches du côté de la salle.
+            let step = if k % 2 == 0 { k / 2 } else { -(k + 1) / 2 };
+            let angle = base + step as f32 * std::f32::consts::TAU / 16.0;
+            let feet = Vec3::new(at.x + angle.cos() * dist, feet_y, at.z + angle.sin() * dist);
+            let center = feet + Vec3::Y * (STAND_HEIGHT / 2.0 + 0.03);
+            if !spatial
+                .shape_intersections(&body, center, Quat::IDENTITY, &solid)
+                .is_empty()
+            {
+                continue;
+            }
+            let eye = feet + Vec3::Y * eye_height;
+            let Ok(dir) = Dir3::new(at - eye) else {
+                continue;
+            };
+            let hit = spatial.cast_ray(eye, dir, crate::interaction::REACH, true, &sight);
+            if hit.is_some_and(|h| is_target(h.entity)) {
+                return Some(feet);
+            }
+        }
+    }
+    None
+}
 
 /// `pickup_persist` : un objet pris ne revient pas, même après un chargement.
 #[derive(Resource, Default)]
@@ -2023,6 +2402,38 @@ fn place_player(world: &mut World, feet: Vec3, look_at: Option<Vec3>) -> bool {
     true
 }
 
+/// Prend les commandes de n'importe où à bord (raccourci de l'autopilote : la marche jusqu'au
+/// cockpit est éprouvée par `walk_ship`) : le joueur va au point d'apparition des commandes du
+/// départ, puis s'assoit au poste de pilotage dès que sa cellule est prête. Vrai une fois assis.
+fn take_helm(world: &mut World) -> bool {
+    use crate::player::{Player, PlayerController, PlayerMode};
+    let mut players = world.query_filtered::<&PlayerController, With<Player>>();
+    if players
+        .single(world)
+        .is_ok_and(|c| matches!(c.mode, PlayerMode::Seated { .. }))
+    {
+        return true;
+    }
+    let spawn = world
+        .resource::<Data>()
+        .start()
+        .map(|s| s.aboard_spawn.clone())
+        .and_then(|id| {
+            let active = world.get_resource::<crate::sector::ActiveSector>()?;
+            let spawn = active.sector.spawns.iter().find(|sp| sp.id == id)?;
+            Some((crate::sector::v3(spawn.pos), spawn.cell.clone()))
+        });
+    let Some((feet, cell)) = spawn else {
+        return false;
+    };
+    if !cell_local_ready(world, &cell) {
+        // Tenu sur place tant que le sol de la cellule n'est pas chargé (sinon il tomberait).
+        place_player(world, feet, None);
+        return false;
+    }
+    crate::interaction::sit_at(world, "pilot")
+}
+
 /// Place le joueur au centre d'une cellule du secteur chargé, au ras du sol : la cellule se
 /// charge autour de lui. Faux si la cellule ou le joueur manquent.
 fn go_to_cell(world: &mut World, cell: &str) -> bool {
@@ -2036,8 +2447,8 @@ fn go_to_cell(world: &mut World, cell: &str) -> bool {
     feet.is_some_and(|feet| place_player(world, feet, None))
 }
 
-/// `pickup_persist` (avec `SH_USER_DIR` et `SH_START=sector:hexis_spaceport`) : à quai, dans les
-/// quartiers du vaisseau, viser la tablette posée (son modèle du catalogue s'il existe) et la
+/// `pickup_persist` (avec `SH_USER_DIR` et `SH_START=sector:spaceport`) : à quai, dans la
+/// chambre du vaisseau, viser la tablette posée (son modèle du catalogue s'il existe) et la
 /// ramasser, sauvegarder, recharger ; la tablette n'est plus sur le bureau, elle est dans
 /// l'inventaire, son point de ramassage dans `items::PickedUp`.
 fn pickup_persist(world: &mut World) {
@@ -2136,12 +2547,13 @@ fn pickup_persist(world: &mut World) {
                 fail(world, "joueur ou salle introuvable".into());
                 return;
             };
+            // D'où viser : côté salle d'abord, puis tout autour, là où le joueur tient debout et
+            // où le rayon de visée touche bien l'objet (la chaise du bureau peut le masquer).
             let side = Vec2::new(center.x - at.x, center.z - at.z).normalize_or(Vec2::Y);
-            let stand = Vec3::new(
-                at.x + side.x * PICKUP_STAND,
-                feet_y,
-                at.z + side.y * PICKUP_STAND,
-            );
+            let Some(stand) = aim_spot(world, entity, at, feet_y, side) else {
+                fail(world, format!("aucun point d'où viser {PICKUP_NODE}"));
+                return;
+            };
             place_player(world, stand, Some(at));
             info!("scénario pickup_persist : {id} visé (modèle posé : {shown})");
             let held_before = held(world, PICKUP_ITEM);
@@ -2424,10 +2836,23 @@ fn run_scenario(
     }
     let seated_now = matches!(controller.mode, crate::player::PlayerMode::Seated { .. });
     if !(controller.grounded || seated_now) && !scenario.started {
-        return; // attend que le joueur soit posé (cellule prête, physique active)
+        // Attend que le joueur soit posé (cellule prête, physique active) ; pas indéfiniment :
+        // un joueur coincé (levé dans un meuble) ou qui tombe doit faire échouer le scénario.
+        scenario.since_progress += time.delta_secs();
+        if scenario.since_progress > 2.0 * STUCK_SECONDS {
+            error!(
+                "scénario {} : le joueur ne se pose pas (position {:?}, cellule {:?})",
+                scenario.name,
+                transform.translation(),
+                cells.current
+            );
+            exit.write(AppExit::error());
+        }
+        return;
     }
     if !scenario.started {
         scenario.started = true;
+        scenario.since_progress = 0.0;
         info!(
             "scénario {} : départ ({} étapes)",
             scenario.name,
@@ -2596,6 +3021,7 @@ fn run_scenario(
         | Step::FlyToBeacon
         | Step::Tutorial(_)
         | Step::QuickSave
+        | Step::Script(..)
         | Step::Raid(..)
         | Step::Firefight(..) => return,
         Step::SitAtHelm | Step::StandUp | Step::DockOrDepart => {
@@ -3045,6 +3471,15 @@ fn career_step(world: &mut World, step: Step) {
             crate::save::save_now(world, crate::save::SaveKind::Quick);
             next(world);
         }
+        Step::Script(what, run) => match run(world) {
+            Ok(true) => {
+                let name = world.resource::<Scenario>().name.clone();
+                info!("scénario {name} : {what} — fait");
+                next(world);
+            }
+            Ok(false) => {}
+            Err(message) => fail(world, format!("{what} : {message}")),
+        },
         Step::Assert(what, check) => {
             let data = world.resource::<crate::data::Data>().clone();
             let ok = world

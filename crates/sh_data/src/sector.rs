@@ -10,6 +10,11 @@
 //! désigne un point d'attache vers un autre secteur. Le sas du vaisseau du joueur a le sien,
 //! verrouillé tant que le vaisseau vole ; [`dock`] assemble à l'amarrage le vaisseau et le
 //! quartier qui l'accueille en un seul secteur.
+//!
+//! **Cellules imbriquées** (M9) : à quai, le vaisseau repose dans le hangar, et les boîtes de
+//! ses cellules sont à l'intérieur de celle du hangar. Une position appartient à la cellule la
+//! plus petite qui la contient ([`Sector::cell_at`]) : dans le sas, on est dans le sas, pas dans
+//! le hangar qui l'entoure.
 
 use serde::{Deserialize, Serialize};
 use sh_core::Id;
@@ -119,6 +124,11 @@ impl Cell {
             && (self.min.2 - margin..=self.max.2 + margin).contains(&p.2)
     }
 
+    /// Volume de la boîte (m³) : départage des cellules imbriquées.
+    pub fn volume(&self) -> f32 {
+        (self.max.0 - self.min.0) * (self.max.1 - self.min.1) * (self.max.2 - self.min.2)
+    }
+
     pub fn center(&self) -> (f32, f32, f32) {
         (
             (self.min.0 + self.max.0) / 2.0,
@@ -176,6 +186,15 @@ pub struct Spawn {
 impl Sector {
     pub fn cell(&self, id: &str) -> Option<&Cell> {
         self.cells.iter().find(|c| c.id == id)
+    }
+
+    /// La cellule qui contient ce point : la plus petite, quand des boîtes s'emboîtent (le
+    /// vaisseau amarré dans son hangar) ; à égalité, la première.
+    pub fn cell_at(&self, p: (f32, f32, f32)) -> Option<&Cell> {
+        self.cells
+            .iter()
+            .filter(|c| c.contains(p))
+            .min_by(|a, b| a.volume().total_cmp(&b.volume()))
     }
 
     /// Cellules voisines (reliées par un portail), points d'attache externes exclus.
@@ -474,6 +493,24 @@ mod tests {
             .unwrap_or_else(|| panic!("porte du sas absente"));
         assert_eq!(door.normal, (0.0, 0.0, -1.0));
         assert_eq!(docked.within("passerelle", 1), vec!["passerelle", "sas"]);
+    }
+
+    #[test]
+    fn la_plus_petite_cellule_l_emporte() {
+        // Un sas posé dans un hangar : ses boîtes sont dans celle du hangar.
+        let mut port = sector(
+            "port",
+            vec![
+                cell("hangar", (-10.0, 0.0, -10.0), (10.0, 8.0, 10.0)),
+                cell("sas", (0.0, 0.0, -1.0), (2.0, 2.5, 1.0)),
+            ],
+            vec![portal("hangar", "sas", (0.0, 1.1, 0.0), (1.0, 0.0, 0.0))],
+        );
+        port.spawns.clear();
+        let at = |p| port.cell_at(p).map(|c| c.id.as_str());
+        assert_eq!(at((1.0, 1.0, 0.0)), Some("sas"));
+        assert_eq!(at((-5.0, 1.0, 0.0)), Some("hangar"));
+        assert_eq!(at((50.0, 1.0, 0.0)), None);
     }
 
     #[test]

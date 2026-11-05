@@ -56,14 +56,14 @@ step "cargo t" cargo t
 step "import du canon à jour" cargo run -q -p sh_import -- --check
 
 # Chaque point d'entrée de l'autopilote doit démarrer, charger les données et quitter sans panique.
-for start in menu new galaxy global:hexis sector:test sector:player_ship sector:hexis_spaceport sector:salle_temoin; do
+for start in menu new galaxy global:hexis sector:test sector:corvette sector:spaceport sector:salle_temoin; do
     step "fumée SH_START=${start}" \
         run_game "ERROR|panicked|donn.{1,3}es charg|temps de frame" SH_START="$start" SH_EXIT_AFTER_FRAMES=150
 done
 
 # La voie d'éclairage entièrement dynamique (sans lightmaps) reste disponible pour comparer.
-step "fumée sector:player_ship sans lightmaps" \
-    run_game "ERROR|panicked|temps de frame" SH_START=sector:player_ship SH_BAKED_LIGHTING=0 SH_EXIT_AFTER_FRAMES=150
+step "fumée sector:corvette sans lightmaps" \
+    run_game "ERROR|panicked|temps de frame" SH_START=sector:corvette SH_BAKED_LIGHTING=0 SH_EXIT_AFTER_FRAMES=150
 
 # Nouvelle partie, Échap vers le menu principal, puis nouvelle partie repartie de zéro.
 step "scénario menu_return" \
@@ -79,34 +79,38 @@ step "scénario map_key" \
 
 # L'encart des touches à la vraie touche (F1 tenue) : il bascule une fois par appui.
 step "scénario key_help" \
-    run_game "ERROR|panicked|key_help" SH_START=sector:hexis_spaceport SH_SPAWN=hall SH_SCENARIO=key_help
+    run_game "ERROR|panicked|key_help" SH_START=sector:spaceport SH_SPAWN=hall SH_SCENARIO=key_help
 
 # L'écran du personnage aux vraies touches (I, O, Échap sans pause derrière), puis un casier.
 step "scénario character" \
-    run_game "ERROR|panicked|sc.{1,3}nario character" SH_START=sector:player_ship SH_SPAWN=soute SH_SCENARIO=character
+    run_game "ERROR|panicked|sc.{1,3}nario character" SH_START=sector:corvette SH_SPAWN=soute SH_SCENARIO=character
 
 # Sauvegarde puis chargement, en vol et à quai : argent, date, vue et pose du vaisseau retrouvés.
-for start in new sector:hexis_spaceport; do
+for start in new sector:spaceport; do
     step "scénario save_load (${start})" \
         run_game "ERROR|panicked|save_load termin" SH_USER_DIR=target/test-user SH_START="$start" SH_SCENARIO=save_load
 done
 
-# Un objet ramassé l'est pour de bon : la tablette des quartiers, prise à quai, ne revient pas après
+# Un objet ramassé l'est pour de bon : la tablette de la chambre, prise à quai, ne revient pas après
 # une sauvegarde et un chargement (et son modèle du catalogue est posé quand il existe).
 step "scénario pickup_persist" \
-    run_game "ERROR|panicked|pickup_persist" SH_USER_DIR=target/pickup-user SH_START=sector:hexis_spaceport SH_SCENARIO=pickup_persist
+    run_game "ERROR|panicked|pickup_persist" SH_USER_DIR=target/pickup-user SH_START=sector:spaceport SH_SCENARIO=pickup_persist
 
-# Parcours scripté du vaisseau du joueur, du sas au cockpit, toutes portes franchies.
+# Parcours scripté du vaisseau du joueur, du sas au cockpit, toutes portes franchies, puis assis.
 step "scénario walk_ship" \
-    run_game "ERROR|panicked|sc.{1,3}nario" SH_START=sector:player_ship SH_SCENARIO=walk_ship
+    run_game "ERROR|panicked|sc.{1,3}nario" SH_START=sector:corvette SH_SCENARIO=walk_ship
 
 # Vol aux commandes (assisté, croisière, découplé), puis marche dans le vaisseau en plein vol.
 step "scénario fly_ship" \
     run_game "ERROR|panicked|sc.{1,3}nario" SH_START=global:hexis SH_SCENARIO=fly_ship
 
-# Critère de M2 : quai → cockpit → départ → vol → amarrage → quai.
+# Critère de M2 : quai du hangar → sas → cockpit → départ → vol → amarrage → hangar.
 step "scénario port_loop" \
-    run_game "ERROR|panicked|sc.{1,3}nario .*termin" SH_START=sector:hexis_spaceport SH_SCENARIO=port_loop
+    run_game "ERROR|panicked|sc.{1,3}nario .*termin" SH_START=sector:spaceport SH_SCENARIO=port_loop
+
+# M9 : chaque PNJ de comptoir du spatioport, le service qu'il ouvre, puis la tablette.
+step "scénario terminal_tour" \
+    run_game "ERROR|panicked|sc.{1,3}nario .*termin" SH_START=sector:spaceport SH_RAID=0 SH_SCENARIO=terminal_tour
 
 # Critère de M3 : Hexis → Cygnara par Portail, retour par l'hyperespace, durées vérifiées.
 step "scénario voyage" \
@@ -128,9 +132,9 @@ step "scénario raid_flee" \
 step "scénario raid_lose" \
     run_game "ERROR|panicked|raid fini" SH_START=global:cygnara SH_SCENARIO=raid_lose SH_RAID=alone
 step "scénario firefight" \
-    run_game "ERROR|panicked|combat . pied" SH_START=sector:player_ship SH_SPAWN=soute SH_BOARDING=2 SH_SCENARIO=firefight
+    run_game "ERROR|panicked|combat . pied" SH_START=sector:corvette SH_SPAWN=soute SH_BOARDING=2 SH_SCENARIO=firefight
 step "scénario firefight_lose" \
-    run_game "ERROR|panicked|combat . pied" SH_START=sector:player_ship SH_SPAWN=soute SH_BOARDING=3 SH_SCENARIO=firefight_lose
+    run_game "ERROR|panicked|combat . pied" SH_START=sector:corvette SH_SPAWN=soute SH_BOARDING=3 SH_SCENARIO=firefight_lose
 
 if [ -n "$checked_tree" ]; then
     printf 'tree=%s\ncommit=%s\ndate=%s\n' "$checked_tree" "$(git rev-parse HEAD)" \

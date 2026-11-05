@@ -4,11 +4,16 @@
 //! - **Amarrage** : aux commandes, à portée d'une balise d'approche, `G` demande l'amarrage. Le
 //!   pilote automatique conduit le vaisseau vers la balise pendant que le quartier se charge en
 //!   arrière-plan ; un fondu au noir bref couvre le changement de vue ; le joueur reprend sa
-//!   place aux commandes, le vaisseau amarré à la passerelle.
-//! - **Départ** : à quai, assis aux commandes, `G` : fondu, et le vaisseau repart de la balise.
+//!   place aux commandes, le vaisseau posé dans le berceau du hangar (M9), sa coque autour de
+//!   lui ; on en sort par le sas puis la passerelle.
+//! - **Départ** : à quai, assis aux commandes, `G` : fondu, et le vaisseau repart de la balise
+//!   du port où il s'était amarré (`Docked::port` : un spatioport par défaut sert plusieurs
+//!   lieux).
 //!
-//! Le fondu est le seul « écran de chargement », et il est court : les modèles du quartier sont
-//! préchargés pendant l'approche, et l'intérieur du vaisseau n'est jamais déchargé du cache.
+//! Le fondu est le seul « écran de chargement », et il est court : les modèles du quartier (et la
+//! coque) sont préchargés pendant l'approche, et l'intérieur du vaisseau n'est jamais déchargé du
+//! cache. Il ne se lève que lorsque la cellule du joueur et ses voisines Locales sont prêtes
+//! (`CellStates::arrival_ready`) : on n'arrive jamais dans des pièces vides.
 //! Un voyage interstellaire, plus long, pose sur le fondu une carte de chargement au style de
 //! l'écran de démarrage (`loading`).
 
@@ -24,7 +29,7 @@ use crate::input::Dock;
 use crate::player::{Player, PlayerController, PlayerMode};
 use crate::sector::gltf::Interactable;
 use crate::sector::streaming::{CellReady, CellStates};
-use crate::sector::{ActiveSector, Docked, PendingAboard};
+use crate::sector::{Aboard, ActiveSector, Docked, PendingAboard};
 use crate::ship::ShipMotion;
 use crate::space::{SpacePosition, SpaceRotation};
 use crate::state::{CurrentPlace, ViewLevel};
@@ -110,7 +115,8 @@ pub enum Sequence {
         t: f32,
         card: Entity,
     },
-    /// Le fondu se lève quand la cellule du joueur est prête.
+    /// Le fondu se lève quand le joueur est à sa place (assis, si l'arrivée l'attend) et que sa
+    /// cellule et ses voisines Locales sont prêtes.
     Arriving {
         keep: Vec<UntypedHandle>,
         card: Option<Entity>,
@@ -241,9 +247,21 @@ pub fn request_dock(world: &mut World) {
                 notice(world, "notice.dock.out_of_range");
                 return;
             };
-            // Préchargement du quartier pendant l'approche (et maintien du vaisseau en cache).
+            // Préchargement du quartier et de la coque pendant l'approche (et maintien du
+            // vaisseau en cache).
             let ship = world.resource::<ActiveSector>().sector.id.to_string();
-            let keep = preload(world, &[beacon.sector.as_str(), ship.as_str()]);
+            let mut keep = preload(world, &[beacon.sector.as_str(), ship.as_str()]);
+            let hull = world
+                .resource::<Data>()
+                .start()
+                .and_then(|s| s.hull.clone())
+                .filter(|path| crate::data::assets_dir().join(path).is_file());
+            if let Some(path) = hull {
+                let scene: Handle<WorldAsset> = world
+                    .resource::<AssetServer>()
+                    .load(GltfAssetLabel::Scene(0).from_asset(path));
+                keep.push(scene.untyped());
+            }
             world.insert_resource(Sequence::Docking {
                 t: 0.0,
                 beacon: pos,
@@ -256,14 +274,9 @@ pub fn request_dock(world: &mut World) {
             let Some(docked) = world.get_resource::<Docked>().cloned() else {
                 return;
             };
-            // Le port de ce quartier, dans la mise en scène de son système.
-            let found = world.resource::<Data>().scenes.iter().find_map(|scene| {
-                scene
-                    .docks
-                    .iter()
-                    .find(|d| d.sector == docked.district)
-                    .map(|d| (d.id.clone(), scene.system.to_string()))
-            });
+            // Le port où l'on s'est amarré, sinon celui de ce quartier dans le système où l'on
+            // est (un spatioport par défaut sert plusieurs lieux).
+            let found = departure_port(world.resource::<Data>(), &docked);
             let Some((near, system)) = found else {
                 warn!("départ impossible : aucun port pour {}", docked.district);
                 return;
@@ -275,6 +288,23 @@ pub fn request_dock(world: &mut World) {
         }
         _ => {}
     }
+}
+
+/// D'où repart le vaisseau amarré : la balise de son port et son système.
+fn departure_port(data: &Data, docked: &Docked) -> Option<(String, String)> {
+    let by_id = docked.port.as_deref().and_then(|port| {
+        data.scenes.iter().find_map(|scene| {
+            scene
+                .docks
+                .iter()
+                .find(|d| d.id == port)
+                .map(|d| (d.id.clone(), scene.system.to_string()))
+        })
+    });
+    by_id.or_else(|| {
+        sh_data::scene::find_dock(&data.scenes, &docked.district, docked.system.as_deref())
+            .map(|(scene, d)| (d.id.clone(), scene.system.to_string()))
+    })
 }
 
 /// Charge (ou retient en cache) les modèles et lightmaps des cellules de ces secteurs.
@@ -315,6 +345,7 @@ fn run_sequence(
     mut place: ResMut<CurrentPlace>,
     mut view: ResMut<NextState<ViewLevel>>,
     mut travel: (ResMut<GameClock>, Option<ResMut<ShipFuel>>),
+    aboard: Option<Res<Aboard>>,
 ) {
     let Some(mut sequence) = sequence else {
         return;
@@ -419,15 +450,13 @@ fn run_sequence(
             }
         }
         Sequence::Arriving { card, .. } => {
-            // Le voile se lève quand le joueur est à sa place, cellule prête.
+            // Le voile se lève quand le joueur est à sa place (assis si l'on reprend un poste),
+            // les cellules autour de lui prêtes.
+            let wants_seat = aboard.as_ref().is_some_and(|a| a.seat_role.is_some());
             let seated = player
                 .single()
                 .is_ok_and(|p| matches!(p.mode, PlayerMode::Seated { .. }));
-            let cell_ready = cells
-                .current
-                .as_deref()
-                .is_some_and(|c| cells.is_local_ready(c, &ready));
-            if sector.is_some() && seated && cell_ready {
+            if sector.is_some() && (seated || !wants_seat) && cells.arrival_ready(&ready) {
                 fade.target = 0.0;
                 if let Some(card) = card.take() {
                     commands.entity(card).despawn();

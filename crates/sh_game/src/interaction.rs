@@ -258,20 +258,61 @@ pub fn sit_at(world: &mut World, role: &str) -> bool {
     true
 }
 
-/// Se lever : un pas devant le siège.
+/// Se lever : un pas devant le siège, ou derrière, ou à côté, là où il y a la place debout. Un
+/// siège face à une planche de bord (le pilote de la corvette, M9) n'a pas de place devant : s'y
+/// lever coinçait le joueur entre le siège, la planche et le pupitre des gaz.
 pub fn stand_up(world: &mut World) {
-    let mut query = world.query_filtered::<(&mut Transform, &mut PlayerController), With<Player>>();
-    let Ok((mut transform, mut controller)) = query.single_mut(world) else {
+    let mut query = world.query_filtered::<&PlayerController, With<Player>>();
+    let Ok(controller) = query.single(world) else {
         return;
     };
     let PlayerMode::Seated { facing, eye, .. } = controller.mode else {
         return;
     };
-    let forward = Quat::from_rotation_y(facing) * Vec3::NEG_Z;
-    let feet = eye - Vec3::Y * controller.eye_height() + forward * 0.75;
+    let turn = Quat::from_rotation_y(facing);
+    let offsets = [
+        Vec3::NEG_Z * 0.75,
+        Vec3::Z * 0.8,
+        Vec3::NEG_X * 0.75,
+        Vec3::X * 0.75,
+    ]
+    .map(|offset| turn * offset);
+    // Repli : comme avant, un pas devant, les yeux à hauteur debout.
+    let fallback = eye - Vec3::Y * controller.eye_height() + offsets[0] + Vec3::Y * 0.05;
+    let free = {
+        let mut state = bevy::ecs::system::SystemState::<SpatialQuery>::new(world);
+        let Ok(spatial) = state.get(world) else {
+            return;
+        };
+        let body = Collider::capsule(
+            crate::player::RADIUS,
+            crate::player::STAND_HEIGHT - 2.0 * crate::player::RADIUS,
+        );
+        let filter = SpatialQueryFilter::from_mask([Layer::Static, Layer::Door]);
+        offsets.into_iter().find_map(|offset| {
+            // Le sol sous le pas, sous les yeux du siège ; plus haut qu'un genou, c'est un
+            // meuble (la planche de bord), pas un sol.
+            let above = eye + offset;
+            let floor = spatial.cast_ray(above, Dir3::NEG_Y, 2.5, true, &filter)?;
+            let ground = above.y - floor.distance;
+            if ground > eye.y - 0.9 {
+                return None;
+            }
+            let feet = Vec3::new(above.x, ground + 0.03, above.z);
+            let center = feet + Vec3::Y * (crate::player::STAND_HEIGHT / 2.0 + 0.02);
+            spatial
+                .shape_intersections(&body, center, Quat::IDENTITY, &filter)
+                .is_empty()
+                .then_some(feet)
+        })
+    };
+    let mut query = world.query_filtered::<(&mut Transform, &mut PlayerController), With<Player>>();
+    let Ok((mut transform, mut controller)) = query.single_mut(world) else {
+        return;
+    };
     controller.mode = PlayerMode::Walking;
     controller.velocity = Vec3::ZERO;
-    transform.translation = feet + Vec3::Y * 0.05;
+    transform.translation = free.unwrap_or(fallback);
 }
 
 fn perform(

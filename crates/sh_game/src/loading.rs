@@ -1,6 +1,12 @@
 //! Démarrage et chargement : `Boot` prépare l'interface, `Loading` lit et valide les données
 //! sur un fil de calcul, sans bloquer l'affichage de l'écran de chargement (titre en capitales,
 //! jauge à curseur ambre qui va et vient : la durée n'est pas mesurable).
+//!
+//! Un départ direct en vue Globale (autopilote `SH_START=global:<lieu>`) place le joueur aux
+//! commandes, comme une reprise de vol ; une nouvelle partie (`SH_START=new`, le menu) commence
+//! là où le départ le dit (M9 : debout dans la chambre). L'arrivée dans le secteur reste
+//! couverte par le voile de chargement tant que les cellules autour du joueur ne sont pas prêtes
+//! (`sector::streaming::CellStates::arrival_ready`).
 
 use std::sync::Arc;
 
@@ -12,6 +18,7 @@ use sh_data::GameData;
 
 use crate::data::{Data, Texts, data_dir};
 use crate::materials::TextureLibrary;
+use crate::sector::{Aboard, PendingAboard};
 use crate::state::{AppState, CurrentPlace, EnterGame, ViewLevel};
 use crate::ui::theme::{self, UiFonts};
 use crate::views::planet::PaintedPlanets;
@@ -234,6 +241,16 @@ fn finish_loading(
                 return;
             }
             info!("démarrage direct : {:?}", request);
+            // Départ direct en vol (scénarios de vol, de voyage, de combat) : aux commandes.
+            if matches!(&*start, StartRequest::Direct(_))
+                && request.view == ViewLevel::Global
+                && let Some(start) = data.start()
+            {
+                commands.insert_resource(PendingAboard(Aboard {
+                    spawn: start.aboard_spawn.clone(),
+                    seat_role: Some("pilot".into()),
+                }));
+            }
             request.apply(&mut app_state, &mut view, &mut place);
         }
         None => app_state.set(AppState::MainMenu),

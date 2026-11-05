@@ -9,7 +9,9 @@
     status: Proposition("P25"),
     console: "contracts",
     role: "contracts",
-    sector: "hexis_spaceport",
+    // Le spatioport par défaut (M9), rattaché à Hexis : ailleurs, repli par rôle.
+    sector: "spaceport",
+    place: "sys_hexis",
     npc: "hexis_clerk",
     name_key: "dlg.office.name",
     faction: "hc_logistique",

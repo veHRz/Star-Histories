@@ -24,37 +24,56 @@ New-Item -ItemType Directory -Force target/shots | Out-Null
 # SH_TERMINAL, SH_TALK) : 700 frames sur le poste Windows (UHD 770). Le poste Linux tourne à
 # plusieurs centaines d'i/s : captures.sh y met 2400 (AGENTS.md §4, captures des écrans).
 $screenFrame = "700"
+# Frame des vues dans un secteur : l'arrivée reste voilée tant que la cellule du joueur et ses
+# voisines ne sont pas prêtes (M9, `CellStates::arrival_ready`) ; 300 frames à ≈ 60 i/s suffisent,
+# captures.sh y met 900 (poste Linux, plusieurs centaines d'i/s).
+$sectorFrame = "300"
 
 # Vue → variables de l'autopilote. Positions SH_SPAWN_AT : pieds du joueur, repère du jeu
 # (Y-haut, −Z = avant du vaisseau), cap et tangage en degrés.
 $views = [ordered]@{
-    "cockpit"          = @{ SH_START = "sector:player_ship"; SH_SPAWN = "cockpit"; SH_SCREENSHOT_FRAME = "300" }
-    "cockpit-poste"    = @{ SH_START = "sector:player_ship"; SH_SPAWN_AT = "2.6,0,-15.0,30,-10"; SH_SCREENSHOT_FRAME = "300" }
-    "couloir"          = @{ SH_START = "sector:player_ship"; SH_SPAWN_AT = "0,0,-1.0,0,0"; SH_SCREENSHOT_FRAME = "300" }
-    "soute"            = @{ SH_START = "sector:player_ship"; SH_SPAWN_AT = "9.4,0,11.6,35,-8"; SH_SCREENSHOT_FRAME = "300" }
-    "sas"              = @{ SH_START = "sector:player_ship"; SH_SPAWN_AT = "-2.0,0,3.0,90,0"; SH_SCREENSHOT_FRAME = "300" }
-    "machines"         = @{ SH_START = "sector:player_ship"; SH_SPAWN_AT = "0,0,14.8,180,-5"; SH_SCREENSHOT_FRAME = "300" }
-    "hall"             = @{ SH_START = "sector:hexis_spaceport"; SH_SPAWN_AT = "-13.0,0,6.5,45,0"; SH_SCREENSHOT_FRAME = "300" }
-    "bureau"           = @{ SH_START = "sector:hexis_spaceport"; SH_SPAWN_AT = "-20.0,0,-7.9,0,-5"; SH_SCREENSHOT_FRAME = "300" }
+    # M9 : l'intérieur type `corvette` (le vaisseau du joueur), salle par salle.
+    "cockpit"          = @{ SH_START = "sector:corvette"; SH_SPAWN = "cockpit"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "cockpit-poste"    = @{ SH_START = "sector:corvette"; SH_SPAWN_AT = "2.6,0,-15.0,30,-10"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "couloir"          = @{ SH_START = "sector:corvette"; SH_SPAWN_AT = "0,0,-1.0,0,0"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "soute"            = @{ SH_START = "sector:corvette"; SH_SPAWN_AT = "4.0,0,11.0,15,-8"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "sas"              = @{ SH_START = "sector:corvette"; SH_SPAWN_AT = "-2.2,0,3.0,90,0"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "machines"         = @{ SH_START = "sector:corvette"; SH_SPAWN_AT = "0,0,14.8,180,-5"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "quartiers"        = @{ SH_START = "sector:corvette"; SH_SPAWN_AT = "-2.0,0,-4.6,90,-5"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "carre"            = @{ SH_START = "sector:corvette"; SH_SPAWN_AT = "2.0,0,-5.6,-90,-5"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "chambre"          = @{ SH_START = "sector:corvette"; SH_SPAWN = "chambre"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    # La chambre aux trois niveaux de décor (le préréglage de la vue remplace celui du script).
+    "chambre-bas"      = @{ SH_START = "sector:corvette"; SH_SPAWN = "chambre"; SH_PRESET = "low"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "chambre-moyen"    = @{ SH_START = "sector:corvette"; SH_SPAWN = "chambre"; SH_PRESET = "medium"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "chambre-haut"     = @{ SH_START = "sector:corvette"; SH_SPAWN = "chambre"; SH_PRESET = "high"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    # Le départ d'une nouvelle partie : debout dans la chambre, en orbite d'Hexis.
+    "chambre-depart"   = @{ SH_START = "new"; SH_RAID = "0"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    # M9 : le spatioport par défaut, le vaisseau amarré dans son berceau.
+    "hangar"           = @{ SH_START = "sector:spaceport"; SH_SPAWN_AT = "-2.4,0,0.4,-55,7"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "hangar-quai"      = @{ SH_START = "sector:spaceport"; SH_SPAWN_AT = "3.0,0,2.0,-7,5"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "passerelle-sas"   = @{ SH_START = "sector:spaceport"; SH_SPAWN_AT = "8.3,0,0,93,-1"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "hall"             = @{ SH_START = "sector:spaceport"; SH_SPAWN_AT = "-13.0,0,6.5,45,0"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "bureau"           = @{ SH_START = "sector:spaceport"; SH_SPAWN_AT = "-20.0,0,-7.9,0,-5"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "pnj-comptoir"     = @{ SH_START = "sector:spaceport"; SH_SPAWN_AT = "-21.0,0,-9.9,12,-10"; SH_SCREENSHOT_FRAME = $sectorFrame }
     "global-hexis"     = @{ SH_START = "global:hexis"; SH_RAID = "0"; SH_SCREENSHOT_FRAME = "150" }
     "global-enclume"   = @{ SH_START = "global:hexis"; SH_RAID = "0"; SH_ARRIVAL = "l_enclume,3000"; SH_SCREENSHOT_FRAME = "150" }
     "global-hub"       = @{ SH_START = "global:hexis"; SH_RAID = "0"; SH_ARRIVAL = "hexis_portal_hub,1500"; SH_SCREENSHOT_FRAME = "150" }
     "global-chantiers" = @{ SH_START = "global:hexis"; SH_RAID = "0"; SH_ARRIVAL = "hexis_shipyards,1500"; SH_SCREENSHOT_FRAME = "150" }
     "raid-cygnara"     = @{ SH_START = "global:cygnara"; SH_RAID = "1"; SH_SCREENSHOT_FRAME = "420" }
     "raid-proche"      = @{ SH_START = "global:cygnara"; SH_RAID = "1"; SH_SCREENSHOT_FRAME = "900" }
-    "abordage"         = @{ SH_START = "sector:player_ship"; SH_SPAWN = "soute"; SH_BOARDING = "2"; SH_SCREENSHOT_FRAME = "300" }
+    "abordage"         = @{ SH_START = "sector:corvette"; SH_SPAWN = "soute"; SH_BOARDING = "2"; SH_SCREENSHOT_FRAME = $sectorFrame }
     # M9 : Hexis de loin et côté nuit (textures de planète calculées en tâche de fond), la carte.
     "hexis-loin"       = @{ SH_START = "global:hexis"; SH_RAID = "0"; SH_LOOK = "-0.631,-0.003,-0.776"; SH_SCREENSHOT_FRAME = "400" }
     "hexis-nuit"       = @{ SH_START = "global:hexis"; SH_RAID = "0"; SH_ARRIVAL = "hexis,-2000000"; SH_LOOK = "-0.222,0.208,0.953"; SH_SCREENSHOT_FRAME = "400" }
     "carte"            = @{ SH_START = "galaxy"; SH_SCREENSHOT_FRAME = "200" }
     "carte-karza"      = @{ SH_START = "galaxy"; SH_ROUTE = "karza"; SH_HOVER = "karza"; SH_SCREENSHOT_FRAME = "200" }
     # M9 : écran du personnage, rangement d'un casier, bornes et PNJ du spatioport, options.
-    "inventaire"       = @{ SH_START = "sector:player_ship"; SH_SPAWN = "soute"; SH_SCREEN = "inventory"; SH_GIVE = "ration:13,spare_parts:25,medkit:2,datapad,flight_suit,data_chip:3"; SH_SCREENSHOT_FRAME = $screenFrame }
-    "competences"      = @{ SH_START = "sector:player_ship"; SH_SPAWN = "soute"; SH_SCREEN = "skills"; SH_XP = "piloting:650,navigation:260,shooting:120,commerce:1300,engineering:40"; SH_SCREENSHOT_FRAME = $screenFrame }
-    "casier"           = @{ SH_START = "sector:player_ship"; SH_SPAWN = "soute"; SH_CONTAINER = "corvette_chambre_casier_1"; SH_GIVE = "ration:4,spare_parts:6,data_chip:2"; SH_SCREENSHOT_FRAME = $screenFrame }
-    "borne-contrats"   = @{ SH_START = "sector:hexis_spaceport"; SH_SPAWN = "hall"; SH_TERMINAL = "contrats"; SH_SCREENSHOT_FRAME = $screenFrame }
-    "borne-chantier"   = @{ SH_START = "sector:hexis_spaceport"; SH_SPAWN = "hall"; SH_TERMINAL = "chantier"; SH_SCREENSHOT_FRAME = $screenFrame }
-    "pnj-parler"       = @{ SH_START = "sector:hexis_spaceport"; SH_SPAWN_AT = "-20.0,0,-7.9,0,-5"; SH_TALK = "contracts"; SH_SCREENSHOT_FRAME = $screenFrame }
+    "inventaire"       = @{ SH_START = "sector:corvette"; SH_SPAWN = "soute"; SH_SCREEN = "inventory"; SH_GIVE = "ration:13,spare_parts:25,medkit:2,datapad,flight_suit,data_chip:3"; SH_SCREENSHOT_FRAME = $screenFrame }
+    "competences"      = @{ SH_START = "sector:corvette"; SH_SPAWN = "soute"; SH_SCREEN = "skills"; SH_XP = "piloting:650,navigation:260,shooting:120,commerce:1300,engineering:40"; SH_SCREENSHOT_FRAME = $screenFrame }
+    "casier"           = @{ SH_START = "sector:corvette"; SH_SPAWN = "soute"; SH_CONTAINER = "corvette_chambre_casier_1"; SH_GIVE = "ration:4,spare_parts:6,data_chip:2"; SH_SCREENSHOT_FRAME = $screenFrame }
+    "borne-contrats"   = @{ SH_START = "sector:spaceport"; SH_SPAWN = "hall"; SH_TERMINAL = "contrats"; SH_SCREENSHOT_FRAME = $screenFrame }
+    "borne-chantier"   = @{ SH_START = "sector:spaceport"; SH_SPAWN = "hall"; SH_TERMINAL = "chantier"; SH_SCREENSHOT_FRAME = $screenFrame }
+    "pnj-parler"       = @{ SH_START = "sector:spaceport"; SH_SPAWN_AT = "-20.0,0,-7.9,0,-5"; SH_TALK = "contracts"; SH_SCREENSHOT_FRAME = $screenFrame }
     "options-touches"  = @{ SH_START = "menu"; SH_OPTIONS = "keys:piloting"; SH_SCREENSHOT_FRAME = "200" }
 }
 

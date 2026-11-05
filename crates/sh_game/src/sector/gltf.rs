@@ -586,8 +586,8 @@ mod tests {
     #[test]
     fn identifiant_de_ramassage() {
         assert_eq!(
-            pickup_id("player_ship", "quartiers", "quartiers_pickup_datapad"),
-            "player_ship/quartiers/quartiers_pickup_datapad"
+            pickup_id("corvette", "chambre", "chambre_pickup_datapad"),
+            "corvette/chambre/chambre_pickup_datapad"
         );
         // À quai, une cellule du vaisseau garde le nom du vaisseau ; celles du quartier, le sien.
         let ship: sh_data::Sector = sh_data::ron_options()

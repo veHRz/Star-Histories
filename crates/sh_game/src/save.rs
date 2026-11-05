@@ -12,6 +12,15 @@
 //! Le format ne change de version que si une ancienne sauvegarde ne peut plus se relire : un
 //! champ ajouté a une valeur par défaut (`#[serde(default)]`) et la version reste la même.
 //!
+//! Le **contenu** a sa propre version ([`CONTENT_VERSION`]) : les identifiants de secteurs et de
+//! points de ramassage qu'une sauvegarde cite. Une sauvegarde d'un contenu plus ancien se relit
+//! telle quelle puis se migre au chargement ([`migrate_place`], [`migrate_items`]) : depuis M9, le
+//! vaisseau du joueur est l'intérieur type `corvette` (avant : `player_ship`), Hexis le
+//! spatioport par défaut `spaceport` (avant : `hexis_spaceport`), et la tablette des quartiers
+//! est dans la chambre. La sauvegarde ne note pas la position à pied : à quai, on reprend au quai
+//! (première apparition du quartier), en vol aux commandes ; un quartier disparu des données
+//! retombe sur le spatioport par défaut.
+//!
 //! Homme de fer : une seule sauvegarde, écrite automatiquement (à quai, à l'arrivée, en quittant)
 //! et effacée à la mort.
 
@@ -34,7 +43,7 @@ use crate::input::{QuickLoad, QuickSave};
 use crate::interaction::Inventory;
 use crate::items::{Containers, Equipment, PickedUp};
 use crate::living::{LivingWorld, PlayerKnowledge};
-use crate::sector::{ActiveSector, Docked};
+use crate::sector::{ActiveSector, Docked, PendingAboard};
 use crate::space::{SpacePosition, SpaceRotation};
 use crate::state::{AppState, CurrentPlace, EnterGame, ViewLevel};
 use crate::tips::TipsSeen;
@@ -45,6 +54,73 @@ use crate::voyage::{Location, ResumeFlight, ShipFuel};
 
 /// Version du format : une sauvegarde d'une autre version est refusée, jamais devinée.
 pub const FORMAT_VERSION: u32 = 1;
+
+/// Version du contenu (identifiants cités) : 0 avant M9, 1 depuis les intérieurs types.
+pub const CONTENT_VERSION: u32 = 1;
+
+/// Secteurs renommés au contenu 1 (M9) : le vaisseau du joueur devient l'intérieur type des
+/// corvettes, le spatioport d'Hexis le spatioport par défaut.
+const RENAMED_SECTORS_1: &[(&str, &str)] = &[
+    ("player_ship", "corvette"),
+    ("hexis_spaceport", "spaceport"),
+];
+
+/// Points de ramassage déplacés au contenu 1 (M9) : la tablette des quartiers est dans la chambre.
+const MOVED_PICKUPS_1: &[(&str, &str)] = &[(
+    "player_ship/quartiers/quartiers_pickup_datapad",
+    "corvette/chambre/chambre_pickup_datapad",
+)];
+
+/// Le nom actuel d'un secteur cité par une sauvegarde de ce contenu.
+fn renamed_sector(id: &str, content: u32) -> &str {
+    if content >= 1 {
+        return id;
+    }
+    RENAMED_SECTORS_1
+        .iter()
+        .find(|(old, _)| *old == id)
+        .map_or(id, |(_, new)| new)
+}
+
+/// Le lieu d'une sauvegarde de ce contenu, au contenu courant.
+pub fn migrate_place(place: SavedPlace, content: u32) -> SavedPlace {
+    match place {
+        SavedPlace::Docked { district } => SavedPlace::Docked {
+            district: renamed_sector(&district, content).to_owned(),
+        },
+        space => space,
+    }
+}
+
+/// Les objets d'une sauvegarde de ce contenu, au contenu courant : identifiants des points de
+/// ramassage (`<secteur>/<cellule>/<nœud>`) déplacés ou dont le secteur a changé de nom.
+pub fn migrate_items(mut items: SavedItems, content: u32) -> SavedItems {
+    if content >= 1 {
+        return items;
+    }
+    let moved = |id: &str| -> String {
+        if let Some((_, new)) = MOVED_PICKUPS_1.iter().find(|(old, _)| *old == id) {
+            return (*new).to_owned();
+        }
+        match id.split_once('/') {
+            Some((sector, rest)) => format!("{}/{rest}", renamed_sector(sector, content)),
+            None => id.to_owned(),
+        }
+    };
+    items.picked_up = PickedUp(items.picked_up.0.iter().map(|id| moved(id)).collect());
+    items
+}
+
+/// Le quartier où reprendre une partie sauvegardée à quai : le sien s'il accueille encore un
+/// vaisseau, sinon le spatioport par défaut (un secteur retiré des données ne bloque pas la
+/// sauvegarde).
+pub fn docking_district(district: &str, accepts_ship: impl Fn(&str) -> bool) -> String {
+    if accepts_ship(district) {
+        district.to_owned()
+    } else {
+        sh_data::scene::DEFAULT_SPACEPORT.to_owned()
+    }
+}
 
 pub struct SavePlugin;
 
@@ -119,6 +195,9 @@ pub enum SavedPlace {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SaveFile {
     pub version: u32,
+    /// Version du contenu ([`CONTENT_VERSION`]) ; absente : avant M9 (0).
+    #[serde(default)]
+    pub content: u32,
     pub meta: SaveMeta,
     pub mode: GameMode,
     pub world: WorldSave,
@@ -346,6 +425,7 @@ fn capture(world: &World, kind: SaveKind) -> Result<SaveFile, &'static str> {
     let clock = world.get_resource::<GameClock>().ok_or(refused)?;
     Ok(SaveFile {
         version: FORMAT_VERSION,
+        content: CONTENT_VERSION,
         meta: SaveMeta {
             kind,
             date: clock.date,
@@ -559,20 +639,30 @@ fn install(world: &mut World, save: SaveFile) {
     world.insert_resource(save.codex);
     world.insert_resource(save.tips);
     world.insert_resource(save.tutorial);
-    save.items.install(world);
+    if save.content < CONTENT_VERSION {
+        info!(
+            "sauvegarde du contenu {} : migrée vers le contenu {CONTENT_VERSION}",
+            save.content
+        );
+    }
+    migrate_items(save.items, save.content).install(world);
     world.insert_resource(Location {
         system: system.clone(),
     });
     if let Some((units, capacity)) = save.fuel {
         world.insert_resource(ShipFuel { units, capacity });
     }
-    let request = match save.place {
+    let request = match migrate_place(save.place, save.content) {
         SavedPlace::Space { pos, rot } => {
             world.insert_resource(ResumeFlight {
                 system: system.clone(),
                 pos,
                 rot: Quat::from_array(rot),
             });
+            // En vol, on reprend aux commandes (une nouvelle partie, elle, commence debout).
+            if let Some(aboard) = crate::voyage::helm_aboard(&data) {
+                world.insert_resource(PendingAboard(aboard));
+            }
             EnterGame {
                 view: ViewLevel::Global,
                 place: Some(system.as_str().to_owned()),
@@ -580,7 +670,10 @@ fn install(world: &mut World, save: SaveFile) {
         }
         SavedPlace::Docked { district } => EnterGame {
             view: ViewLevel::Sector,
-            place: Some(district),
+            place: Some(docking_district(&district, |id| {
+                data.sector(id)
+                    .is_some_and(|s| s.external_port(crate::sector::DISTRICT_PORT).is_some())
+            })),
         },
     };
     world.resource_scope(|world, mut app_state: Mut<NextState<AppState>>| {
@@ -600,7 +693,7 @@ mod tests {
         let mut containers = Containers::default();
         containers.add("corvette_chambre_casier_1", "ration", 2);
         let mut picked_up = PickedUp::default();
-        picked_up.insert("player_ship/quartiers/quartiers_pickup_datapad");
+        picked_up.insert("corvette/chambre/chambre_pickup_datapad");
         let mut equipment = Equipment::default();
         equipment
             .0
@@ -623,6 +716,66 @@ mod tests {
             .expect("ancien format");
         assert_eq!(old, SavedItems::default());
         assert!(old.containers.is_none() && old.equipment.is_none());
+    }
+
+    /// Une sauvegarde d'avant M9 (contenu 0) : le vaisseau `player_ship`, le spatioport
+    /// `hexis_spaceport`, la tablette prise dans les quartiers.
+    #[test]
+    fn une_sauvegarde_d_avant_les_interieurs_types_se_migre() {
+        let old: SavedPlace = sh_data::ron_options()
+            .from_str(r#"Docked(district: "hexis_spaceport")"#)
+            .expect("lieu d'une ancienne sauvegarde");
+        assert!(matches!(
+            migrate_place(old, 0),
+            SavedPlace::Docked { district } if district == "spaceport"
+        ));
+        // Au contenu courant, rien ne bouge, même un nom qui ressemble à un ancien.
+        let current = SavedPlace::Docked {
+            district: "hexis_spaceport".into(),
+        };
+        assert!(matches!(
+            migrate_place(current, CONTENT_VERSION),
+            SavedPlace::Docked { district } if district == "hexis_spaceport"
+        ));
+        let mut picked_up = PickedUp::default();
+        picked_up.insert("player_ship/quartiers/quartiers_pickup_datapad");
+        picked_up.insert("player_ship/soute/soute_pickup_parts");
+        picked_up.insert("hexis_spaceport/hall/hall_pickup_chip");
+        picked_up.insert("salle_temoin/salle/objet");
+        let items = migrate_items(
+            SavedItems {
+                picked_up,
+                ..SavedItems::default()
+            },
+            0,
+        );
+        let ids: Vec<&str> = items.picked_up.0.iter().map(String::as_str).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "corvette/chambre/chambre_pickup_datapad",
+                "corvette/soute/soute_pickup_parts",
+                "salle_temoin/salle/objet",
+                "spaceport/hall/hall_pickup_chip",
+            ]
+        );
+        // Une sauvegarde sans version de contenu est d'avant M9.
+        #[derive(Deserialize)]
+        struct Content {
+            #[serde(default)]
+            content: u32,
+        }
+        let content: Content = sh_data::ron_options()
+            .from_str("(version: 1)")
+            .expect("en-tête");
+        assert_eq!(content.content, 0);
+    }
+
+    #[test]
+    fn un_quartier_disparu_retombe_sur_le_spatioport_par_defaut() {
+        let known = |id: &str| id == "spaceport" || id == "quai_propre";
+        assert_eq!(docking_district("quai_propre", known), "quai_propre");
+        assert_eq!(docking_district("hexis_spaceport", known), "spaceport");
     }
 
     #[test]

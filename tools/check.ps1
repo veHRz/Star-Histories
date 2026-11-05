@@ -42,7 +42,7 @@ Step "cargo t" { cargo t }
 Step "import du canon à jour" { cargo run -q -p sh_import -- --check }
 
 # Chaque point d'entrée de l'autopilote doit démarrer, charger les données et quitter sans panique.
-$starts = @("menu", "new", "galaxy", "global:hexis", "sector:test", "sector:player_ship", "sector:hexis_spaceport", "sector:salle_temoin")
+$starts = @("menu", "new", "galaxy", "global:hexis", "sector:test", "sector:corvette", "sector:spaceport", "sector:salle_temoin")
 foreach ($start in $starts) {
     Step "fumée SH_START=$start" {
         $env:SH_START = $start
@@ -56,8 +56,8 @@ foreach ($start in $starts) {
 }
 
 # La voie d'éclairage entièrement dynamique (sans lightmaps) reste disponible pour comparer.
-Step "fumée sector:player_ship sans lightmaps" {
-    $env:SH_START = "sector:player_ship"
+Step "fumée sector:corvette sans lightmaps" {
+    $env:SH_START = "sector:corvette"
     $env:SH_BAKED_LIGHTING = "0"
     $env:SH_EXIT_AFTER_FRAMES = "150"
     $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
@@ -103,7 +103,7 @@ Step "scénario map_key" {
 
 # L'encart des touches à la vraie touche (F1 tenue) : il bascule une fois par appui.
 Step "scénario key_help" {
-    $env:SH_START = "sector:hexis_spaceport"
+    $env:SH_START = "sector:spaceport"
     $env:SH_SPAWN = "hall"
     $env:SH_SCENARIO = "key_help"
     $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
@@ -115,7 +115,7 @@ Step "scénario key_help" {
 
 # L'écran du personnage aux vraies touches (I, O, Échap sans pause derrière), puis un casier.
 Step "scénario character" {
-    $env:SH_START = "sector:player_ship"
+    $env:SH_START = "sector:corvette"
     $env:SH_SPAWN = "soute"
     $env:SH_SCENARIO = "character"
     $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
@@ -126,7 +126,7 @@ Step "scénario character" {
 }
 
 # Sauvegarde puis chargement, en vol et à quai : argent, date, vue et pose du vaisseau retrouvés.
-foreach ($start in @("new", "sector:hexis_spaceport")) {
+foreach ($start in @("new", "sector:spaceport")) {
     Step "scénario save_load ($start)" {
         $env:SH_USER_DIR = "target/test-user"
         $env:SH_START = $start
@@ -139,11 +139,11 @@ foreach ($start in @("new", "sector:hexis_spaceport")) {
     }
 }
 
-# Un objet ramassé l'est pour de bon : la tablette des quartiers, prise à quai, ne revient pas après
+# Un objet ramassé l'est pour de bon : la tablette de la chambre, prise à quai, ne revient pas après
 # une sauvegarde et un chargement (et son modèle du catalogue est posé quand il existe).
 Step "scénario pickup_persist" {
     $env:SH_USER_DIR = "target/pickup-user"
-    $env:SH_START = "sector:hexis_spaceport"
+    $env:SH_START = "sector:spaceport"
     $env:SH_SCENARIO = "pickup_persist"
     $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
     $code = $LASTEXITCODE
@@ -152,9 +152,9 @@ Step "scénario pickup_persist" {
     $global:LASTEXITCODE = $code
 }
 
-# Parcours scripté du vaisseau du joueur, du sas au cockpit, toutes portes franchies.
+# Parcours scripté du vaisseau du joueur, du sas au cockpit, toutes portes franchies, puis assis.
 Step "scénario walk_ship" {
-    $env:SH_START = "sector:player_ship"
+    $env:SH_START = "sector:corvette"
     $env:SH_SCENARIO = "walk_ship"
     $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
     $code = $LASTEXITCODE
@@ -174,10 +174,22 @@ Step "scénario fly_ship" {
     $global:LASTEXITCODE = $code
 }
 
-# Critère de M2 : quai → cockpit → départ → vol → amarrage → quai.
+# Critère de M2 : quai du hangar → sas → cockpit → départ → vol → amarrage → hangar.
 Step "scénario port_loop" {
-    $env:SH_START = "sector:hexis_spaceport"
+    $env:SH_START = "sector:spaceport"
     $env:SH_SCENARIO = "port_loop"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_START, Env:SH_SCENARIO, Env:SH_RAID -ErrorAction SilentlyContinue
+    $log | Select-String -Pattern "ERROR|panicked|sc.{1,3}nario .*termin" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
+# M9 : chaque PNJ de comptoir du spatioport, le service qu'il ouvre, puis la tablette.
+Step "scénario terminal_tour" {
+    $env:SH_START = "sector:spaceport"
+    $env:SH_RAID = "0"
+    $env:SH_SCENARIO = "terminal_tour"
     $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
     $code = $LASTEXITCODE
     Remove-Item Env:SH_START, Env:SH_SCENARIO, Env:SH_RAID -ErrorAction SilentlyContinue
@@ -271,7 +283,7 @@ Step "scénario raid_lose" {
 
 # Critère de M6 à pied : un abordage repoussé, un abordage perdu.
 Step "scénario firefight" {
-    $env:SH_START = "sector:player_ship"
+    $env:SH_START = "sector:corvette"
     $env:SH_SPAWN = "soute"
     $env:SH_BOARDING = "2"
     $env:SH_SCENARIO = "firefight"
@@ -283,7 +295,7 @@ Step "scénario firefight" {
 }
 
 Step "scénario firefight_lose" {
-    $env:SH_START = "sector:player_ship"
+    $env:SH_START = "sector:corvette"
     $env:SH_SPAWN = "soute"
     $env:SH_BOARDING = "3"
     $env:SH_SCENARIO = "firefight_lose"

@@ -8,7 +8,9 @@
     id: "hexis_shipyard",
     status: Proposition("P25"),
     role: "shipyard",
-    sector: "hexis_spaceport",
+    // Le spatioport par défaut (M9), rattaché à Hexis : ailleurs, repli par rôle.
+    sector: "spaceport",
+    place: "sys_hexis",
     npc: "hexis_yard_agent",
     name_key: "dlg.shipyard.name",
     faction: "hc_chantiers",

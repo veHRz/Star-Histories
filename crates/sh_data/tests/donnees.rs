@@ -255,11 +255,108 @@ fn les_modeles_des_scenes_existent() {
 #[test]
 fn le_vaisseau_du_joueur_est_connexe() {
     let data = donnees();
+    let depart = data.start().unwrap_or_else(|| panic!("aucun départ"));
     let vaisseau = data
-        .sector("player_ship")
-        .unwrap_or_else(|| panic!("player_ship absent"));
+        .sector(&depart.interior)
+        .unwrap_or_else(|| panic!("{} absent", depart.interior));
     assert_eq!(vaisseau.within("sas", 8).len(), vaisseau.cells.len());
     assert!(vaisseau.spawns.iter().any(|s| s.id == "sas"));
+    // M9 : la partie commence dans la chambre, debout ; aux commandes, au cockpit.
+    assert_eq!(depart.first_spawn(), "chambre");
+    assert_eq!(depart.aboard_spawn, "cockpit");
+    assert!(depart.seat_role.is_none());
+}
+
+/// Le vaisseau du joueur amarré au spatioport par défaut (M9, docs/m9-retours.md §3.8) : pont
+/// au niveau du sol du hangar, une seule porte au raccord (la porte extérieure du sas posée sur
+/// le portail du hangar), et chaque position dans la cellule la plus précise.
+#[test]
+fn le_vaisseau_s_amarre_dans_le_hangar() {
+    let data = donnees();
+    let depart = data.start().unwrap_or_else(|| panic!("aucun départ"));
+    let ship = data
+        .sector(&depart.interior)
+        .unwrap_or_else(|| panic!("intérieur absent"));
+    let port = data
+        .sector(sh_data::scene::DEFAULT_SPACEPORT)
+        .unwrap_or_else(|| panic!("spatioport par défaut absent"));
+    let docked =
+        sh_data::sector::dock(ship, "@dock", port, "@ship").unwrap_or_else(|e| panic!("{e}"));
+    assert!(docked.problems().is_empty(), "{:?}", docked.problems());
+    let placement = docked
+        .cells
+        .iter()
+        .find_map(|c| c.placement)
+        .unwrap_or_else(|| panic!("vaisseau non placé"));
+    // Pont du vaisseau au niveau du sol du hangar.
+    assert!(placement.translation.1.abs() < 1e-4, "{placement:?}");
+    // Une seule porte entre le vaisseau et le hangar : la porte extérieure du sas, à
+    // l'emplacement du portail `hangar__ship`, tournée vers le quai.
+    let hatch = ship
+        .external_port("@dock")
+        .unwrap_or_else(|| panic!("sas sans porte extérieure"));
+    let berth = port
+        .external_port("@ship")
+        .unwrap_or_else(|| panic!("hangar sans portail du vaisseau"));
+    let joints: Vec<_> = docked
+        .portals
+        .iter()
+        .filter(|p| {
+            let ship_side = |c: &str| ship.cell(c).is_some();
+            ship_side(&p.a) != ship_side(&p.b)
+        })
+        .collect();
+    assert_eq!(joints.len(), 1, "{joints:?}");
+    let joint = joints[0];
+    assert_eq!((joint.a.as_str(), joint.b.as_str()), ("sas", "hangar"));
+    let moved = placement.apply(hatch.center);
+    for (a, b) in [
+        (moved.0, berth.center.0),
+        (moved.1, berth.center.1),
+        (moved.2, berth.center.2),
+    ] {
+        assert!(
+            (a - b).abs() < 1e-3,
+            "porte du sas {moved:?}, portail du hangar {:?}",
+            berth.center
+        );
+    }
+    assert!(joint.normal.0 < -0.99, "{joint:?}");
+    // Le quai est du côté du hangar, devant la porte ; l'apparition du sas, à bord.
+    let at = |id: &str| {
+        let spawn = docked
+            .spawns
+            .iter()
+            .find(|s| s.id == id)
+            .unwrap_or_else(|| panic!("apparition {id} absente"));
+        docked.cell_at(spawn.pos).map(|c| c.id.clone())
+    };
+    assert_eq!(at("quai").as_deref(), Some("hangar"));
+    assert_eq!(at("sas").as_deref(), Some("sas"));
+    assert_eq!(at("chambre").as_deref(), Some("chambre"));
+    // Le hangar est la première cellule : un chargement à quai sans siège démarre au quai.
+    assert_eq!(docked.spawns.first().map(|s| s.id.as_str()), Some("quai"));
+}
+
+/// Le port d'Hexis utilise le spatioport par défaut, sous son propre nom, et ses guichetiers.
+#[test]
+fn hexis_a_le_spatioport_par_defaut() {
+    let data = donnees();
+    let (scene, port) = sh_data::scene::find_dock(
+        &data.scenes,
+        sh_data::scene::DEFAULT_SPACEPORT,
+        Some("sys_hexis"),
+    )
+    .unwrap_or_else(|| panic!("aucun port pour le spatioport par défaut"));
+    assert_eq!(scene.system.as_str(), "sys_hexis");
+    assert_eq!(port.place_key.as_deref(), Some("port.hexis"));
+    let banque = sh_data::Dialogue::for_role_at(
+        &data.dialogues,
+        "bank",
+        Some(&port.sector),
+        &[&port.id, scene.system.as_str()],
+    );
+    assert_eq!(banque.map(|d| d.id.as_str()), Some("hexis_bank"));
 }
 
 /// L'échelle des systèmes (P2) tient sa cible de jeu : quelques minutes entre planètes voisines,
@@ -448,6 +545,57 @@ fn detecte_une_cle_de_texte_en_double() {
         m.contains("lang/fr.ron et lang/fr/hud.ron") && m.contains("en double : menu.quit"),
         "{m}"
     );
+}
+
+#[test]
+fn detecte_un_ravitaillement_invalide() {
+    let mut data = donnees();
+    data.combat.refuel.day_price = 0.0;
+    assert!(messages(&data).contains("prix d'un jour de carburant invalide"));
+    let mut data = donnees();
+    data.combat.refuel.day_price = -5.0;
+    assert!(messages(&data).contains("prix d'un jour de carburant invalide"));
+    let mut data = donnees();
+    data.combat.refuel.step_days = f64::NAN;
+    assert!(messages(&data).contains("tranche de ravitaillement invalide"));
+    let mut data = donnees();
+    data.combat.refuel.commodity = "carburant_fantome".into();
+    assert!(
+        messages(&data)
+            .contains("marchandise inconnue de sim.ron (base_prices) : carburant_fantome")
+    );
+}
+
+#[test]
+fn detecte_un_depart_incoherent() {
+    let mut data = donnees();
+    data.starts[0].interior = "vaisseau_fantome".into();
+    assert!(messages(&data).contains("intérieur inconnu : vaisseau_fantome"));
+    let mut data = donnees();
+    data.starts[0].first_spawn = Some("nulle_part".into());
+    assert!(messages(&data).contains("apparition inconnue à bord : nulle_part"));
+    let mut data = donnees();
+    data.scenes
+        .iter_mut()
+        .flat_map(|s| s.docks.iter_mut())
+        .for_each(|d| d.place_key = None);
+    assert!(messages(&data).contains("spatioport par défaut sans nom de lieu"));
+    let mut data = donnees();
+    data.dialogues[0].place = Some("lieu_fantome".into());
+    assert!(
+        messages(&data).contains("lieu inconnu (ni port, ni système mis en scène) : lieu_fantome")
+    );
+}
+
+/// Le troisième casier de la chambre n'a pas d'entrée dans `items.ron` : il est vide (le jeu
+/// l'ouvre sans contenu et sans avertissement), les deux autres ont leur contenu de départ.
+#[test]
+fn les_casiers_de_la_chambre() {
+    let data = donnees();
+    let contenu = |id: &str| data.items.containers.get(id);
+    assert!(contenu("corvette_chambre_casier_1").is_some_and(|c| !c.is_empty()));
+    assert!(contenu("corvette_chambre_casier_2").is_some_and(|c| !c.is_empty()));
+    assert!(contenu("corvette_chambre_casier_3").is_none_or(|c| c.is_empty()));
 }
 
 #[test]

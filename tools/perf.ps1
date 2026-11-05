@@ -22,13 +22,13 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
 
 # Chaque critère de performance des jalons, avec les variables de son scénario.
 $runs = @(
-    @{ Name = "walk_ship"; Env = @{ SH_START = "sector:player_ship"; SH_SCENARIO = "walk_ship" } },
-    @{ Name = "walk_ship_sans_lightmaps"; Env = @{ SH_START = "sector:player_ship"; SH_SCENARIO = "walk_ship"; SH_BAKED_LIGHTING = "0" } },
+    @{ Name = "walk_ship"; Env = @{ SH_START = "sector:corvette"; SH_SCENARIO = "walk_ship" } },
+    @{ Name = "walk_ship_sans_lightmaps"; Env = @{ SH_START = "sector:corvette"; SH_SCENARIO = "walk_ship"; SH_BAKED_LIGHTING = "0" } },
     @{ Name = "fly_ship"; Env = @{ SH_START = "global:hexis"; SH_SCENARIO = "fly_ship" } },
-    @{ Name = "port_loop"; Env = @{ SH_START = "sector:hexis_spaceport"; SH_SCENARIO = "port_loop" } },
+    @{ Name = "port_loop"; Env = @{ SH_START = "sector:spaceport"; SH_SCENARIO = "port_loop" } },
     @{ Name = "raid_win"; Env = @{ SH_START = "global:cygnara"; SH_SCENARIO = "raid_win"; SH_RAID = "1" } },
-    @{ Name = "firefight"; Env = @{ SH_START = "sector:player_ship"; SH_SPAWN = "soute"; SH_BOARDING = "2"; SH_SCENARIO = "firefight" } },
-    @{ Name = "firefight_lose"; Env = @{ SH_START = "sector:player_ship"; SH_SPAWN = "soute"; SH_BOARDING = "3"; SH_SCENARIO = "firefight_lose" } }
+    @{ Name = "firefight"; Env = @{ SH_START = "sector:corvette"; SH_SPAWN = "soute"; SH_BOARDING = "2"; SH_SCENARIO = "firefight" } },
+    @{ Name = "firefight_lose"; Env = @{ SH_START = "sector:corvette"; SH_SPAWN = "soute"; SH_BOARDING = "3"; SH_SCENARIO = "firefight_lose" } }
 )
 #   (`powershell -File` passe `-Only a,b` comme une seule chaîne.)
 $Only = $Only -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ }

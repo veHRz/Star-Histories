@@ -310,14 +310,7 @@ fn show_banner_detail(
     if !changed || details.is_empty() {
         return;
     }
-    let wanted = banner_detail(
-        &texts,
-        &data,
-        &sector,
-        &states,
-        location.as_deref(),
-        docked.as_deref(),
-    );
+    let wanted = banner_detail(&texts, &data, &sector, &states, location.as_deref());
     let display = if wanted.is_empty() {
         Display::None
     } else {
@@ -341,7 +334,6 @@ fn banner_detail(
     sector: &ActiveSector,
     states: &CellStates,
     location: Option<&Location>,
-    docked: Option<&Docked>,
 ) -> String {
     let current = states.current.as_deref();
     let room = current
@@ -352,12 +344,9 @@ fn banner_detail(
         // En vol, à bord du vaisseau du joueur : le système est déjà le titre du bandeau.
         ViewLevel::Global => Some(texts.get(&sector.sector.name_key)),
         _ => {
-            // Amarré : dans les salles du vaisseau, son nom ; ailleurs, le système.
-            let ship = docked
-                .and_then(|d| data.sector(&d.ship))
-                .filter(|ship| current.is_some_and(|id| ship.cell(id).is_some()));
-            match ship {
-                Some(ship) => Some(texts.get(&ship.name_key)),
+            // Dans les salles du vaisseau du joueur, « Votre vaisseau » ; ailleurs, le système.
+            match sector.aboard_cell(states) {
+                Some(_) => Some(texts.get(crate::sector::PLAYER_SHIP_NAME_KEY)),
                 None => location
                     .and_then(|l| data.galaxy.system(&l.system))
                     .map(|s| s.name.clone()),
@@ -374,18 +363,16 @@ fn banner_detail(
     }
 }
 
-/// Le voile couvre l'arrivée dans le secteur jusqu'à ce que la cellule du joueur soit prête.
+/// Le voile couvre l'arrivée dans le secteur jusqu'à ce que la cellule du joueur et ses voisines
+/// Locales soient prêtes.
 fn show_veil(
     mut commands: Commands,
     states: Res<CellStates>,
     ready: Query<(), With<CellReady>>,
     veil: Query<Entity, With<LoadingVeil>>,
 ) {
-    let current_ready = states
-        .current
-        .as_deref()
-        .is_some_and(|c| states.is_local_ready(c, &ready));
-    if current_ready {
+    // La cellule du joueur et ses voisines Locales (M9 : plus de pièces vides à l'arrivée).
+    if states.arrival_ready(&ready) {
         for entity in &veil {
             commands.entity(entity).despawn();
         }

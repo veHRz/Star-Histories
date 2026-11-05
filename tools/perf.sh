@@ -21,13 +21,13 @@ cyan=$'\e[36m'; red=$'\e[31m'; green=$'\e[32m'; reset=$'\e[0m'
 
 # Chaque critère de performance des jalons, avec les variables de son scénario.
 runs=(
-    "walk_ship|SH_START=sector:player_ship SH_SCENARIO=walk_ship"
-    "walk_ship_sans_lightmaps|SH_START=sector:player_ship SH_SCENARIO=walk_ship SH_BAKED_LIGHTING=0"
+    "walk_ship|SH_START=sector:corvette SH_SCENARIO=walk_ship"
+    "walk_ship_sans_lightmaps|SH_START=sector:corvette SH_SCENARIO=walk_ship SH_BAKED_LIGHTING=0"
     "fly_ship|SH_START=global:hexis SH_SCENARIO=fly_ship"
-    "port_loop|SH_START=sector:hexis_spaceport SH_SCENARIO=port_loop"
+    "port_loop|SH_START=sector:spaceport SH_SCENARIO=port_loop"
     "raid_win|SH_START=global:cygnara SH_SCENARIO=raid_win SH_RAID=1"
-    "firefight|SH_START=sector:player_ship SH_SPAWN=soute SH_BOARDING=2 SH_SCENARIO=firefight"
-    "firefight_lose|SH_START=sector:player_ship SH_SPAWN=soute SH_BOARDING=3 SH_SCENARIO=firefight_lose"
+    "firefight|SH_START=sector:corvette SH_SPAWN=soute SH_BOARDING=2 SH_SCENARIO=firefight"
+    "firefight_lose|SH_START=sector:corvette SH_SPAWN=soute SH_BOARDING=3 SH_SCENARIO=firefight_lose"
 )
 
 echo "${cyan}== cargo build --release${reset}"

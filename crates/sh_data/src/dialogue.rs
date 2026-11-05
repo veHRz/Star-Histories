@@ -8,9 +8,11 @@
 //!
 //! Deux portes d'entrée (M9) : une console du secteur (`console`, l'étiquette d'un
 //! `INTERACT_console`) ou un PNJ de comptoir (`role`, le paramètre `role` d'un `INTERACT_*` de
-//! genre `npc`). La conversation d'un PNJ est celle de son rôle dans le secteur où il se trouve,
-//! sinon la première de ce rôle : un spatioport par défaut, partagé par plusieurs lieux, a ainsi
-//! ses interlocuteurs sans dupliquer les dialogues.
+//! genre `npc`). La conversation d'un PNJ est celle de son rôle **rattachée au lieu** où l'on
+//! est (`place` : le port d'amarrage, puis son système), sinon celle du secteur où il se trouve,
+//! sinon la première de ce rôle ([`Dialogue::for_role_at`]) : un spatioport par défaut, partagé
+//! par plusieurs lieux (P7), a ainsi les interlocuteurs propres à chaque lieu, et à défaut ceux
+//! d'un autre, sans dupliquer les dialogues.
 
 use std::collections::BTreeMap;
 
@@ -35,6 +37,11 @@ pub struct Dialogue {
     pub role: Option<String>,
     /// Le secteur où se trouvent la console et le PNJ.
     pub sector: String,
+    /// Le lieu auquel la conversation est rattachée : un port d'amarrage (`DockPort::id`) ou un
+    /// système (`sys_hexis`). Les guichetiers d'Hexis ne parlent qu'au spatioport d'Hexis, même
+    /// si d'autres lieux partagent le même secteur ; absent : tout lieu de ce secteur.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub place: Option<String>,
     /// L'interlocuteur, clé de sa mémoire.
     pub npc: String,
     /// Clé de langue de son nom ou de sa fonction.
@@ -123,19 +130,37 @@ pub enum Screen {
 
 impl Dialogue {
     /// La conversation d'un PNJ de comptoir de ce rôle : celle du secteur `sector` s'il y en a
-    /// une, sinon la première de ce rôle (spatioport par défaut ou propre à un lieu).
+    /// une, sinon la première de ce rôle (spatioport par défaut ou propre à un lieu). Sans lieu :
+    /// voir [`Dialogue::for_role_at`].
     pub fn for_role<'a>(
         dialogues: &'a [Dialogue],
         role: &str,
         sector: Option<&str>,
+    ) -> Option<&'a Dialogue> {
+        Self::for_role_at(dialogues, role, sector, &[])
+    }
+
+    /// La conversation d'un PNJ de comptoir de ce rôle, là où l'on est : d'abord celle rattachée
+    /// au premier lieu de `places` qui en a une (du plus précis au plus large : le port, puis son
+    /// système), puis celle du secteur sans lieu, puis celle du secteur, enfin la première de ce
+    /// rôle.
+    pub fn for_role_at<'a>(
+        dialogues: &'a [Dialogue],
+        role: &str,
+        sector: Option<&str>,
+        places: &[&str],
     ) -> Option<&'a Dialogue> {
         let of_role = || {
             dialogues
                 .iter()
                 .filter(move |d| d.role.as_deref() == Some(role))
         };
-        of_role()
-            .find(|d| Some(d.sector.as_str()) == sector)
+        let in_sector = |d: &&Dialogue| Some(d.sector.as_str()) == sector;
+        places
+            .iter()
+            .find_map(|place| of_role().find(|d| d.place.as_deref() == Some(*place)))
+            .or_else(|| of_role().find(|d| d.place.is_none() && in_sector(d)))
+            .or_else(|| of_role().find(in_sector))
             .or_else(|| of_role().next())
     }
 
@@ -193,9 +218,15 @@ mod tests {
 
     /// Un dialogue minimal écrit comme les fichiers du jeu (console facultative, rôle en clair).
     fn lire(id: &str, role: Option<&str>, sector: &str) -> Dialogue {
+        lire_au(id, role, sector, None)
+    }
+
+    /// Le même, rattaché à un lieu.
+    fn lire_au(id: &str, role: Option<&str>, sector: &str, place: Option<&str>) -> Dialogue {
         let role = role.map_or(String::new(), |r| format!("role: \"{r}\","));
+        let place = place.map_or(String::new(), |p| format!("place: \"{p}\","));
         let text = format!(
-            "(id: \"{id}\", {role} sector: \"{sector}\", npc: \"pnj\", name_key: \"cle\",
+            "(id: \"{id}\", {role} {place} sector: \"{sector}\", npc: \"pnj\", name_key: \"cle\",
               entries: [(node: \"a\")],
               nodes: {{ \"a\": (text: \"cle\", choices: [(text: \"cle\", effects: [Open(Bank)])]) }})"
         );
@@ -220,5 +251,37 @@ mod tests {
         assert!(Dialogue::for_role(&dialogues, "bar", None).is_none());
         assert!(dialogues[1].opens(Screen::Bank));
         assert!(!dialogues[1].opens(Screen::Market));
+    }
+
+    #[test]
+    fn un_pnj_du_spatioport_par_defaut_parle_selon_le_lieu() {
+        let dialogues = vec![
+            lire_au("banque_hexis", Some("bank"), "spaceport", Some("sys_hexis")),
+            lire_au(
+                "banque_quai",
+                Some("bank"),
+                "spaceport",
+                Some("quai_cygnara"),
+            ),
+            lire("banque_generique", Some("bank"), "spaceport"),
+            lire_au("bar_hexis", Some("bar"), "spaceport", Some("sys_hexis")),
+        ];
+        let id = |places: &[&str]| {
+            Dialogue::for_role_at(&dialogues, "bank", Some("spaceport"), places)
+                .map(|d| d.id.as_str())
+        };
+        // Le port d'abord, puis son système.
+        assert_eq!(id(&["quai_cygnara", "sys_cygnara"]), Some("banque_quai"));
+        assert_eq!(id(&["port_hexis", "sys_hexis"]), Some("banque_hexis"));
+        // Un lieu sans conversation propre : celle du secteur qui n'est rattachée à aucun lieu.
+        assert_eq!(id(&["port_x", "sys_x"]), Some("banque_generique"));
+        assert_eq!(id(&[]), Some("banque_generique"));
+        // Repli par rôle : un lieu sans tavernier propre a celui d'Hexis.
+        let bar = Dialogue::for_role_at(&dialogues, "bar", Some("spaceport"), &["sys_x"]);
+        assert_eq!(bar.map(|d| d.id.as_str()), Some("bar_hexis"));
+        assert_eq!(
+            Dialogue::for_role(&dialogues, "bar", None).map(|d| d.id.as_str()),
+            Some("bar_hexis")
+        );
     }
 }

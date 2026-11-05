@@ -1,5 +1,6 @@
 // Maniement des vaisseaux pilotables (réglages de jeu, pas des faits d'univers).
-// Le vaisseau du joueur (P12) : petit marchand de taille corvette, agile sans être un chasseur.
+// Par intérieur type (le secteur du vaisseau, M9) : `corvette`, celui du vaisseau du joueur (P12),
+// petit marchand de taille corvette, agile sans être un chasseur.
 (
     // Direction à la souris aux commandes : multiplicateur de la sensibilité de base (pixels
     // pour une rotation à pleine vitesse, `ship.rs`), sous le réglage « Sensibilité du
@@ -7,7 +8,7 @@
     // trois fois trop lente (1 jusqu'à M8). Lu par `options::SteerBase`.
     steer_sensitivity: 3.0,
     ships: {
-        "player_ship": (
+        "corvette": (
             max_speed: 250.0,
             accel_forward: 45.0,
             accel_backward: 25.0,

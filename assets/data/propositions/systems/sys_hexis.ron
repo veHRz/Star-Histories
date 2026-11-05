@@ -37,12 +37,14 @@
         model: "models/space/freighter.gltf",
         speed: 900.0,
     ),
-    // Le spatioport d'Hexis (P7) : sa balise d'approche en orbite basse, sous L'Enclume.
+    // Le spatioport d'Hexis (P7) : sa balise d'approche en orbite basse, sous L'Enclume. Il
+    // utilise le spatioport par défaut (secteur `spaceport`, hangar et salles, M9) : pas de
+    // `sector` ; son nom à quai est le sien.
     docks: [
         (
             id: "hexis_spaceport_approach",
-            sector: "hexis_spaceport",
             name_key: "dock.hexis_spaceport",
+            place_key: "port.hexis",
             around: "hexis",
             altitude_radii: 0.08,
             angle_deg: 49.0,

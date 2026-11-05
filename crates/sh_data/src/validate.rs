@@ -658,11 +658,23 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
                     dock.id, dock.sector
                 ),
             );
+            // Le spatioport par défaut est partagé : à quai, le bandeau dit le nom du lieu, jamais
+            // « Spatioport » tout court.
             c.check(
-                data.lang.has(&dock.name_key),
+                dock.sector != crate::scene::DEFAULT_SPACEPORT || dock.place_key.is_some(),
                 &ctx,
-                format!("clé de nom absente de la langue : {}", dock.name_key),
+                format!(
+                    "port {} : spatioport par défaut sans nom de lieu (place_key)",
+                    dock.id
+                ),
             );
+            for key in std::iter::once(&dock.name_key).chain(dock.place_key.as_ref()) {
+                c.check(
+                    data.lang.has(key),
+                    &ctx,
+                    format!("port {} : clé de nom absente de la langue : {key}", dock.id),
+                );
+            }
             c.check(
                 dock.range > 0.0 && dock.altitude_radii > 0.0,
                 &ctx,
@@ -705,11 +717,15 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
             "max_speed au-delà de la vitesse de manœuvre de l'échelle (space.ron)",
         );
     }
+    // Le maniement est celui de l'intérieur type (la classe du vaisseau), pas du départ.
     for start in &data.starts {
         c.check(
-            data.flight.ships.contains_key(&start.ship),
+            data.flight.ships.contains_key(&start.interior),
             format!("départ {}", start.id),
-            format!("vaisseau sans maniement dans flight.ron : {}", start.ship),
+            format!(
+                "intérieur sans maniement dans flight.ron : {}",
+                start.interior
+            ),
         );
     }
 
@@ -1040,6 +1056,18 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
             &ctx,
             format!("secteur inconnu : {}", dialogue.sector),
         );
+        // Rattaché à un lieu : un port d'amarrage ou un système mis en scène.
+        if let Some(place) = &dialogue.place {
+            let known = data
+                .scenes
+                .iter()
+                .any(|s| s.system.as_str() == place || s.docks.iter().any(|d| &d.id == place));
+            c.check(
+                known,
+                &ctx,
+                format!("lieu inconnu (ni port, ni système mis en scène) : {place}"),
+            );
+        }
         c.check(!dialogue.entries.is_empty(), &ctx, "aucun point d'entrée");
         for node in dialogue.missing_nodes() {
             c.fail(&ctx, format!("nœud inconnu : {node}"));
@@ -1066,13 +1094,47 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
             &ctx,
             format!("système inconnu ou secret : {}", start.system),
         );
-        match data.sectors.iter().find(|s| s.id.as_str() == start.ship) {
-            Some(ship) => c.check(
-                ship.spawns.iter().any(|sp| sp.id == start.aboard_spawn),
-                &ctx,
-                format!("apparition inconnue à bord : {}", start.aboard_spawn),
+        // Deux identifiants distincts (M9) : les statistiques du vaisseau et son intérieur type.
+        c.check(
+            data.combat.ship(&start.ship).is_some(),
+            &ctx,
+            format!(
+                "vaisseau sans coque de combat dans combat.ron : {}",
+                start.ship
             ),
-            None => c.fail(&ctx, format!("vaisseau inconnu : {}", start.ship)),
+        );
+        match data
+            .sectors
+            .iter()
+            .find(|s| s.id.as_str() == start.interior)
+        {
+            Some(ship) => {
+                c.check(
+                    ship.kind == crate::sector::SectorKind::Ship,
+                    &ctx,
+                    format!("intérieur qui n'est pas un vaisseau : {}", start.interior),
+                );
+                c.check(
+                    ship.external_port("@dock").is_some(),
+                    &ctx,
+                    format!("intérieur sans sas d'amarrage @dock : {}", start.interior),
+                );
+                for spawn in [start.aboard_spawn.as_str(), start.first_spawn()] {
+                    c.check(
+                        ship.spawns.iter().any(|sp| sp.id == spawn),
+                        &ctx,
+                        format!("apparition inconnue à bord : {spawn}"),
+                    );
+                }
+            }
+            None => c.fail(&ctx, format!("intérieur inconnu : {}", start.interior)),
+        }
+        if let Some(hull) = &start.hull {
+            c.check(
+                hull.ends_with(".gltf") || hull.ends_with(".glb"),
+                &ctx,
+                format!("coque qui n'est pas un modèle glTF : {hull}"),
+            );
         }
     }
 

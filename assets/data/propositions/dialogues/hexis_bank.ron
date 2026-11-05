@@ -7,7 +7,9 @@
     id: "hexis_bank",
     status: Proposition("P25"),
     role: "bank",
-    sector: "hexis_spaceport",
+    // Le spatioport par défaut (M9), rattaché à Hexis : ailleurs, repli par rôle.
+    sector: "spaceport",
+    place: "sys_hexis",
     npc: "hexis_bank_clerk",
     name_key: "dlg.bank.name",
     faction: "hc_finance",

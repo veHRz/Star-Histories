@@ -1,9 +1,10 @@
-// Noms des secteurs et des ports d'amarrage (descripteurs de secteur, mises en scène des
-// systèmes ; M9, lot L7).
+// Noms des secteurs, des ports d'amarrage et des lieux à quai (descripteurs de secteur, mises en
+// scène des systèmes ; M9, lot L7). `sector.player_ship` : le vaisseau du joueur, quel que soit
+// son intérieur type (bandeau du lieu) ; `sector.corvette` : le nom de l'intérieur type.
 {
     "sector.player_ship": "Your ship",
     "dock.hexis_spaceport": "Hexis spaceport approach",
-    "sector.hexis_spaceport": "Hexis spaceport",
+    "port.hexis": "Hexis spaceport",
     "sector.salle_temoin": "Material test room",
     "sector.corvette": "Corvette",
     "sector.spaceport": "Spaceport",

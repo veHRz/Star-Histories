@@ -6,7 +6,9 @@
     status: Proposition("P25"),
     console: "bar",
     role: "bar",
-    sector: "hexis_spaceport",
+    // Le spatioport par défaut (M9), rattaché à Hexis : ailleurs, repli par rôle.
+    sector: "spaceport",
+    place: "sys_hexis",
     npc: "hexis_barkeep",
     name_key: "dlg.tavern.name",
     entries: [
