@@ -43,6 +43,7 @@ use crate::items::{CharacterTab, OpenCharacterScreen, TalkTo};
 use crate::living::{LivingWorld, PlayerKnowledge, latest_news};
 use crate::sector::{ActiveSector, Docked};
 use crate::state::{AppState, ControlMode, ViewLevel};
+use crate::ui::character::naming::NamingScreen;
 use crate::ui::hud::Notice;
 use crate::voyage::{Location, ShipFuel};
 
@@ -324,10 +325,17 @@ fn open_terminal(
     terminal: Option<ResMut<Terminal>>,
     mut cursor: Single<&mut CursorOptions, With<PrimaryWindow>>,
     mut spoke: MessageWriter<SpokeWith>,
+    naming: Option<Res<NamingScreen>>,
 ) {
     let Some(OpenTerminal(screen)) = reader.read().last().cloned() else {
         return;
     };
+    // Pendant la saisie du nom d'un casier, rien ne s'ouvre par-dessus : son mode Menu n'est
+    // effectif qu'au frame suivant, et un message envoyé entre-temps (autopilote, interaction
+    // du même frame) ouvrirait le terminal sur le champ.
+    if naming.is_some() {
+        return;
+    }
     let resume = match terminal.as_ref() {
         Some(t) => t.resume,
         None if matches!(mode.get(), ControlMode::OnFoot | ControlMode::Piloting) => *mode.get(),

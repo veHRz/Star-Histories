@@ -12,7 +12,8 @@
 //! Depuis M10, les conteneurs sont rangés **par vaisseau propriétaire** ([`Containers`],
 //! [`PLAYER_SHIP`]) avec les noms que le joueur leur donne (plaque d'un casier,
 //! [`NameContainer`]) ; un rangement spécialisé n'accepte qu'une sous-catégorie d'objets
-//! (`sh_data::items::StorageDef`).
+//! (`sh_data::items::StorageDef`). La plaque d'un casier du joueur montre son nom, ou celui de
+//! son genre (« Casier », « Frigo ») tant qu'il n'en a pas reçu ([`label_containers`]).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -21,9 +22,11 @@ use bevy_enhanced_input::prelude::*;
 use serde::{Deserialize, Serialize};
 use sh_data::{EquipSlot, ItemsFile};
 
-use crate::data::Data;
+use crate::data::{Data, Texts};
 use crate::input::{OpenInventory, OpenSkills};
+use crate::sector::gltf::ContainerLabel;
 use crate::state::AppState;
+use crate::views::FootLabel;
 
 /// Les objets que le joueur a sur lui (objet → quantité). Défini dans `interaction` (ramassage,
 /// sauvegarde, `state::forget_game`) ; réexporté ici pour que tout ce qui touche aux objets se
@@ -44,6 +47,7 @@ impl Plugin for ItemsPlugin {
                 PostUpdate,
                 sync_catalog.run_if(resource_exists_and_changed::<Data>),
             )
+            .add_systems(Update, label_containers)
             .add_systems(OnEnter(AppState::InGame), start_items)
             .add_systems(OnExit(AppState::InGame), forget_items);
     }
@@ -233,6 +237,78 @@ pub fn container_name<'a>(
     container: &str,
 ) -> Option<&'a str> {
     containers?.name(ship, container)
+}
+
+/// Distance de lecture du nom d'un casier sur sa plaque (m) : plus courte que celle des noms de
+/// salle, une chambre a plusieurs casiers côte à côte et leurs plaques s'empileraient de loin.
+const PLATE_DISTANCE: f32 = 3.0;
+
+/// Le texte de la plaque d'un casier : le nom que le joueur lui a donné, sinon celui de son
+/// genre (`StorageDef::kind_key` : « Casier », « Frigo ») ; aucun pour un casier qui n'est pas
+/// au joueur (sa plaque reste muette, comme il reste verrouillé).
+pub fn plate_text(
+    lang: &sh_data::Lang,
+    items: Option<&ItemsFile>,
+    containers: Option<&Containers>,
+    owner: Option<&str>,
+    container: &str,
+) -> Option<String> {
+    let owner = owner.filter(|o| crate::interaction::usable_locker(container, Some(o)))?;
+    Some(match container_name(containers, owner, container) {
+        Some(name) => name.to_owned(),
+        None => lang.get(items.map_or(sh_data::items::LOCKER_KIND_KEY, |i| i.kind_key(container))),
+    })
+}
+
+/// Écrit le nom des casiers sur leur plaque (`sector::gltf::ContainerLabel`, ancre
+/// `SOCKET_<n>_label`) : une [`FootLabel`] lisible de face (l'avant du nœud, −Z, sort du casier),
+/// depuis la cellule du casier. Recalculé pour une plaque nouvelle, et pour toutes quand les noms
+/// (`Containers`), le catalogue ou la langue changent ; le reste du temps, rien.
+fn label_containers(
+    mut commands: Commands,
+    texts: Option<Res<Texts>>,
+    catalog: Option<Res<ItemCatalog>>,
+    containers: Option<Res<Containers>>,
+    mut labels: Query<(Entity, Ref<ContainerLabel>, Option<&mut FootLabel>)>,
+) {
+    let Some(texts) = texts else {
+        return;
+    };
+    let refresh = texts.is_changed()
+        || catalog.as_ref().is_some_and(|c| c.is_changed())
+        || containers.as_ref().is_some_and(|c| c.is_changed());
+    for (entity, label, foot) in &mut labels {
+        if !refresh && !label.is_changed() && foot.is_some() {
+            continue;
+        }
+        let text = plate_text(
+            &texts.0,
+            catalog.as_deref().map(|c| &c.0),
+            containers.as_deref(),
+            label.owner.as_deref(),
+            &label.container,
+        );
+        match (text, foot) {
+            (Some(text), Some(mut foot)) => {
+                if foot.text != text {
+                    foot.text = text;
+                }
+            }
+            (Some(text), None) => {
+                let mut plate = FootLabel::new(text)
+                    .facing(Vec3::NEG_Z)
+                    .within(PLATE_DISTANCE);
+                if let Some(cell) = &label.cell {
+                    plate = plate.in_cell(cell.clone());
+                }
+                commands.entity(entity).try_insert(plate);
+            }
+            (None, Some(_)) => {
+                commands.entity(entity).try_remove::<FootLabel>();
+            }
+            (None, None) => {}
+        }
+    }
 }
 
 /// Les objets posés dans le monde qu'on a déjà ramassés, par identifiant stable du point de
@@ -482,6 +558,46 @@ mod tests {
         assert_eq!(
             Containers::from_catalog(&items).stock(PLAYER_SHIP, "frigo", &items),
             12
+        );
+    }
+
+    /// La plaque : le nom donné, sinon le genre du rangement ; muette hors du vaisseau du joueur.
+    #[test]
+    fn texte_des_plaques() {
+        let mut lang = sh_data::Lang::default();
+        lang.strings.insert(
+            sh_data::items::LOCKER_KIND_KEY.to_owned(),
+            "Casier".to_owned(),
+        );
+        lang.strings
+            .insert("container.fridge".to_owned(), "Frigo".to_owned());
+        let items: ItemsFile = sh_data::ron_options()
+            .from_str(r#"(items: [], storage: { "frigo": (kind_key: "container.fridge") })"#)
+            .unwrap_or_else(|e| panic!("{e}"));
+        let mut containers = Containers::default();
+        let text = |c: &Containers, owner: Option<&str>, id: &str| {
+            plate_text(&lang, Some(&items), Some(c), owner, id)
+        };
+        assert_eq!(
+            text(&containers, Some(PLAYER_SHIP), "casier").as_deref(),
+            Some("Casier")
+        );
+        assert_eq!(
+            text(&containers, Some(PLAYER_SHIP), "frigo").as_deref(),
+            Some("Frigo")
+        );
+        containers.set_name(PLAYER_SHIP, "casier", "Mes affaires");
+        assert_eq!(
+            text(&containers, Some(PLAYER_SHIP), "casier").as_deref(),
+            Some("Mes affaires")
+        );
+        assert_eq!(text(&containers, None, "casier"), None);
+        assert_eq!(text(&containers, Some("autre"), "casier"), None);
+        assert_eq!(text(&containers, Some(PLAYER_SHIP), ""), None);
+        // Sans catalogue : le genre du casier.
+        assert_eq!(
+            plate_text(&lang, None, None, Some(PLAYER_SHIP), "frigo").as_deref(),
+            Some("Casier")
         );
     }
 

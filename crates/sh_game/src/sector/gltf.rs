@@ -131,11 +131,14 @@ pub struct Socket {
 /// L'ancre du nom d'un casier sur sa plaque (`SOCKET_<n>_label`, `usage: "label"`, M10) : le
 /// centre de la plaque, son axe +Y Blender (−Z du nœud dans Bevy, `Transform::forward`) vers
 /// l'extérieur. Le nom à y écrire : `items::container_name(containers, owner, container)` ;
-/// sans propriétaire, la plaque d'un casier qui n'est pas au joueur reste muette.
+/// sans propriétaire, la plaque d'un casier qui n'est pas au joueur reste muette. Le nom s'y
+/// affiche en `views::FootLabel` (`items::label_containers`), lisible depuis `cell`.
 #[derive(Component, Clone, Debug, PartialEq, Eq)]
 pub struct ContainerLabel {
     pub container: String,
     pub owner: Option<String>,
+    /// La cellule du secteur où est la plaque (aucune : hors d'un secteur, lisible partout).
+    pub cell: Option<String>,
 }
 
 /// L'identifiant d'un point de ramassage : le secteur d'origine de la cellule, la cellule et le
@@ -587,6 +590,7 @@ fn on_instance_ready(
                     entity.insert(ContainerLabel {
                         container,
                         owner: owner.clone(),
+                        cell: cell.map(|c| c.cell.clone()),
                     });
                 }
             }

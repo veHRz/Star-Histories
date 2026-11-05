@@ -125,6 +125,31 @@ Step "scénario character" {
     $global:LASTEXITCODE = $code
 }
 
+# M10 : le frigo de la cuisine compte ses rations, refuse ce qui ne se mange pas, reprend une ration.
+Step "scénario fridge" {
+    $env:SH_START = "sector:corvette"
+    $env:SH_GIVE = "spare_parts:5"
+    $env:SH_CONTAINER = "corvette_carre_frigo"
+    $env:SH_SCENARIO = "fridge"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_START, Env:SH_GIVE, Env:SH_CONTAINER, Env:SH_SCENARIO -ErrorAction SilentlyContinue
+    $log | Select-String -Pattern "ERROR|panicked|sc.{1,3}nario fridge" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
+# M10 : un casier nommé (sa plaque l'affiche), sauvegardé à quai et rechargé : le nom est resté.
+Step "scénario locker_name" {
+    $env:SH_USER_DIR = "target/locker-user"
+    $env:SH_START = "sector:spaceport"
+    $env:SH_SCENARIO = "locker_name"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_USER_DIR, Env:SH_START, Env:SH_SCENARIO -ErrorAction SilentlyContinue
+    $log | Select-String -Pattern "ERROR|panicked|sc.{1,3}nario locker_name" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
 # Sauvegarde puis chargement, en vol et à quai : argent, date, vue et pose du vaisseau retrouvés.
 foreach ($start in @("new", "sector:spaceport")) {
     Step "scénario save_load ($start)" {
@@ -171,6 +196,18 @@ Step "scénario fly_ship" {
     $code = $LASTEXITCODE
     Remove-Item Env:SH_START, Env:SH_SCENARIO, Env:SH_RAID -ErrorAction SilentlyContinue
     $log | Select-String -Pattern "ERROR|panicked|sc.{1,3}nario" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
+# M10 : en vol, la porte extérieure du sas annonce le vide et ne bouge pas (ni attente ni son).
+Step "scénario airlock_space" {
+    $env:SH_START = "global:hexis"
+    $env:SH_RAID = "0"
+    $env:SH_SCENARIO = "airlock_space"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_START, Env:SH_RAID, Env:SH_SCENARIO -ErrorAction SilentlyContinue
+    $log | Select-String -Pattern "ERROR|panicked|sc.{1,3}nario airlock_space" | ForEach-Object { "   $_" }
     $global:LASTEXITCODE = $code
 }
 
@@ -225,6 +262,18 @@ Step "scénario voyage_isolated" {
 Step "scénario contract_loop" {
     $env:SH_START = "global:hexis"
     $env:SH_SCENARIO = "contract_loop"
+    $env:SH_RAID = "0"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_START, Env:SH_SCENARIO, Env:SH_RAID -ErrorAction SilentlyContinue
+    $log | Select-String -Pattern "ERROR|panicked|v.{1,3}rifi|sc.{1,3}nario .*termin" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
+# M10 : un contrat vers Vorrh (système sans scène avant M10), Portail, autopilote, livraison.
+Step "scénario deliver_vorrh" {
+    $env:SH_START = "global:hexis"
+    $env:SH_SCENARIO = "deliver_vorrh"
     $env:SH_RAID = "0"
     $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
     $code = $LASTEXITCODE

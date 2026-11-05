@@ -48,7 +48,7 @@ pub use galaxy::{
     Body, BodyKind, Fleet, Galaxy, MapFrame, OrbitOrder, Phenomenon, PortalHub, StarSystem,
     Station, Zone,
 };
-pub use items::{EquipSlot, ItemCategory, ItemDef, ItemsFile};
+pub use items::{EquipSlot, ItemCategory, ItemDef, ItemSubcategory, ItemsFile, StorageDef};
 pub use lang::{DuplicateKey, Keyboard, Lang, load_lang};
 pub use layout::{Placed, PlacedKind, system_layout};
 pub use map::{MapEntry, MapKind, entry_at, public_map};

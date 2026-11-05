@@ -1069,6 +1069,19 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
             );
         }
     }
+    // Un rangement spécialisé a son titre et son invite dans la langue ; son refus et son
+    // compteur (`.refused`, `.stock`) sont facultatifs : l'écran retombe sur ceux du casier.
+    for (id, storage) in &data.items.storage {
+        if let Some(kind) = &storage.kind_key {
+            for key in [kind.clone(), format!("{kind}.open")] {
+                c.check(
+                    data.lang.has(&key),
+                    items_ctx,
+                    format!("rangement {id} : texte absent : {key}"),
+                );
+            }
+        }
+    }
 
     // --- Apparence des astres ----------------------------------------------------------------
     // Les données seules (pas de dossier d'assets ici) : la présence des textures est vérifiée

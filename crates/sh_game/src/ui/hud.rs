@@ -169,6 +169,9 @@ fn spawn_hud(
             Text::new(""),
             fonts.body(18.0),
             TextColor(theme::TEXT),
+            // L'invite d'un PNJ a deux lignes (son rôle, puis l'action) : centrées l'une sous
+            // l'autre, comme la plaquette sur l'écran. Une invite d'une ligne n'y change rien.
+            TextLayout::justify(Justify::Center),
         )],
     ));
     commands.spawn((

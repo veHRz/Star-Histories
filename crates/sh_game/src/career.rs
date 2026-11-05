@@ -171,20 +171,12 @@ pub fn money(texts: &Texts, amount: Credits) -> String {
     texts.format("money.credits", &[("amount", &texts.number(units, 0))])
 }
 
-/// Le nom d'une organisation ; une division porte celui de sa maison mère (« Hexa-Corp
-/// Logistique »).
+/// Le nom d'une organisation : celui du codex (`codex::organization_name`), pour que le
+/// joueur lise partout le même. Seule une division d'une maison mère publique en prend le nom
+/// devant le sien (« Hexa-Corp Finance ») ; une branche militaire (FOU, FDU) se nomme déjà en
+/// entier et ne prend pas « UGL » devant.
 pub fn faction_name(texts: &Texts, data: &Data, id: &Id<Faction>) -> String {
-    let name = display_name(data, id.as_str());
-    match data.faction(id).and_then(|f| f.parent.as_ref()) {
-        Some(parent) => texts.format(
-            "faction.division",
-            &[
-                ("parent", &display_name(data, parent.as_str())),
-                ("name", &name),
-            ],
-        ),
-        None => name,
-    }
+    crate::codex::organization_name(&texts.0, &data.0, id)
 }
 
 /// Le titre d'un contrat (« CT — weapons to Cygnara »).

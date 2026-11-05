@@ -75,6 +75,21 @@ $views = [ordered]@{
     "borne-chantier"   = @{ SH_START = "sector:spaceport"; SH_SPAWN = "hall"; SH_TERMINAL = "chantier"; SH_SCREENSHOT_FRAME = $screenFrame }
     "pnj-parler"       = @{ SH_START = "sector:spaceport"; SH_SPAWN_AT = "-20.0,0,-7.9,0,-5"; SH_TALK = "contracts"; SH_SCREENSHOT_FRAME = $screenFrame }
     "options-touches"  = @{ SH_START = "menu"; SH_OPTIONS = "keys:piloting"; SH_SCREENSHOT_FRAME = "200" }
+    # M10 : la banque, le hall vu de l'entrée (côté hangar), la porte de la taverne, le frigo de la
+    # cuisine, la porte blindée vue du sas, les casiers de la chambre (le premier nommé : sa plaque),
+    # la station orbitale, l'arrivée à Vorrh avec un contrat (repère de destination), le nez de la
+    # corvette au hangar, le guichetier de la banque visé (invite), sa conversation.
+    "banque"           = @{ SH_START = "sector:spaceport"; SH_SPAWN = "banque"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "hall-entree"      = @{ SH_START = "sector:spaceport"; SH_SPAWN_AT = "-12.8,0,0,90,-2"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "taverne-porte"    = @{ SH_START = "sector:spaceport"; SH_SPAWN_AT = "-20.0,0,7.9,180,-8"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "frigo"            = @{ SH_START = "sector:corvette"; SH_SPAWN_AT = "5.2,0,-2.6,-90,-5"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "sas-blinde"       = @{ SH_START = "sector:corvette"; SH_SPAWN_AT = "-4.8,0,3.0,90,0"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "chambre-casiers"  = @{ SH_START = "sector:corvette"; SH_SPAWN_AT = "-4.6,0,-10.4,180,-5"; SH_LOCKER_NAME = "corvette_chambre_casier_1:Rechange"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "station"          = @{ SH_START = "global:hexis"; SH_RAID = "0"; SH_ARRIVAL = "hexis_spaceport_approach,3000"; SH_SCREENSHOT_FRAME = "400" }
+    "vorrh"            = @{ SH_START = "global:sys_vorrh"; SH_RAID = "0"; SH_ARRIVAL = "vorrh_portal_hub,1500"; SH_CONTRACT = "sys_vorrh"; SH_SCREENSHOT_FRAME = "400" }
+    "coque-nez"        = @{ SH_START = "sector:spaceport"; SH_SPAWN_AT = "11.0,0,-31.0,-143,8"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "pnj-invite"       = @{ SH_START = "sector:spaceport"; SH_SPAWN_AT = "-8.4,0,4.6,-90,-8"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "conversation"     = @{ SH_START = "sector:spaceport"; SH_SPAWN = "banque"; SH_TALK = "bank"; SH_SCREENSHOT_FRAME = $screenFrame }
 }
 
 $failed = @()

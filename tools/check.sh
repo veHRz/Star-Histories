@@ -85,6 +85,14 @@ step "scénario key_help" \
 step "scénario character" \
     run_game "ERROR|panicked|sc.{1,3}nario character" SH_START=sector:corvette SH_SPAWN=soute SH_SCENARIO=character
 
+# M10 : le frigo de la cuisine compte ses rations, refuse ce qui ne se mange pas, reprend une ration.
+step "scénario fridge" \
+    run_game "ERROR|panicked|sc.{1,3}nario fridge" SH_START=sector:corvette SH_GIVE=spare_parts:5 SH_CONTAINER=corvette_carre_frigo SH_SCENARIO=fridge
+
+# M10 : un casier nommé (sa plaque l'affiche), sauvegardé à quai et rechargé : le nom est resté.
+step "scénario locker_name" \
+    run_game "ERROR|panicked|sc.{1,3}nario locker_name" SH_USER_DIR=target/locker-user SH_START=sector:spaceport SH_SCENARIO=locker_name
+
 # Sauvegarde puis chargement, en vol et à quai : argent, date, vue et pose du vaisseau retrouvés.
 for start in new sector:spaceport; do
     step "scénario save_load (${start})" \
@@ -104,6 +112,10 @@ step "scénario walk_ship" \
 step "scénario fly_ship" \
     run_game "ERROR|panicked|sc.{1,3}nario" SH_START=global:hexis SH_SCENARIO=fly_ship
 
+# M10 : en vol, la porte extérieure du sas annonce le vide et ne bouge pas (ni attente ni son).
+step "scénario airlock_space" \
+    run_game "ERROR|panicked|sc.{1,3}nario airlock_space" SH_START=global:hexis SH_RAID=0 SH_SCENARIO=airlock_space
+
 # Critère de M2 : quai du hangar → sas → cockpit → départ → vol → amarrage → hangar.
 step "scénario port_loop" \
     run_game "ERROR|panicked|sc.{1,3}nario .*termin" SH_START=sector:spaceport SH_SCENARIO=port_loop
@@ -120,6 +132,10 @@ step "scénario voyage_isolated" \
     run_game "ERROR|panicked|sc.{1,3}nario voyage_isolated" SH_START=global:hexis SH_SCENARIO=voyage_isolated SH_RAID=0
 step "scénario contract_loop" \
     run_game "ERROR|panicked|v.{1,3}rifi|sc.{1,3}nario .*termin" SH_START=global:hexis SH_SCENARIO=contract_loop SH_RAID=0
+
+# M10 : un contrat vers Vorrh (système sans scène avant M10), Portail, autopilote, livraison.
+step "scénario deliver_vorrh" \
+    run_game "ERROR|panicked|v.{1,3}rifi|sc.{1,3}nario .*termin" SH_START=global:hexis SH_SCENARIO=deliver_vorrh SH_RAID=0
 
 # Critère de M8 : le tutoriel guidé joué en entier, de la nouvelle partie à la sauvegarde.
 step "scénario tutorial" \

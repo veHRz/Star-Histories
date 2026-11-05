@@ -58,6 +58,7 @@ use crate::input::{
 use crate::options::UserSettings;
 use crate::state::{AppState, ControlMode};
 use crate::tutorial::Tutorial;
+use crate::ui::character::naming::NamingScreen;
 use crate::ui::options::{OptionsInput, OptionsScreen};
 use crate::ui::theme::{self, Frame, UiFonts};
 use crate::views::BANNER_BOTTOM;
@@ -105,15 +106,20 @@ fn on_toggle_key_help(_: On<Start<ToggleKeyHelp>>, mut visible: ResMut<KeyHelpVi
 /// Dans un menu (terminal, pause, options) : le contexte Menu n'a pas l'action
 /// [`ToggleKeyHelp`] (ses touches ne se remappent pas), mais l'encart de l'écran doit se replier
 /// avec la même touche qu'en jeu. On lit donc les liaisons clavier de l'action (remappage et
-/// seconde touche compris). Pas pendant que les options attendent une touche : elle va à la case.
+/// seconde touche compris). Pas pendant que les options attendent une touche : elle va à la case ;
+/// ni pendant la saisie d'un nom (casier) : une lettre liée au repli s'écrit dans le champ.
 fn toggle_in_menus(
     keys: Res<ButtonInput<KeyCode>>,
     options: Option<Res<OptionsScreen>>,
+    naming: Option<Res<NamingScreen>>,
     actions: Query<(&Name, &Bindings), With<ActionSettings>>,
     bindings: Query<&Binding>,
     mut visible: ResMut<KeyHelpVisible>,
 ) {
-    if keys.get_just_pressed().next().is_none() || options.is_some_and(|o| o.is_waiting()) {
+    if keys.get_just_pressed().next().is_none()
+        || options.is_some_and(|o| o.is_waiting())
+        || naming.is_some()
+    {
         return;
     }
     let name = type_name::<ToggleKeyHelp>();

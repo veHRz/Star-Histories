@@ -35,6 +35,8 @@
 //! - `SH_AUTOPILOT=<cible>` (M10) : à la première arrivée en vue Globale, l'autopilote est
 //!   engagé vers cette cible du système (astre, station, structure ou port :
 //!   `vorrh_shipyards`, `hexis_spaceport_approach`, `concordia_portal_hub`…).
+//! - `SH_CONTRACT=<système>` (M10) : un contrat de transport d'Hexis vers ce système (`sys_vorrh`),
+//!   accepté dès l'entrée en partie (captures du repère de destination).
 //! - `SH_SCENARIO=deliver_vorrh` (avec `SH_START=global:hexis SH_RAID=0`) : contrat vers Vorrh,
 //!   voyage par Portail, autopilote jusqu'aux chantiers de Vorrh-II, livraison et paiement ;
 //!   captures `target/shots/m10-vorrh-*.png`.
@@ -47,6 +49,14 @@
 //!   comme par un joueur bascule l'encart des touches, une fois par appui.
 //! - `SH_SCENARIO=character` (avec `SH_START=sector:corvette SH_SPAWN=soute`) : I, O, Échap
 //!   dans l'écran du personnage (sans pause derrière), puis un casier : Entrée, E.
+//! - `SH_SCENARIO=fridge` (M10, avec `SH_START=sector:corvette SH_GIVE=spare_parts:5
+//!   SH_CONTAINER=corvette_carre_frigo`) : le frigo compte ses rations, refuse les pièces,
+//!   rend et reprend une ration ; capture `target/shots/m10-frigo.png`.
+//! - `SH_SCENARIO=locker_name` (M10, avec `SH_USER_DIR` et `SH_START=sector:spaceport`) : nommer
+//!   un casier de la chambre, le nom sur sa plaque, sauvegarder, recharger : il est resté ;
+//!   captures `m10-saisie-nom.png`, `m10-plaque.png`, `m10-plaque-rechargee.png`.
+//! - `SH_SCENARIO=airlock_space` (M10, avec `SH_START=global:hexis SH_RAID=0`) : en vol, au
+//!   sas, la porte extérieure annonce le vide et ne bouge pas ; capture `m10-sas-vide.png`.
 //! - Avec `SH_START=new`, la partie commence debout dans la chambre (M9) : `map_key` prend
 //!   d'abord les commandes ; `save_load` sauvegarde debout et recharge aux commandes (une
 //!   sauvegarde en vol reprend au poste de pilotage) ; `menu_return` et `pause_escape` n'ont
@@ -145,6 +155,28 @@ impl Plugin for AutopilotPlugin {
                         request.0 = Some(target.clone());
                     }
                 },
+            );
+        }
+        // `SH_CONTRACT=<système>` : un contrat de transport vers ce système, accepté dès que la
+        // partie est prête (captures du repère de destination, M10).
+        if let Ok(value) = std::env::var("SH_CONTRACT") {
+            let to = value.trim().to_owned();
+            app.add_systems(
+                Update,
+                (move |world: &mut World, mut done: Local<bool>| {
+                    if *done || !world.contains_resource::<crate::living::LivingWorld>() {
+                        return;
+                    }
+                    match give_contract_to(world, &to) {
+                        Ok(true) => *done = true,
+                        Ok(false) => {}
+                        Err(message) => {
+                            *done = true;
+                            error!("SH_CONTRACT : {message}");
+                        }
+                    }
+                })
+                .run_if(resource_exists::<crate::career::Career>),
             );
         }
         // `SH_KEYHELP=0|1` : l'encart des touches replié ou déplié, quoi qu'en dise le défaut.
@@ -1096,7 +1128,7 @@ const TUTORIAL: &[Step] = &[
     Step::DockOrDepart,
     Step::Tutorial(5),
     // 5. Se lever, sortir par le sas et la passerelle (le chemin de `port_loop`), le hangar, le
-    // couloir, le hall (on contourne les bancs), le bureau.
+    // couloir, le hall (par l'allée centrale), le bureau.
     Step::StandUp,
     Step::Wait(1.0),
     Step::Shot("m8-tuto-3-sas"),
@@ -1113,9 +1145,10 @@ const TUTORIAL: &[Step] = &[
     w(-11.5, -3.0, None),
     Step::WalkDistrict(-3.0, 0.0, None),
     Step::WalkDistrict(-6.0, 0.0, Some("couloir__hangar")),
+    // Le hall refait (M10) : l'allée centrale (z = 0) est dégagée jusqu'au panneau du carrefour
+    // (x = −20), entre les banquettes, puis tout droit vers la porte du bureau.
     Step::WalkDistrict(-15.0, 0.0, None),
-    Step::WalkDistrict(-15.0, -4.5, None),
-    Step::WalkDistrict(-20.0, -4.5, None),
+    Step::WalkDistrict(-20.0, 0.0, None),
     Step::WalkDistrict(-20.0, -8.6, Some("hall__bureau")),
     Step::Shot("m8-tuto-3-bureau"),
     Step::Tutorial(6),
@@ -1145,8 +1178,7 @@ const TUTORIAL: &[Step] = &[
     Step::Shot("m8-tuto-6-depart"),
     // 8. Retour au cockpit, départ, la carte, la destination du contrat.
     Step::WalkDistrict(-20.0, -8.6, Some("hall__bureau")),
-    Step::WalkDistrict(-20.0, -4.5, None),
-    Step::WalkDistrict(-15.0, -4.5, None),
+    Step::WalkDistrict(-20.0, 0.0, None),
     Step::WalkDistrict(-15.0, 0.0, None),
     Step::WalkDistrict(-6.0, 0.0, None),
     Step::WalkDistrict(-3.0, 0.0, Some("couloir__hangar")),
@@ -1446,6 +1478,560 @@ const TERMINAL_TOUR: &[Step] = &[
     Step::Choose("close"),
 ];
 
+/// `fridge` (avec `SH_START=sector:corvette SH_GIVE=spare_parts:5
+/// SH_CONTAINER=corvette_carre_frigo`) : le frigo de la cuisine (M10) affiche son stock de
+/// rations, refuse des pièces détachées (rien ne bouge), rend une ration et la reprend ; capture
+/// `target/shots/m10-frigo.png`. Les transferts passent par les fonctions de l'écran de
+/// rangement (`ui::character::logic::{store, retrieve}`), sur les vraies ressources.
+const FRIDGE: &[Step] = &[
+    Step::Script("le frigo s'ouvre et compte 12 rations", |w| {
+        m10_script::fridge_shows(w, 12)
+    }),
+    Step::Wait(0.5),
+    Step::Shot("m10-frigo"),
+    Step::Script(
+        "ranger des pièces au frigo : refusé",
+        m10_script::fridge_refuses_parts,
+    ),
+    Step::Script("prendre une ration", m10_script::fridge_take_ration),
+    Step::Script("le frigo compte 11 rations", |w| {
+        m10_script::fridge_shows(w, 11)
+    }),
+    Step::Script("remettre la ration", m10_script::fridge_put_back_ration),
+    Step::Script("le frigo compte de nouveau 12 rations", |w| {
+        m10_script::fridge_shows(w, 12)
+    }),
+];
+
+/// `locker_name` (avec `SH_USER_DIR=… SH_START=sector:spaceport`) : à quai (une sauvegarde se
+/// fait à quai ou en vol, pas dans l'intérieur type `sector:corvette`), nommer le premier casier
+/// de la chambre comme le ferait la plaque (`items::NameContainer`), taper « Mes affaires »,
+/// valider ; la plaque l'affiche ; sauvegarder, recharger : le nom est resté, sur la plaque
+/// aussi. Captures `target/shots/m10-saisie-nom.png`, `m10-plaque.png`, `m10-plaque-rechargee.png`.
+const LOCKER_NAME: &[Step] = &[
+    Step::Wait(3.0),
+    Step::Script("aller dans la chambre", m10_script::go_to_chambre),
+    Step::Script("ouvrir la saisie du nom", m10_script::open_naming),
+    Step::Wait(0.5),
+    Step::Script("taper le nom", m10_script::type_locker_name),
+    Step::Wait(0.5),
+    Step::Shot("m10-saisie-nom"),
+    Step::Script("valider le nom", m10_script::submit_locker_name),
+    Step::Script("la plaque porte le nom", m10_script::plate_shows_name),
+    Step::Wait(0.5),
+    Step::Shot("m10-plaque"),
+    Step::Script("sauvegarder et recharger", m10_script::save_and_reload),
+    Step::Script("retourner dans la chambre", m10_script::go_to_chambre),
+    Step::Script(
+        "le nom est resté après le chargement",
+        m10_script::name_kept,
+    ),
+    Step::Script(
+        "la plaque porte toujours le nom",
+        m10_script::plate_shows_name,
+    ),
+    Step::Wait(0.5),
+    Step::Shot("m10-plaque-rechargee"),
+];
+
+/// `airlock_space` (avec `SH_START=global:hexis SH_RAID=0`) : en vol, se lever, aller au sas,
+/// viser sa porte extérieure (le vide derrière, M10) : l'invite le dit (`interact.door.void`) et
+/// la touche d'interaction ne la sollicite pas (elle reste `Closed`, jamais `Unlocking`, sans
+/// son) ; capture `target/shots/m10-sas-vide.png`.
+const AIRLOCK_SPACE: &[Step] = &[
+    Step::Wait(1.0),
+    Step::StandUp,
+    w(0.0, 18.6, None),
+    w(0.0, 18.0, None),
+    w(0.0, 16.4, None),
+    w(0.0, 15.0, Some("couloir_avant__cockpit")),
+    w(0.0, 12.8, None),
+    w(0.0, -3.0, None),
+    w(-2.4, -3.0, Some("couloir_arriere__sas")),
+    w(-5.4, -3.0, None),
+    Step::Script(
+        "viser la porte extérieure du sas",
+        m10_script::aim_void_door,
+    ),
+    Step::Wait(0.5),
+    Step::Shot("m10-sas-vide"),
+    Step::Script(
+        "la touche d'interaction : la porte reste fermée",
+        m10_script::press_void_door,
+    ),
+];
+
+/// Les actions propres aux scénarios de M10 ([`Step::Script`]) : le frigo, le nom d'un casier
+/// sur sa plaque, la porte du sas sur le vide. Chacune journalise ce qu'elle constate quand elle
+/// échoue ; le temps de l'étape est celui du scénario (`Scenario::step_time`).
+mod m10_script {
+    use bevy::prelude::*;
+
+    use super::{CHARACTER_LOCKER, Scenario, aim_spot, cell_local_ready, go_to_cell, place_player};
+    use crate::items::{Containers, ItemCatalog, PLAYER_SHIP};
+    use crate::ui::character::logic::{self, Place};
+
+    /// Le frigo de la cuisine de la corvette (`gameplay/items.ron`).
+    const FRIDGE: &str = "corvette_carre_frigo";
+    /// Un objet que le frigo refuse (pièces détachées, `SH_GIVE=spare_parts:5`).
+    const PARTS: &str = "spare_parts";
+    const RATION: &str = "ration";
+    /// Le nom donné au casier.
+    const LOCKER_NAME: &str = "Mes affaires";
+    const CHAMBRE: &str = "chambre";
+
+    /// Ce qu'une action a fait d'une étape à l'autre : l'étape où elle a agi (une seule fois par
+    /// étape), et la racine du secteur avant un chargement.
+    #[derive(Resource, Default)]
+    struct M10State {
+        done_at: Option<usize>,
+        root: Option<Entity>,
+    }
+
+    fn elapsed(world: &World) -> f32 {
+        world.resource::<Scenario>().step_time
+    }
+
+    /// Vrai la première fois qu'on l'appelle à cette étape du scénario (l'action à faire une fois).
+    fn first_time(world: &mut World) -> bool {
+        let index = world.resource::<Scenario>().index;
+        let mut state = world.get_resource_or_insert_with(M10State::default);
+        if state.done_at == Some(index) {
+            return false;
+        }
+        state.done_at = Some(index);
+        true
+    }
+
+    /// L'action de cette étape a-t-elle déjà été faite ([`first_time`]) ?
+    fn done_here(world: &World) -> bool {
+        let index = world.resource::<Scenario>().index;
+        world
+            .get_resource::<M10State>()
+            .is_some_and(|s| s.done_at == Some(index))
+    }
+
+    fn texts(world: &World) -> Option<&sh_data::Lang> {
+        world.get_resource::<crate::data::Texts>().map(|t| &t.0)
+    }
+
+    fn held(world: &World, item: &str) -> u32 {
+        super::held(world, item)
+    }
+
+    fn fridge_content(world: &World) -> std::collections::BTreeMap<String, u32> {
+        world
+            .get_resource::<Containers>()
+            .and_then(|c| c.contents(FRIDGE))
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn stock(world: &World) -> Option<u32> {
+        let catalog = world.get_resource::<ItemCatalog>()?;
+        Some(
+            world
+                .get_resource::<Containers>()?
+                .stock(PLAYER_SHIP, FRIDGE, catalog),
+        )
+    }
+
+    /// Range ou prend au frigo par les fonctions de l'écran de rangement, sur les vraies
+    /// ressources. `store` : ranger (sinon prendre) ; rend ce que la fonction rend (rangé :
+    /// `None` si refusé).
+    fn transfer(world: &mut World, store: bool, item: &str, count: u32) -> Option<Option<u32>> {
+        let catalog = world.get_resource::<ItemCatalog>()?.0.clone();
+        // `resource_scope` et `resource_mut` paniquent sans leur ressource.
+        (world.contains_resource::<crate::interaction::Inventory>()
+            && world.contains_resource::<Containers>())
+        .then_some(())?;
+        Some(
+            world.resource_scope(|world, mut containers: Mut<Containers>| {
+                let mut inventory = world.resource_mut::<crate::interaction::Inventory>();
+                let at = Place {
+                    ship: PLAYER_SHIP,
+                    container: FRIDGE,
+                };
+                if store {
+                    logic::store(
+                        &mut inventory.items,
+                        &mut containers,
+                        &catalog,
+                        at,
+                        item,
+                        count,
+                    )
+                } else {
+                    Some(logic::retrieve(
+                        &mut inventory.items,
+                        &mut containers,
+                        at,
+                        item,
+                        count,
+                    ))
+                }
+            }),
+        )
+    }
+
+    /// Le frigo est ouvert (`SH_CONTAINER`) et son écran affiche « Rations : `count` », qui est
+    /// bien son stock.
+    pub(super) fn fridge_shows(world: &mut World, count: u32) -> Result<bool, String> {
+        use crate::ui::character::{CharacterScreen, ScreenView};
+        let t = elapsed(world);
+        let Some(lang) = texts(world) else {
+            return Ok(false);
+        };
+        let wanted = lang
+            .format(
+                "container.fridge.stock",
+                &[("count", &lang.number(f64::from(count), 0))],
+            )
+            .to_lowercase();
+        let view = world
+            .get_resource::<CharacterScreen>()
+            .map(|s| s.view.clone());
+        let open = view == Some(ScreenView::Container(FRIDGE.to_owned()))
+            && crate::ui::character::is_shown(world);
+        let stock = stock(world);
+        let shown = open && {
+            let mut texts = world.query::<&Text>();
+            texts
+                .iter(world)
+                .any(|t| t.0.to_lowercase().contains(&wanted))
+        };
+        if shown && stock == Some(count) {
+            info!("scénario fridge : l'écran du frigo affiche « {wanted} »");
+            return Ok(true);
+        }
+        if t > 15.0 {
+            return Err(format!(
+                "écran {view:?} (ouvert {open}), stock {stock:?}, « {wanted} » affiché {shown} ; lancer avec SH_CONTAINER={FRIDGE}"
+            ));
+        }
+        Ok(false)
+    }
+
+    /// Ranger les pièces détachées au frigo : refusé, ni le frigo ni l'inventaire ne changent.
+    pub(super) fn fridge_refuses_parts(world: &mut World) -> Result<bool, String> {
+        let parts = held(world, PARTS);
+        if parts == 0 {
+            return Err(format!(
+                "aucune pièce détachée sur soi : lancer avec SH_GIVE={PARTS}:5"
+            ));
+        }
+        let before = fridge_content(world);
+        let stored = transfer(world, true, PARTS, parts).ok_or("frigo ou inventaire absents")?;
+        let after = fridge_content(world);
+        let left = held(world, PARTS);
+        if stored.is_some() || after != before || left != parts {
+            return Err(format!(
+                "le frigo a pris des pièces : rangé {stored:?}, frigo {before:?} → {after:?}, inventaire {parts} → {left}"
+            ));
+        }
+        info!("scénario fridge : {parts} × {PARTS} refusés, frigo inchangé {after:?}");
+        Ok(true)
+    }
+
+    /// Prendre une ration du frigo : elle passe dans l'inventaire.
+    pub(super) fn fridge_take_ration(world: &mut World) -> Result<bool, String> {
+        let before = held(world, RATION);
+        let taken = transfer(world, false, RATION, 1).ok_or("frigo ou inventaire absents")?;
+        let after = held(world, RATION);
+        if taken != Some(1) || after != before + 1 {
+            return Err(format!(
+                "ration non prise : {taken:?}, inventaire {before} → {after}"
+            ));
+        }
+        Ok(true)
+    }
+
+    /// Remettre la ration au frigo : acceptée (c'est de la nourriture).
+    pub(super) fn fridge_put_back_ration(world: &mut World) -> Result<bool, String> {
+        let before = held(world, RATION);
+        let stored = transfer(world, true, RATION, 1).ok_or("frigo ou inventaire absents")?;
+        let after = held(world, RATION);
+        if stored != Some(1) || after + 1 != before {
+            return Err(format!(
+                "ration refusée par le frigo : {stored:?}, inventaire {before} → {after}"
+            ));
+        }
+        Ok(true)
+    }
+
+    /// Le joueur est posé dans la chambre du vaisseau, la salle chargée en qualité Locale.
+    pub(super) fn go_to_chambre(world: &mut World) -> Result<bool, String> {
+        let t = elapsed(world);
+        // Après un chargement, le joueur peut n'apparaître qu'un peu après le secteur : on
+        // réessaie jusqu'à ce qu'il soit posé dans la chambre.
+        if !done_here(world) {
+            if go_to_cell(world, CHAMBRE) {
+                first_time(world);
+            } else if t > 10.0 {
+                return Err(format!("cellule {CHAMBRE} ou joueur introuvables"));
+            }
+            return Ok(false);
+        }
+        let current = world
+            .get_resource::<crate::sector::streaming::CellStates>()
+            .and_then(|c| c.current.clone());
+        if cell_local_ready(world, CHAMBRE) && current.as_deref() == Some(CHAMBRE) && t > 2.0 {
+            return Ok(true);
+        }
+        if t > 20.0 {
+            return Err(format!(
+                "la chambre ne se charge pas autour du joueur (cellule courante {current:?})"
+            ));
+        }
+        Ok(false)
+    }
+
+    /// La saisie du nom du premier casier de la chambre s'ouvre (comme sa plaque visée et `E`).
+    pub(super) fn open_naming(world: &mut World) -> Result<bool, String> {
+        if first_time(world) {
+            world.write_message(crate::items::NameContainer(CHARACTER_LOCKER.to_owned()));
+        }
+        if crate::ui::character::naming::is_naming(world) {
+            return Ok(true);
+        }
+        if elapsed(world) > 6.0 {
+            let mode = super::control_mode(world);
+            return Err(format!("la saisie ne s'ouvre pas (mode {mode:?})"));
+        }
+        Ok(false)
+    }
+
+    pub(super) fn type_locker_name(world: &mut World) -> Result<bool, String> {
+        if crate::ui::character::naming::type_name(world, LOCKER_NAME) {
+            return Ok(true);
+        }
+        if elapsed(world) > 5.0 {
+            return Err("aucun champ de saisie".into());
+        }
+        Ok(false)
+    }
+
+    /// Valider (comme Entrée) : la saisie se ferme et le casier porte le nom.
+    pub(super) fn submit_locker_name(world: &mut World) -> Result<bool, String> {
+        if first_time(world) {
+            crate::ui::character::naming::submit_name(world);
+        }
+        let open = world.contains_resource::<crate::ui::character::naming::NamingScreen>();
+        let name = world
+            .get_resource::<Containers>()
+            .and_then(|c| c.name(PLAYER_SHIP, CHARACTER_LOCKER))
+            .map(str::to_owned);
+        if !open && name.as_deref() == Some(LOCKER_NAME) {
+            info!("scénario locker_name : {CHARACTER_LOCKER} s'appelle « {LOCKER_NAME} »");
+            return Ok(true);
+        }
+        if elapsed(world) > 5.0 {
+            return Err(format!("saisie ouverte {open}, nom {name:?}"));
+        }
+        Ok(false)
+    }
+
+    /// Le nom est toujours là (après le chargement).
+    pub(super) fn name_kept(world: &mut World) -> Result<bool, String> {
+        let name = world
+            .get_resource::<Containers>()
+            .and_then(|c| c.name(PLAYER_SHIP, CHARACTER_LOCKER))
+            .map(str::to_owned);
+        if name.as_deref() == Some(LOCKER_NAME) {
+            return Ok(true);
+        }
+        Err(format!(
+            "après le chargement, {CHARACTER_LOCKER} s'appelle {name:?}"
+        ))
+    }
+
+    /// La plaque du casier (`SOCKET_<n>_label`) porte le nom ; le joueur se place devant pour la
+    /// lire (la capture), visant la plaque : l'invite propose de la renommer.
+    pub(super) fn plate_shows_name(world: &mut World) -> Result<bool, String> {
+        use crate::sector::gltf::{ContainerLabel, Interactable};
+        use crate::views::FootLabel;
+        let t = elapsed(world);
+        let plate = world
+            .query::<(&ContainerLabel, Option<&FootLabel>, &GlobalTransform)>()
+            .iter(world)
+            .find(|(l, ..)| l.container == CHARACTER_LOCKER)
+            .map(|(_, f, g)| (f.map(|f| f.text.clone()), g.translation(), g.forward()));
+        let Some((text, anchor, out)) = plate else {
+            if t > 6.0 {
+                return Err(format!(
+                    "aucune plaque pour {CHARACTER_LOCKER} (le modèle de la chambre a-t-il SOCKET_*_label ?)"
+                ));
+            }
+            return Ok(false);
+        };
+        if text.as_deref() != Some(LOCKER_NAME) {
+            if t > 6.0 {
+                return Err(format!("la plaque affiche {text:?}"));
+            }
+            return Ok(false);
+        }
+        if first_time(world) {
+            // Viser la plaque (son volume d'interaction), du côté où elle se lit.
+            let target = world
+                .query::<(Entity, &Interactable, &GlobalTransform)>()
+                .iter(world)
+                .find(|(_, i, _)| {
+                    matches!(i, Interactable::LockerLabel { container, .. } if container == CHARACTER_LOCKER)
+                })
+                .map(|(e, _, g)| (e, g.translation()));
+            let feet_y = world
+                .query_filtered::<&Transform, With<crate::player::Player>>()
+                .single(world)
+                .map_or(anchor.y - 1.5, |t| t.translation.y);
+            let side = Vec2::new(out.x, out.z).normalize_or(Vec2::Y);
+            let stand = target
+                .and_then(|(entity, at)| aim_spot(world, entity, at, feet_y, side))
+                .unwrap_or(
+                    Vec3::new(anchor.x, feet_y, anchor.z) + Vec3::new(out.x, 0.0, out.z) * 1.2,
+                );
+            place_player(world, stand, Some(anchor));
+            info!(
+                "scénario locker_name : la plaque de {CHARACTER_LOCKER} affiche « {LOCKER_NAME} »"
+            );
+        }
+        if t < 1.5 {
+            return Ok(false);
+        }
+        let prompt = world
+            .get_resource::<crate::ui::hud::Prompt>()
+            .and_then(|p| p.0.clone());
+        if prompt.as_deref().is_some_and(|p| p.contains(LOCKER_NAME)) {
+            return Ok(true);
+        }
+        if t > 6.0 {
+            return Err(format!("devant la plaque, invite {prompt:?}"));
+        }
+        Ok(false)
+    }
+
+    /// Sauvegarde manuelle, puis chargement de ce fichier ; fini quand la partie est revenue (un
+    /// nouveau secteur chargé).
+    pub(super) fn save_and_reload(world: &mut World) -> Result<bool, String> {
+        if first_time(world) {
+            let root = world
+                .get_resource::<crate::sector::ActiveSector>()
+                .map(|a| a.root);
+            let Some(path) = crate::save::write_save(world, crate::save::SaveKind::Manual) else {
+                return Err(
+                    "sauvegarde refusée (lancer à quai : SH_START=sector:spaceport)".into(),
+                );
+            };
+            info!("scénario locker_name : sauvegarde {}", path.display());
+            crate::save::request_load(world, &path);
+            world.resource_mut::<M10State>().root = root;
+            return Ok(false);
+        }
+        let before = world.resource::<M10State>().root;
+        let now = world
+            .get_resource::<crate::sector::ActiveSector>()
+            .map(|a| a.root);
+        let in_game = *world.resource::<State<crate::state::AppState>>().get()
+            == crate::state::AppState::InGame;
+        Ok(in_game && now.is_some() && now != before && world.contains_resource::<Containers>())
+    }
+
+    /// La porte du sas qui donne sur le vide (vaisseau en vol), et son repère.
+    fn void_door(world: &mut World) -> Option<(Entity, GlobalTransform, f32)> {
+        use crate::sector::doors::Door;
+        world
+            .query::<(Entity, &Door, &GlobalTransform)>()
+            .iter(world)
+            .find(|(_, d, _)| Door::leads_to_void(&d.a, &d.b))
+            .map(|(e, d, g)| (e, *g, d.height))
+    }
+
+    /// Se placer dans le sas devant sa porte extérieure et la viser : l'invite dit le vide.
+    pub(super) fn aim_void_door(world: &mut World) -> Result<bool, String> {
+        let Some((entity, at, height)) = void_door(world) else {
+            return Err("aucune porte sur le vide (le vaisseau est-il amarré ?)".into());
+        };
+        if first_time(world) {
+            // La porte regarde vers le vide (son avant) ; on se tient côté sas, à 1,5 m.
+            let base = at.translation();
+            let inside = -at.forward().as_vec3();
+            let feet_y = world
+                .query_filtered::<&Transform, With<crate::player::Player>>()
+                .single(world)
+                .map_or(base.y, |t| t.translation.y);
+            let stand = Vec3::new(base.x + inside.x * 1.5, feet_y, base.z + inside.z * 1.5);
+            place_player(world, stand, Some(base + Vec3::Y * (height / 2.0)));
+        }
+        let aimed = world
+            .resource::<crate::interaction::Focus>()
+            .0
+            .as_ref()
+            .is_some_and(|t| t.entity == entity);
+        let prompt = world
+            .get_resource::<crate::ui::hud::Prompt>()
+            .and_then(|p| p.0.clone());
+        let wanted = texts(world).map(|l| l.get("interact.door.void"));
+        if aimed && prompt.is_some() && prompt == wanted {
+            info!(
+                "scénario airlock_space : porte visée, invite « {} »",
+                prompt.unwrap_or_default()
+            );
+            return Ok(true);
+        }
+        if elapsed(world) > 6.0 {
+            return Err(format!(
+                "porte visée {aimed}, invite {prompt:?} (attendue {wanted:?})"
+            ));
+        }
+        Ok(false)
+    }
+
+    /// La touche d'interaction, trois fois en 3 s, sur la porte visée : elle reste fermée, sans
+    /// jamais passer en attente (`Unlocking`) ni bouger.
+    pub(super) fn press_void_door(world: &mut World) -> Result<bool, String> {
+        use crate::sector::doors::{Door, DoorState};
+        let Some((entity, ..)) = void_door(world) else {
+            return Err("la porte sur le vide a disparu".into());
+        };
+        let Some((state, openness)) = world.get::<Door>(entity).map(|d| (d.state, d.openness))
+        else {
+            return Err("la porte sur le vide a disparu".into());
+        };
+        if state != DoorState::Closed || openness > 0.0 {
+            return Err(format!(
+                "la porte a réagi : {state:?}, ouverture {openness:.2}"
+            ));
+        }
+        let t = elapsed(world);
+        let aimed = world
+            .resource::<crate::interaction::Focus>()
+            .0
+            .as_ref()
+            .is_some_and(|f| f.entity == entity);
+        if !aimed {
+            return Err("la visée a quitté la porte".into());
+        }
+        // Un appui vers 0,2 s, 1,2 s et 2,2 s.
+        let due = if t < 0.2 { 0 } else { 1 + (t - 0.2) as u32 };
+        let mut count = world.get_resource_or_insert_with(PressCount::default);
+        if due > count.0 && count.0 < 3 {
+            count.0 += 1;
+            world.write_message(crate::interaction::InteractRequest);
+        }
+        if t > 3.2 {
+            let presses = world.resource::<PressCount>().0;
+            info!(
+                "scénario airlock_space : {presses} appuis sur la porte du vide, elle est restée fermée"
+            );
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    /// Appuis faits sur la porte du sas.
+    #[derive(Resource, Default)]
+    struct PressCount(u32);
+}
+
 /// Distance horizontale (m) à laquelle l'autopilote s'arrête devant une console pour l'utiliser.
 const CONSOLE_DISTANCE: f32 = 1.4;
 
@@ -1556,6 +2142,9 @@ impl Plugin for ScenarioPlugin {
             "firefight_lose" => (FIREFIGHT_LOSE, None),
             "tutorial" => (TUTORIAL, None),
             "terminal_tour" => (TERMINAL_TOUR, None),
+            "fridge" => (FRIDGE, None),
+            "locker_name" => (LOCKER_NAME, None),
+            "airlock_space" => (AIRLOCK_SPACE, None),
             _ => (WALK_SHIP, None),
         };
         if !matches!(
@@ -1574,9 +2163,12 @@ impl Plugin for ScenarioPlugin {
                 | "firefight_lose"
                 | "tutorial"
                 | "terminal_tour"
+                | "fridge"
+                | "locker_name"
+                | "airlock_space"
         ) {
             error!(
-                "SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage, voyage_isolated, contract_loop, deliver_vorrh, raid_win, raid_flee, raid_lose, firefight, firefight_lose, tutorial, terminal_tour, menu_return, save_load, pause_escape, map_key, pickup_persist, key_help, character)"
+                "SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage, voyage_isolated, contract_loop, deliver_vorrh, raid_win, raid_flee, raid_lose, firefight, firefight_lose, tutorial, terminal_tour, fridge, locker_name, airlock_space, menu_return, save_load, pause_escape, map_key, pickup_persist, key_help, character)"
             );
             app.add_systems(Startup, |mut exit: MessageWriter<AppExit>| {
                 exit.write(AppExit::error());
@@ -3686,6 +4278,14 @@ fn autopilot_step(world: &mut World, target: &str, issued: bool) -> Result<bool,
 /// un, sinon le premier transport offert, détourné vers Vorrh (le scénario ne dépend pas du
 /// classement des offres de la semaine).
 fn give_vorrh_contract(world: &mut World) -> Result<bool, String> {
+    give_contract_to(world, "sys_vorrh")
+}
+
+/// Un contrat de transport d'Hexis vers ce système, accepté comme au bureau des contrats : une
+/// offre du jour vers lui, à défaut le premier transport proposé, redirigé (scénarios, et
+/// `SH_CONTRACT` pour les captures du repère de destination). `Ok(false)` : la partie n'est pas
+/// encore prête.
+fn give_contract_to(world: &mut World, to: &str) -> Result<bool, String> {
     let Some(today) = world
         .get_resource::<crate::clock::GameClock>()
         .map(|c| c.date)
@@ -3697,14 +4297,17 @@ fn give_vorrh_contract(world: &mut World) -> Result<bool, String> {
     }
     let data = world.resource::<Data>().clone();
     let id = |s: &str| sh_core::Id::<sh_data::Place>::new(s).map_err(|e| e.to_string());
-    let (hexis, vorrh) = (id("sys_hexis")?, id("sys_vorrh")?);
+    let (hexis, dest) = (id("sys_hexis")?, id(to)?);
+    if data.galaxy.system(&dest).is_none() {
+        return Err(format!("système inconnu : {to}"));
+    }
     let offers = world
         .get_resource::<crate::living::LivingWorld>()
         .map(|l| sh_sim::contract_offers(&data, &l.sim, &hexis, today))
         .ok_or("monde vivant absent")?;
     let contract = offers
         .iter()
-        .find(|c| c.to == vorrh)
+        .find(|c| c.to == dest)
         .cloned()
         .or_else(|| {
             offers
@@ -3712,14 +4315,14 @@ fn give_vorrh_contract(world: &mut World) -> Result<bool, String> {
                 .find(|c| c.kind != sh_sim::ContractKind::Towing)
                 .cloned()
                 .map(|c| sh_sim::Contract {
-                    id: format!("CT-sys_hexis-sys_vorrh-scenario-{}", today.day_index()),
-                    to: vorrh.clone(),
+                    id: format!("CT-sys_hexis-{to}-scenario-{}", today.day_index()),
+                    to: dest.clone(),
                     deadline: today.add_days(60),
                     ..c
                 })
         })
         .ok_or("aucun transport proposé à Hexis")?;
-    info!("scénario deliver_vorrh : contrat {}", contract.id);
+    info!("autopilote : contrat {} vers {to} accepté", contract.id);
     let out = world
         .resource_mut::<crate::career::Career>()
         .captain
