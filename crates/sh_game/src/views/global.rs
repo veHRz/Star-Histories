@@ -480,6 +480,9 @@ fn spawn_global(
             },
             SpacePosition(pos),
             SpaceRotation(rotation),
+            // Parent de la station et du feu : leur visibilité en hérite (sinon B0004).
+            Transform::default(),
+            Visibility::default(),
         ));
         if let Some(target) = nav_target(&dock.id) {
             beacon.insert(target);

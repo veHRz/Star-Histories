@@ -1451,8 +1451,11 @@ const CONSOLE_DISTANCE: f32 = 1.4;
 
 /// Délai maximal d'une transition de vue (amarrage, départ) dans un scénario.
 const TRANSITION_SECONDS: f32 = 30.0;
-/// Durée maximale d'un trajet de l'autopilote dans un système (s).
-const AUTOPILOT_SECONDS: f32 = 300.0;
+/// Durée maximale d'un trajet de l'autopilote dans un système (s). D'une planète à l'autre de
+/// Vorrh (≈ 3,7 millions de km) : ≈ 4 min mesurées (05/11/2026), dont ≈ 2 min de croisière
+/// plafonnée à 30 000 km/s et ≈ 1 min à chaque bout (limite de croisière proportionnelle à la
+/// distance à la surface) ; marge de 50 %.
+const AUTOPILOT_SECONDS: f32 = 360.0;
 
 /// Les phases de vol du scénario `fly_ship`, chronométrées.
 #[derive(Default)]
@@ -3629,24 +3632,7 @@ fn fly_to_beacon(world: &mut World) {
     let Some(handling) = data.flight.ships.get(ship.as_str()) else {
         return;
     };
-    let surface = crate::ship::nearest_surface(
-        pos,
-        world
-            .query::<(&crate::space::SpacePosition, &crate::ship::SurfaceBody)>()
-            .iter(world)
-            .map(|(p, b)| (p.0, b.radius)),
-    );
-    let dt = f64::from(world.resource::<Time>().delta_secs().min(0.1));
-    let step = crate::ship::approach(
-        pos,
-        rot,
-        velocity,
-        beacon,
-        range * 0.5,
-        handling,
-        data.space.scale.cruise_speed_limit(surface),
-        dt,
-    );
+    let step = crate::ship::approach(pos, rot, velocity, beacon, range * 0.5, handling, true);
     *world.resource_mut::<crate::ship::PilotIntent>() = step.intent;
 }
 

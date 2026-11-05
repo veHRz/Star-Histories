@@ -98,16 +98,23 @@ pub struct NavTarget {
 /// Une commande du joueur plus forte que ce seuil désengage l'autopilote (souris : pixels par
 /// frame ; un tremblement de la main ne compte pas).
 const STEER_DEADZONE: f32 = 1.5;
+/// Frames consécutives de souris au-delà du seuil pour reprendre la main.
+const STEER_TAKEOVER_FRAMES: u32 = 4;
 /// Hors de cet angle (degrés) entre l'avant et la cible, on vire sans pousser.
 const ALIGN_DEGREES: f64 = 10.0;
-/// Marge (m) gardée avant la distance d'arrêt quand on coupe la croisière.
-const CRUISE_MARGIN: f64 = 3_000.0;
-/// En vol de manœuvre, on ne relance la croisière qu'au-delà de cette distance (m) : plus près,
-/// la croisière (au moins 2 km/s) ne ferait qu'osciller.
-const CRUISE_ENGAGE: f64 = 20_000.0;
+/// Approche de l'autopilote : en croisière, la vitesse visée est le reste du chemin divisé par
+/// ce temps (s), sous la limite de croisière. La croisière suit sa consigne au taux 2/s
+/// ([`step`]) : le reste du chemin r obéit à r'' + 2 r' + (2 / T) r = 0, sans dépassement dès
+/// que T ≥ 2 (amortissement critique) ; 2,5 laisse de la marge aux frames longs.
+const APPROACH_SECONDS: f64 = 2.5;
+/// Vitesse plancher de la fin d'approche (m/s) : la décroissance exponentielle ne finirait
+/// jamais ; à cette vitesse, le vol assisté s'arrête en ≈ 20 m.
+const FINAL_SPEED: f64 = 30.0;
 /// Arrivé : à moins de cette vitesse (m/s), dans la distance d'arrêt (à cette marge près, m).
 const ARRIVED_SPEED: f64 = 2.0;
 const ARRIVED_SLACK: f64 = 250.0;
+/// Période (s) du relevé de progression de l'autopilote dans le journal.
+const AUTOPILOT_LOG_SECONDS: f32 = 10.0;
 
 /// Ce que l'autopilote commande pour ce frame.
 #[derive(Clone, Debug, Default)]
@@ -129,15 +136,11 @@ pub fn braking_distance(speed: f64, handling: &Handling) -> f64 {
 }
 
 /// Un frame d'approche vers `target`, arrêt à `stop` mètres de lui : virer vers lui ; une fois
-/// aligné, pousser, et rester en croisière tant que la distance laisse le temps de ralentir (la
-/// croisière coupée, la vitesse décroît en ≈ `cruise_spool_down` s : ≈ 1,5 × v mètres) ; couper
-/// la poussée quand il ne reste que la distance de freinage. Logique pure (jeu et scénarios).
-///
-/// `cruise_limit` : la vitesse de croisière permise ici (m/s), `dt` : la durée du frame (s). La
-/// vitesse qu'aurait le vaisseau au frame suivant en croisière (même montée que [`step`]) doit
-/// encore laisser la place de ralentir : un seul frame de croisière loin de toute surface
-/// (jusqu'à 30 000 km/s) dépasserait sinon une cible proche.
-#[allow(clippy::too_many_arguments)]
+/// aligné, la croisière avec une consigne de vitesse qui décroît avec le reste du chemin
+/// ([`APPROACH_SECONDS`], [`PilotIntent::cruise_cap`]) : loin, la limite de croisière ; près,
+/// un ralentissement continu jusqu'à l'arrêt, sans dépasser la cible. Croisière interdite
+/// (`cruise_allowed` faux, hostiles proches) : poussée de manœuvre, coupée quand il ne reste
+/// que la distance de freinage. Logique pure (jeu et scénarios).
 pub fn approach(
     pos: SpacePos,
     rotation: Quat,
@@ -145,8 +148,7 @@ pub fn approach(
     target: SpacePos,
     stop: f64,
     handling: &Handling,
-    cruise_limit: f64,
-    dt: f64,
+    cruise_allowed: bool,
 ) -> Approach {
     let to = target - pos;
     let distance = to.length();
@@ -176,14 +178,11 @@ pub fn approach(
         (pitch * 3.0).clamp(-1.0, 1.0) as f32,
     );
     let aligned = (to_world * DVec3::NEG_Z).angle_between(dir).to_degrees() < ALIGN_DEGREES;
-    if aligned && remaining > braking_distance(speed, handling) {
+    if aligned && cruise_allowed {
+        intent.cruise = true;
+        intent.cruise_cap = Some((remaining / APPROACH_SECONDS).max(FINAL_SPEED));
+    } else if aligned && remaining > braking_distance(speed, handling) {
         intent.thrust = Vec3::NEG_Z;
-        // Déjà lancé (au-dessus de la vitesse de manœuvre) ou loin : la croisière, tant qu'elle
-        // laisse la place de ralentir.
-        let next = speed + (cruise_limit - speed).max(0.0) * (1.0 - (-2.0 * dt).exp());
-        let room = remaining > (handling.cruise_spool_down + 0.2) * next + CRUISE_MARGIN;
-        let launched = speed > handling.max_speed * 1.05 || remaining > CRUISE_ENGAGE;
-        intent.cruise = room && launched;
     }
     Approach {
         intent,
@@ -223,6 +222,9 @@ pub struct PilotIntent {
     pub roll: f32,
     /// Croisière.
     pub cruise: bool,
+    /// Consigne de vitesse de croisière plus basse que la limite (m/s) : l'autopilote ralentit
+    /// ainsi à l'approche. Jamais posée par le pilotage manuel.
+    pub cruise_cap: Option<f64>,
 }
 
 /// Sensibilité de la souris en pilotage : pixels par frame pour une rotation à pleine vitesse.
@@ -260,7 +262,11 @@ pub fn step(
     if intent.cruise {
         // Croisière : vers l'avant seulement, à la vitesse limite de l'échelle ; la vitesse
         // latérale s'éteint.
-        let target = scale.cruise_speed_limit(nearest_surface);
+        // Sous la limite de l'échelle ; l'autopilote peut viser moins (approche).
+        let target = intent
+            .cruise_cap
+            .map_or(f64::MAX, |cap| cap.max(0.0))
+            .min(scale.cruise_speed_limit(nearest_surface));
         let along = motion.velocity.dot(forward);
         let blend = 1.0 - (-2.0 * dt).exp();
         let speed = along + (target - along) * blend;
@@ -391,12 +397,14 @@ fn read_pilot_input(
         Res<Texts>,
         MessageWriter<Notice>,
     ),
+    mut steer_streak: Local<u32>,
 ) {
     if scripted.0 {
         return;
     }
     if *mode.get() != ControlMode::Piloting {
         *intent = PilotIntent::default();
+        *steer_streak = 0;
         return;
     }
     let raw_steer: Vec2 = ***steer;
@@ -406,13 +414,23 @@ fn read_pilot_input(
         turn: Vec2::new(steer.x, -steer.y) / MOUSE_FULL_TURN,
         roll: ***roll,
         cruise: ***boost,
+        cruise_cap: None,
     };
-    // Le joueur reprend la main : l'autopilote se désengage.
-    let touched = intent.thrust != Vec3::ZERO
-        || intent.roll != 0.0
-        || intent.cruise
-        || raw_steer.length() > STEER_DEADZONE;
-    if touched && autopilot.0.is_some() {
+    // Le joueur reprend la main : l'autopilote se désengage. Une touche suffit ; la souris doit
+    // bouger plusieurs frames de suite (un saut isolé du curseur, à la prise de la souris par la
+    // fenêtre, l'a désengagé à tort, M10).
+    *steer_streak = if raw_steer.length() > STEER_DEADZONE {
+        steer_streak.saturating_add(1)
+    } else {
+        0
+    };
+    let keys = intent.thrust != Vec3::ZERO || intent.roll != 0.0 || intent.cruise;
+    let mouse = *steer_streak >= STEER_TAKEOVER_FRAMES;
+    if (keys || mouse) && autopilot.0.is_some() {
+        info!(
+            "autopilote : le joueur reprend la main ({})",
+            if keys { "touches" } else { "souris" }
+        );
         disengage(&mut autopilot, &texts, &mut notices);
     }
 }
@@ -440,11 +458,26 @@ fn run_autopilot(
     mut ships: Query<(&SpacePosition, &SpaceRotation, &mut ShipMotion), Without<NavTarget>>,
     mut intent: ResMut<PilotIntent>,
     mut notices: MessageWriter<Notice>,
+    mut since_log: Local<f32>,
+    lock: Option<Res<crate::combat::CruiseLock>>,
 ) {
     let Some(id) = request.0.clone() else {
+        *since_log = 0.0;
         return;
     };
+    // Progression toutes les ~10 s : un trajet qui n'aboutit pas se lit dans le journal.
+    *since_log += time.delta_secs();
+    let report = *since_log >= AUTOPILOT_LOG_SECONDS;
+    if report {
+        *since_log = 0.0;
+    }
     if *mode.get() != ControlMode::Piloting {
+        if report {
+            info!(
+                "autopilote vers {id} : en attente (contrôle {:?})",
+                mode.get()
+            );
+        }
         return;
     }
     let Ok((pos, rotation, mut motion)) = ships.get_mut(sector.root) else {
@@ -463,18 +496,34 @@ fn run_autopilot(
     if motion.mode != FlightMode::Assisted {
         motion.mode = FlightMode::Assisted;
     }
-    // La même vitesse limite et le même pas que `fly`.
-    let surface = nearest_surface(pos.0, bodies.iter().map(|(p, b)| (p.0, b.radius)));
-    let step = approach(
+    let obstacles: Vec<(SpacePos, f64)> = bodies.iter().map(|(p, b)| (p.0, b.radius)).collect();
+    let surface = nearest_surface(pos.0, obstacles.iter().copied());
+    // Hostiles proches : pas de croisière (`fly` la couperait de toute façon).
+    let cruise_allowed = !lock.is_some_and(|l| l.0);
+    let (step, aim) = autopilot_frame(
         pos.0,
         rotation.0,
         motion.velocity,
-        target_pos.0,
-        target.stop,
+        (target_pos.0, target.stop),
+        &obstacles,
         handling,
-        data.space.scale.cruise_speed_limit(surface),
-        f64::from(time.delta_secs().min(0.1)),
+        cruise_allowed,
     );
+    if report {
+        let forward = rotation.0 * Vec3::NEG_Z;
+        let to = aim - pos.0;
+        let off = forward.as_dvec3().angle_between(dvec(to)).to_degrees();
+        info!(
+            "autopilote vers {id} : {:.0} m (arrêt {:.0} m), {:.0} m/s, surface à {:.0} km, \
+             écart {off:.1}°, croisière {}, détour {}",
+            pos.0.distance(target_pos.0),
+            target.stop,
+            motion.velocity.length(),
+            surface / 1000.0,
+            step.intent.cruise,
+            aim != target_pos.0,
+        );
+    }
     *intent = step.intent;
     if step.arrived {
         info!(
@@ -570,6 +619,73 @@ fn fly(
     );
     let d = motion.velocity * dt;
     pos.0 += SpacePos::new(d.x, d.y, d.z);
+}
+
+/// Un astre dont la surface passe à moins de cette marge (en rayons) de la ligne droite vers la
+/// cible fait obstacle ; on le contourne par un point à `DETOUR_RADII` rayons de son centre.
+/// Au large : sous 1 rayon d'altitude, la croisière (0,15 × la distance à la surface) devient
+/// lente ; le détour garde ≈ 1,4 rayon d'altitude.
+const OBSTACLE_RADII: f64 = 2.0;
+const DETOUR_RADII: f64 = 2.4;
+
+fn dvec(p: SpacePos) -> DVec3 {
+    DVec3::new(p.x, p.y, p.z)
+}
+
+/// Le détour de l'autopilote : si la ligne droite de `pos` à `target` passe trop près d'un
+/// astre (`bodies` : centre, rayon), un point de passage à côté de lui, du côté où la ligne
+/// passe (le premier obstacle rencontré). Un astre visé lui-même (centre sur la cible) n'est
+/// pas un obstacle. Logique pure.
+pub fn detour(pos: SpacePos, target: SpacePos, bodies: &[(SpacePos, f64)]) -> Option<SpacePos> {
+    let (a, b) = (dvec(pos), dvec(target));
+    let path = b - a;
+    let length = path.length();
+    if length < 1.0 {
+        return None;
+    }
+    let along_dir = path / length;
+    bodies
+        .iter()
+        .filter(|(c, _)| c.distance(target) > 1.0)
+        .filter_map(|&(c, r)| {
+            let c = dvec(c);
+            let along = (c - a).dot(along_dir).clamp(0.0, length);
+            let closest = a + along_dir * along;
+            let offset = closest - c;
+            (offset.length() < OBSTACLE_RADII * r).then(|| {
+                // Ligne en plein centre : contourner par le haut du plan.
+                let side = offset
+                    .try_normalize()
+                    .or_else(|| along_dir.cross(DVec3::Y).try_normalize())
+                    .unwrap_or(DVec3::X);
+                let p = c + side * (DETOUR_RADII * r);
+                (along, SpacePos::new(p.x, p.y, p.z))
+            })
+        })
+        .min_by(|x, y| x.0.total_cmp(&y.0))
+        .map(|(_, p)| p)
+}
+
+/// Un frame d'autopilote : [`approach`] de la cible (`goal` : position, distance d'arrêt), ou
+/// d'un point de passage quand un astre barre la route ([`detour`]) ; la distance d'arrêt
+/// compte alors le reste du chemin (pas de freinage au point de passage). Rend aussi le point
+/// visé. Logique pure (jeu et tests).
+pub fn autopilot_frame(
+    pos: SpacePos,
+    rotation: Quat,
+    velocity: DVec3,
+    goal: (SpacePos, f64),
+    obstacles: &[(SpacePos, f64)],
+    handling: &Handling,
+    cruise_allowed: bool,
+) -> (Approach, SpacePos) {
+    let (target, stop) = goal;
+    let (aim, stop) = match detour(pos, target, obstacles) {
+        Some(waypoint) => (waypoint, stop - waypoint.distance(target)),
+        None => (target, stop),
+    };
+    let step = approach(pos, rotation, velocity, aim, stop, handling, cruise_allowed);
+    (step, aim)
 }
 
 /// Distance à la surface la plus proche (m).
@@ -691,19 +807,47 @@ mod tests {
         planet: SpacePos,
         radius: f64,
     ) -> (Option<f64>, f64, f64) {
+        autopilot_flight_with(
+            start,
+            heading,
+            (target, stop),
+            (planet, radius),
+            true,
+            1.0 / 60.0,
+        )
+    }
+
+    /// [`autopilot_flight`], croisière permise ou non, au pas `dt` (s).
+    fn autopilot_flight_with(
+        start: SpacePos,
+        heading: Quat,
+        goal: (SpacePos, f64),
+        planet: (SpacePos, f64),
+        cruise_allowed: bool,
+        dt: f64,
+    ) -> (Option<f64>, f64, f64) {
         let (h, s) = (handling(), scale());
+        let (target, stop) = goal;
         let mut motion = ShipMotion::default();
         let (mut pos, mut rot) = (start, heading);
         let mut closest = f64::MAX;
-        let dt = 1.0 / 60.0;
         for frame in 0..(900.0 / dt) as usize {
-            let surface = pos.distance(planet) - radius;
-            let limit = s.cruise_speed_limit(surface);
-            let a = approach(pos, rot, motion.velocity, target, stop, &h, limit, dt);
+            let surface = pos.distance(planet.0) - planet.1;
+            let (mut a, _) = autopilot_frame(
+                pos,
+                rot,
+                motion.velocity,
+                (target, stop),
+                &[planet],
+                &h,
+                cruise_allowed,
+            );
             if a.arrived {
                 return (Some(frame as f64 * dt), pos.distance(target), closest);
             }
             assert!(surface > 0.0, "dans la planète à {pos:?}");
+            // Comme `fly` sous `CruiseLock`.
+            a.intent.cruise &= cruise_allowed;
             rot = step(&mut motion, rot, &a.intent, &h, &s, surface, dt);
             let d = motion.velocity * dt;
             pos += SpacePos::new(d.x, d.y, d.z);
@@ -771,6 +915,27 @@ mod tests {
     }
 
     #[test]
+    fn l_autopilote_contourne_un_astre_sur_sa_route() {
+        // Une planète entre le vaisseau et la cible : un point de passage à côté d'elle, hors
+        // de sa surface ; route dégagée ou planète visée : pas de détour.
+        let r = 6.4e5;
+        let planet = (SpacePos::ZERO, r);
+        let (from, to) = (
+            SpacePos::new(0.0, 0.0, 2.5 * r),
+            SpacePos::new(1.0e3, 0.0, -1.0e8),
+        );
+        let waypoint = detour(from, to, &[planet]).unwrap_or_else(|| panic!("pas de détour"));
+        assert!(waypoint.length() > 1.5 * r, "{waypoint:?}");
+        let clear = SpacePos::new(10.0 * r, 0.0, -1.0e8);
+        assert!(detour(from, clear, &[planet]).is_none());
+        assert!(detour(from, SpacePos::ZERO, &[planet]).is_none());
+        // En vol : on n'entre jamais dans la planète (`autopilot_flight` le vérifie).
+        let (time, distance, _) =
+            autopilot_flight(from, Quat::IDENTITY, to, 8_000.0, SpacePos::ZERO, r);
+        assert!(time.is_some(), "jamais arrivé ({distance:.0} m)");
+    }
+
+    #[test]
     fn deja_arrete_devant_la_cible() {
         let a = approach(
             SpacePos::new(0.0, 0.0, 5_000.0),
@@ -779,11 +944,44 @@ mod tests {
             SpacePos::ZERO,
             5_100.0,
             &handling(),
-            2_000.0,
-            1.0 / 60.0,
+            true,
         );
         assert!(a.arrived);
         assert_eq!(a.intent.thrust, Vec3::ZERO);
+    }
+
+    #[test]
+    fn approche_courte_rapide_et_sans_depasser() {
+        // Hexis : 15 km de la cible, arrêt à 8 km, en orbite (surface à ≈ 970 km) ; à 30 et
+        // 144 i/s.
+        for dt in [1.0 / 30.0, 1.0 / 144.0] {
+            let (time, distance, closest) = autopilot_flight_with(
+                SpacePos::new(0.0, 0.0, 15_000.0),
+                Quat::IDENTITY,
+                (SpacePos::ZERO, 8_000.0),
+                (SpacePos::new(0.0, -1.6e6, 0.0), 6.4e5),
+                true,
+                dt,
+            );
+            let time = time.unwrap_or_else(|| panic!("jamais arrivé ({distance:.0} m)"));
+            assert!(time < 20.0, "{time} s");
+            assert!(closest > 8_000.0 - ARRIVED_SLACK, "dépassé : {closest}");
+        }
+    }
+
+    #[test]
+    fn sans_croisiere_l_autopilote_arrive_quand_meme() {
+        // Hostiles proches (`CruiseLock`) : en vol de manœuvre, sans dépasser.
+        let (time, distance, closest) = autopilot_flight_with(
+            SpacePos::new(0.0, 0.0, 20_000.0),
+            Quat::IDENTITY,
+            (SpacePos::ZERO, 8_000.0),
+            (SpacePos::new(0.0, -1.6e6, 0.0), 6.4e5),
+            false,
+            1.0 / 60.0,
+        );
+        assert!(time.is_some(), "jamais arrivé ({distance:.0} m)");
+        assert!(closest > 8_000.0 - ARRIVED_SLACK, "dépassé : {closest}");
     }
 
     #[test]
