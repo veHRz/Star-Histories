@@ -104,6 +104,15 @@ pub fn aboard_cell<'a>(active: Option<&ActiveSector>, states: &'a CellStates) ->
     active.and_then(|a| a.aboard_cell(states))
 }
 
+/// Lumière ambiante d'un secteur : celle que voyait une arrivée directe (la valeur par défaut de
+/// Bevy, réglée avec les PNJ et les objets posés de M9), sans compter deux fois les rebonds sur les
+/// maillages qui ont une lightmap.
+const SECTOR_AMBIENT: GlobalAmbientLight = GlobalAmbientLight {
+    color: Color::WHITE,
+    brightness: 80.0,
+    affects_lightmapped_meshes: false,
+};
+
 /// Clé de langue du vaisseau du joueur dans le bandeau du lieu, quel que soit son intérieur type.
 pub const PLAYER_SHIP_NAME_KEY: &str = "sector.player_ship";
 
@@ -262,8 +271,15 @@ fn enter_sector(
             }
         }
     };
-    // Les rebonds de lumière sont dans les lightmaps : l'ambiante ne les compte pas deux fois.
-    if let Some(mut ambient) = ambient {
+    // L'ambiante d'un secteur est toujours la même, quel que soit le chemin d'arrivée : la vue
+    // Globale pose la sienne (faible, pour l'espace) et la laissait derrière elle, si bien qu'à
+    // quai après un amarrage, ou après un chargement depuis le vol, ce qui n'a pas de lightmap
+    // (PNJ de comptoir, objets posés, coque du vaisseau) sortait presque noir. En vue Globale,
+    // on garde celle de la vue.
+    if view == ViewLevel::Sector {
+        commands.insert_resource(SECTOR_AMBIENT);
+    } else if let Some(mut ambient) = ambient {
+        // Les rebonds de lumière sont dans les lightmaps : l'ambiante ne les compte pas deux fois.
         ambient.affects_lightmapped_meshes = false;
     }
     let root = commands

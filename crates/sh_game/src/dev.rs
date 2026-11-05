@@ -760,6 +760,11 @@ const PORT_LOOP: &[Step] = &[
     w(-6.4, -3.0, Some("sas__hangar")),
     w(-8.3, -3.0, None),
     w(-11.5, -3.0, None),
+    // Le long du quai vers la proue (en dedans des bornes de carburant) : la coque posée dans son
+    // berceau, éclairée comme en arrivée directe (l'ambiante du secteur ne dépend pas du chemin).
+    w(-13.5, -3.0, None),
+    w(-13.5, 4.0, None),
+    Step::Shot("m9-port-hangar"),
 ];
 
 /// `voyage` : Hexis → Cygnara par Portail, puis retour par l'hyperespace (critère de M3) ; enfin
