@@ -200,3 +200,329 @@ intégré, captures, mesures, commits, docs.
     carte dans `tools/captures.*`), bakes finals, `check.ps1`, captures après, `perf.ps1 -Preset low
     -Window fullscreen`, AGENTS.md (pièges des arbres de travail, nouvelles variables SH_*), journal,
     propositions, push. Arbres de travail des agents dans `.claude/worktrees/` : à nettoyer.
+- 05/11/2026, reprise : A, E, F, L3, L4, L10 (branchements) commités ; `check.ps1` vert ; tout
+  poussé (321837c, accord de l'auteur). **B livré** : intérieur `corvette` revu en aperçus et en jeu
+  (`SH_START=sector:corvette`), bake final à 512 échantillons lancé par l'orchestrateur. Défaut
+  vu : les cellules n'apparaissent qu'après ≈ 1,5 s (portes seules avant) → confié à L7 (écran de
+  chargement tenu jusqu'aux cellules Locales prêtes). Cotes de B transmises à D (`HULL_MARGIN`
+  1,5 m gardé, patins de la coque à y = −1,7). **Lancés** : C (coque, artiste), L7 (dépôt :
+  renommages, spatioport par défaut, hangar, coque posée, migration des sauvegardes, départ dans
+  la chambre, scénarios et scripts), L9 (arbre séparé : tutoriel dans la chambre et tour des
+  salles, fond de l'encart des touches plus opaque). D en cours (aperçus, cotes définitives).
+  **Reste** : bake final de `spaceport` après D, intégration L7 + L9 (L9 se cale sur l'API de L7),
+  `git rm` des anciens `player_ship` / `hexis_spaceport` (scripts, modèles, lightmaps, `.blend`),
+  `check.ps1`, captures après, perf, AGENTS.md §3.3, propositions (P7, P12, P25, carburant…),
+  journal, validation de l'auteur, push, nettoyage de `.claude/worktrees/`.
+- 05/11/2026 : **C, L7 et L9 arrêtés** à la demande de l'auteur, avant tout changement (rien
+  n'était écrit), pour être relancés sur le poste Linux : leurs briefs complets sont au §8.
+- 05/11/2026, **passage au poste Linux — état de reprise** :
+  - **Commités sans contrôle complet** (décision de l'auteur, faute de temps), assets seuls que
+    le code ne lit pas encore.
+  - **B** : bake final interrompu. Modèles réexportés ; 5 lightmaps sur 9 à 512 échantillons,
+    les 4 autres (quartiers, chambre, carré, cockpit) de l'aperçu à 64. **À recuire en
+    entier.**
+  - **D** : arrêté avant son rapport. Dernier export complet avec les cotes réelles de la
+    corvette (`SHIP_BBOX`, `SHIP_HATCH`, `HULL_MARGIN` 1,5 m) et des lightmaps d'aperçu.
+    **Aperçus non relus** : à regarder dans `target/art-previews/` (non versionné, à refaire
+    sous Linux) et en jeu (`SH_START=sector:spaceport`), puis bake final.
+  - **Ordre de reprise** :
+    1. `git pull` et `tools/check.sh` ;
+    2. revue de D en jeu ;
+    3. C (§8.0) ;
+    4. bakes finals de `corvette` puis de `spaceport` ;
+    5. L7 (§8.1), puis L9 (§8.2) ;
+    6. `git rm` des anciens `player_ship` / `hexis_spaceport` (scripts, modèles, lightmaps,
+       `.blend`) une fois L7 intégré ;
+    7. `check.sh`, captures après (`tools/captures.sh m9-apres`) ;
+    8. AGENTS.md §3.3, journal, validation de l'auteur, push.
+  - Les mesures de performance (`tools/perf.ps1 -Preset low -Window fullscreen`) restent à faire
+    sous Windows. Propositions
+  mises à jour (P7, P12, P18, P25 ; P28 carburant, P29 mondes isolés, P30 carte).
+
+## 8. Briefs à relancer sur le poste Linux
+
+C, L7 et L9 ont été arrêtés avant d'écrire quoi que ce soit. Ordre : **C** (artiste, coque) peut
+partir tout de suite ; **L7** (`dev-jeu`, `/orchestrateur docs/m9-retours.md`), **dans le dossier
+du dépôt**, une fois B, C et D intégrés (il peut commencer avant C : la coque absente ne doit pas
+le gêner) ; **L9 ensuite** (il dépend de l'API choisie par L7 pour « le secteur intérieur du
+vaisseau du joueur »), ou en parallèle dans un arbre séparé si l'on accepte de recaler sa petite
+fonction après L7. Sous Linux, les vérifications passent par `tools/check.sh`, et la remise à
+l'heure des sources avant une compilation partagée par
+`find crates src tools -name '*.rs' -exec touch {} +`. Les mesures de performance restent à faire
+sous Windows.
+
+### 8.0 Lot C : coque extérieure de la corvette (artiste-blender)
+
+- **But** : un modèle `corvette_hull` qui enveloppe exactement l'intérieur `corvette` (lot B),
+  s'ouvre sur la porte extérieure du sas et laisse la verrière dégagée. Il est posé par le jeu
+  dans le berceau du hangar, au même repère que l'intérieur, et servira pour toute corvette de la
+  classe vue de dehors.
+- **Fichiers à lui seul** :
+  - `tools/blender/ships/corvette_hull.py`, `art/ships/corvette_hull.blend` ;
+  - `assets/models/ships/corvette_hull/**` ;
+  - textures neuves éventuelles `assets/textures/materials/hull_corvette_*`, en réutilisant
+    d'abord la bibliothèque (`hull_plates_*`, `metal_*`, `panel_painted_*`) ;
+  - aperçus dans `target/art-previews/m9-lotC/`.
+
+  En lecture seule : `corvette.py` et `assets/models/ships/corvette/**` (à importer pour se
+  caler), `common.py`, `lightmap.py`, `sector_tools.py`, le kit, `tools/blender/space/warships.py`
+  (style des coques de M8, à imiter).
+- **À lire** :
+  - AGENTS.md §9 et §4 (« Émissif et exposition » : ≈ 4 pour un feu) ;
+  - `tools/blender/README.md`, `docs/refonte-visuelle.md` §2 ;
+  - ce plan, §2 (« Sortie au hangar »), §3.2 et §3.8 ;
+  - `corvette.py` (CELLS, PORTALS, WINDOWS) et `warships.py`.
+- **Direction artistique** : « futur usé » (Q14). Un **petit marchand indépendant de taille
+  corvette** (P12) : utilitaire, robuste, rapiécé, peinture passée, plaques de réparation, traces
+  de chauffe à l'arrière, pochoirs génériques, **aucun insigne de faction**. Silhouette originale.
+  **Pas de boucliers** ni d'émetteurs ; des tourelles légères discrètes au plus.
+- **Repère et cotes**, en repère du jeu ; Blender (x, y, z) = jeu (x, −z, y) :
+  - **Origine** : celle du secteur `corvette`, pont à y = 0, avant vers −Z (+Y Blender).
+  - **Boîte de l'intérieur**, cloisons comprises : (−7,8 ; −0,2 ; −20,6) → (7,8 ; 3,6 ; 26,2).
+  - **Cellules, en x ; z ; hauteur du plafond** :
+    - cockpit −4,2→4,2 ; −20,6→−14,2 ; 3,0
+    - chambre −7,8→−1,4 ; −14,2→−7,8 ; 2,8
+    - quartiers −7,8→−1,4 ; −7,8→−1,4 ; 2,8
+    - carre 1,4→7,8 ; −9,8→−1,4 ; 2,8
+    - couloirs −1,4→1,4 ; −14,2→14,2 ; 2,6
+    - sas −7,8→−1,4 ; 1,0→5,0 ; 2,6
+    - soute 1,4→7,8 ; 1,4→13,6 ; 3,4
+    - machines −5,2→5,2 ; 14,2→26,2 ; 3,4
+  - **Vides à recouvrir** : bâbord z −1,4→1,0 et 5,0→14,2 ; tribord z −14,2→−9,8 et −1,4→1,4.
+  - **Enveloppe permise**, celle de `HULL_MARGIN` = 1,5 m du hangar de D : x ∈ [−9,3 ; 9,3],
+    y ∈ [−1,7 ; 5,1], z ∈ [−22,1 ; 27,7]. Le point le plus bas (patins, à plat) est exactement à
+    y = −1,7, sur les sabots du berceau.
+  - **Jeu** : aucune face à moins de 0,2 m des parois des cellules. Enveloppe fermée : depuis le
+    hangar, on ne voit l'intérieur que par le sas et la verrière (l'export de l'intérieur supprime
+    des faces cachées).
+  - **Sas** : porte `sas__@dock` centrée en (−7,7 ; 1,1 ; 3,0), normale (−1 ; 0 ; 0), 1,4 × 2,2 m,
+    dans la paroi x ∈ [−7,8 ; −7,6], z ∈ [2,3 ; 3,7]. Un **module d'embarquement** porte la peau
+    à x = −9,3, percé d'un **tunnel** de 1,4 × 2,2 m de x = −9,3 à −7,8 (centré z = 3,0).
+    - Il est habillé (encadrement, bandes de danger, feux ambre), avec `corvette_hull_tunnel_col`
+      (parois et plafond).
+    - **Le sol du tunnel reste vide** : la passerelle du hangar le fournit.
+  - **Verrière à laisser dégagée** : frontale z ∈ [−20,6 ; −20,4], x ∈ [−3,5 ; 3,5],
+    y ∈ [0,85 ; 2,70] ; latérales x ∈ ±[4,0 ; 4,2], z ∈ [−20,0 ; −18,6].
+    - Le verre est déjà dans le cockpit. La coque est affleurante autour (cadre, casquette au
+      plus).
+    - Depuis `SOCKET_cockpit_pilot_eye`, la vue reste dégagée ; un nez sous l'allège peut avancer
+      jusqu'à z = −22,1.
+    - Hublots de la chambre opaques : pas d'ouverture.
+- **Contenu** :
+  - nez et verrière, flancs à plaques, module d'embarquement à bâbord ;
+  - porte de cargaison tribord en relief ;
+  - bloc moteur arrière à 2 ou 3 tuyères (lueur ≈ 1 à 2), radiateurs, antennes, parabole ;
+  - feux de navigation rouge, vert et blanc (≈ 4) ;
+  - patins repliés posés à y = −1,7, trappes, tuyaux, rapiéçages.
+- **Niveaux de décor** (§3.2) : niveau 0 complet, beau et sobre ; `detail` 1 pour les antennes
+  fines, tuyaux et pochoirs ; `detail` 2 pour les greebles riches, câbles et rapiéçages en relief.
+  Fusion par matériau **et** par niveau. Pas de lightmap (éclairage dynamique).
+- **Budgets** :
+  - ≤ 25 000 triangles au niveau 0, ≤ 60 000 avec les niveaux 1 et 2 ;
+  - ≤ 8 matériaux, ≤ 20 objets dessinés ;
+  - au plus 2 ou 3 textures neuves de 2K ;
+  - LOD `corvette_hull_lod` ≤ 3 000 triangles.
+- **Export** : glTF séparé (`.gltf` + `.bin`) dans `assets/models/ships/corvette_hull/` :
+  - `corvette_hull.gltf`, avec ses extras `detail`, `corvette_hull_tunnel_col` et
+    `corvette_hull_col` (3 à 6 boîtes de l'enveloppe, tunnel libre), non rendus ;
+  - `corvette_hull_lod.gltf`.
+
+  Le script est paramétrique et rejouable (`blender --background --factory-startup --python
+  tools/blender/ships/corvette_hull.py`).
+- **Aperçus** :
+  - 3/4 avant, 3/4 arrière, profil bâbord et dessus, aux niveaux 0 et 2 ;
+  - vue du quai vers le tunnel ;
+  - vue de l'œil du pilote ;
+  - coupe avec l'intérieur (sans chevauchement) ;
+  - LOD.
+- **Interdits** : ni `cargo`, ni le jeu, ni les scripts de vérification, ni git, ni sous-agent, ni
+  le Blender ouvert ou le MCP, ni téléchargement ; pas de bake.
+- **Rapport** :
+  - chiffres ;
+  - cotes réelles de l'enveloppe et du tunnel ;
+  - noms des nœuds `_col` ;
+  - ce que le jeu doit faire pour poser la coque ;
+  - limites.
+
+### 8.1 Lot L7 : secteurs types `corvette` et `spaceport`, spatioport par défaut, arrivée au hangar
+
+- **But** :
+  - le vaisseau du joueur utilise l'intérieur type `corvette` et Hexis le spatioport par défaut
+    `spaceport` (hangar et salles), déjà livrés en données et en modèles ;
+  - les anciens secteurs `player_ship` et `hexis_spaceport` ne sont plus référencés nulle part ;
+  - un lieu d'amarrage sans spatioport propre utilise `spaceport`, et un lieu peut déclarer le
+    sien ;
+  - à quai, on arrive dans le hangar, le vaisseau posé dans son berceau avec sa coque, et on sort
+    par le sas puis la passerelle.
+- **Fichiers à lui seul** :
+  - `crates/sh_data/src/{sector,scene,start,validate,dialogue}.rs` et
+    `crates/sh_data/tests/donnees.rs` ;
+  - `crates/sh_game/src/{transition,save,dev,loading}.rs`, `crates/sh_game/src/sector/**`,
+    `crates/sh_game/src/views/{sector,mod}.rs` ;
+  - `crates/sh_game/src/items.rs`, seulement les exemples et tests d'identifiants ;
+  - `assets/data/propositions/{starts,systems,dialogues}/**` ;
+  - `assets/data/gameplay/{travel,flight,combat}.ron`, si un renommage l'exige ;
+  - `assets/data/lang/{fr,en}/sectors.ron` ;
+  - `tools/{check,perf,captures}.{ps1,sh}` (les paires ensemble) ;
+  - les mentions de `player_ship` / `hexis_spaceport` dans `tools/blender/README.md` ;
+  - il peut supprimer `assets/data/propositions/sectors/{player_ship,hexis_spaceport}.ron` quand
+    plus rien ne les lit.
+- **En lecture seule** :
+  - `assets/data/propositions/sectors/{corvette,spaceport}.ron` : réécrits par les exports et les
+    bakes, les changements voulus sont à demander dans le rapport ;
+  - `assets/models/**` : l'orchestrateur retire les anciens modèles ;
+  - `crates/sh_game/src/tutorial.rs` et la fonction du scénario `tutorial` de `dev.rs` (lot L9),
+    sauf les identifiants renommés.
+- **À lire** :
+  - AGENTS.md en entier (§3.3, §4, §6.2, §6.3, §8, §12.3) ;
+  - ce plan, §2 et §3.5, §3.6, §3.8 ;
+  - `sh_data/src/sector.rs` (`dock()`, portails `@dock` / `@ship`) ;
+  - `sh_game/src/sector/{mod,gltf,streaming}.rs`, `transition.rs`, `save.rs` ;
+  - `sh_data/src/{start,validate}.rs`, les deux descripteurs.
+- **À faire** :
+  1. **Renommages** `player_ship` → `corvette`, `hexis_spaceport` → `spaceport`, partout :
+     départ, système, dialogues `sector:`, code, tests, scénarios et `//!` de `dev.rs`, scripts.
+     `start.ship` sert à la fois d'identifiant de secteur et de clé de statistiques
+     (`flight.ron`, `travel.ron`, `combat.ron`, « Votre cargo »). Recommandé : la clé de
+     statistiques reste `player_ship`, et un champ comme `interior: "corvette"` donne le secteur
+     intérieur. La validation vérifie les deux.
+  2. **Spatioport par défaut** : une entrée `docks` sans secteur propre utilise `spaceport`
+     (défaut dans les données). Le bandeau (`views/mod.rs`, `PlaceBanner`) montre le nom du
+     lieu (« Spatioport d'Hexis »), jamais « Spatioport » générique, et la salle (`room.*`). Les
+     PNJ d'Hexis parlent avec les dialogues `hexis_*`, rattachés au lieu (dock ou système), avec
+     repli par rôle.
+  3. **Vaisseau du joueur nommé** : dans ses cellules, le bandeau dit « Votre vaisseau » (clé
+     `sector.player_ship`) ; « Corvette » reste le nom du secteur type.
+  4. **Arrivée au hangar** :
+     - `dock()` raccorde `sas__@dock` au portail `@ship` du hangar ; vérifier le berceau (pont à
+       y = 0, sas face à la passerelle) ;
+     - à quai seulement, poser `models/ships/corvette_hull/corvette_hull.gltf` avec la
+       transformation du secteur du vaisseau ;
+     - nœuds `*_col` non rendus et changés en colliders fixes (`corvette_hull_tunnel_col`,
+       `corvette_hull_col`) ; nœuds `detail` soumis au préréglage
+       (`graphics::apply_decor_detail`) ;
+     - pas d'ombre ponctuelle si utile, occultation des portails intacte ;
+     - fichier absent : ni panique, ni avertissement en boucle.
+  5. **Arrivée sans pièces vides** : aujourd'hui les cellules n'apparaissent qu'après ≈ 1,5 s
+     (portes et lampes seules avant). Garder l'écran de chargement (ou la transition) jusqu'à ce
+     que la cellule du joueur et ses voisines Locales soient instanciées, avec un délai maximal :
+     au démarrage, à l'arrivée dans un secteur et au chargement.
+  6. **Départ dans la chambre** : `hexis_captain` commence à bord, au point d'apparition
+     `chambre`, pas assis, en vue Globale en orbite d'Hexis. Les scénarios `SH_START=new`
+     (`save_load`, `menu_return`, `pause_escape`, `map_key`…) vont s'asseoir ou changent de
+     départ.
+  7. **Sauvegardes** : une sauvegarde d'avant ce lot se charge.
+     - Migration versionnée et testée des secteurs et des objets pris :
+       `player_ship/quartiers/quartiers_pickup_datapad` → `corvette/chambre/chambre_pickup_datapad`.
+     - Une position dans une cellule disparue retombe sur un point sûr (sas à bord, quai à quai).
+  8. **Scénarios et scripts**, coordonnées Blender ; le jeu a (x, y, z) = Blender (x, z, −y) :
+     - `walk_ship` et `fly_ship` : cockpit sans estrade, marcher jusqu'à w(0 ; 18,4) puis
+       `SitAtHelm` ; `FLY_SHIP_WALK` part de (0 ; 18,6) au lieu de (0 ; 20,3), qui est dans la
+       planche de bord ;
+     - portes du couloir avant : quartiers (−1,4 ; 4,6), carré (1,4 ; 5,6), chambre
+       (−1,4 ; 11,0), portail `couloir_avant__chambre` ;
+     - sas de 6 m : w(−3,8 ; −3) devient (−5,4 ; −3), quai à x < −7,8 ;
+     - abordage par `couloir_arriere` ;
+     - `port_loop` : quai → sas → cockpit → vol → amarrage → hangar ;
+     - `pickup_persist` : tablette dans la chambre ;
+     - `terminal_tour` : nouveaux PNJ, ajouté à `tools/check.*` ;
+     - `firefight` et `character` : `SH_START=sector:corvette SH_SPAWN=soute` ;
+     - `tools/captures.*` : vues refaites dans les nouveaux secteurs, plus le hangar vu du quai,
+       la passerelle vue du sas, la chambre au départ, un comptoir de PNJ, et la chambre en Bas,
+       Moyen et Haut ;
+     - lignes d'AGENTS.md §3.3 à changer, décrites dans le rapport.
+  9. **Petits restes** :
+     - test `detecte_un_ravitaillement_invalide` (bloc `refuel` de `combat.ron` : prix ≤ 0 ou
+       marchandise inconnue) ;
+     - le casier `corvette_chambre_casier_3`, sans entrée dans `items.ron`, est vide et sans
+       avertissement.
+- **Contraintes** :
+  - pas de texte en dur (clés `fr` et `en`) ;
+  - pas d'`unwrap` dans les systèmes ;
+  - `//!` à jour ;
+  - logique pure (choix du spatioport, migration) testée sans `World` ;
+  - canon : P7, P12.
+- **Interdits** : ni `cargo t`, ni le jeu, ni lancer `tools/check.*` / `perf.*` / `captures.*`,
+  ni git, ni sous-agent ; `cargo lint` seulement.
+- **Vérification de l'orchestrateur** :
+  - `tools/check.sh` complet ;
+  - captures du hangar (`SH_START=sector:spaceport`) ;
+  - `port_loop`, `pickup_persist`, `save_load` avec une ancienne sauvegarde, `walk_ship`,
+    `fly_ship`.
+
+### 8.2 Lot L9 : tutoriel qui commence dans la chambre et fait le tour du vaisseau
+
+- **But** : le tutoriel démarre dans la **chambre** et commence par faire découvrir le vaisseau,
+  salle par salle, avec le rôle de chacune (demande de l'auteur). Ensuite vient la suite actuelle :
+  commandes, amarrage, quai, contrat, écrans, départ, livraison, sauvegarde.
+- **Fichiers à lui seul** :
+  - `crates/sh_game/src/tutorial.rs` ;
+  - `assets/data/lang/{fr,en}/tutorial.ron` (mêmes clés) ;
+  - dans `dev.rs`, **seulement** la fonction du scénario `tutorial` et sa ligne `//!` ;
+  - `crates/sh_game/src/ui/keys_panel.rs`, pour la seule retouche du point 6.
+
+  Le reste est en lecture seule : une demande ailleurs (sauvegarde, départ) passe par le rapport.
+- **Contexte** : après L7, le vaisseau du joueur est le secteur `corvette`, de cellules
+  `cockpit`, `chambre`, `quartiers`, `carre`, `couloir_avant`, `couloir_arriere`, `sas`,
+  `soute`, `machines`, chacune avec un `name_key` `room.*`. Le spatioport est `spaceport`, de
+  cellules `hangar`, `couloir`, `chantier`, `hall`, `bureau`, `taverne`, `marche`, avec des PNJ
+  de comptoir (interaction `npc`, rôle `contracts`…). Une nouvelle partie commence dans la
+  chambre, pas assis, en vue Globale. Aucun identifiant de secteur en dur : une seule petite
+  fonction « le joueur est-il dans son vaisseau, et dans quelle cellule », appuyée sur l'API de
+  L7.
+- **À lire** :
+  - AGENTS.md en entier (§3.3 `SH_TUTORIAL`, §4, §8, §12.3) ;
+  - `docs/refonte-visuelle.md` §6 et ce plan §2 ;
+  - `tutorial.rs` en entier et son scénario ;
+  - `corvette.ron`, pour les portails servant au repère.
+- **À faire** :
+  1. **Nouvelles étapes au début**, avant « Prendre les commandes », avancées par des faits
+     observés, jamais par une minuterie :
+     - **« Votre chambre »** : ouvrir un casier ([KeyE], écran de rangement), ramasser la
+       tablette sur le bureau, ouvrir l'inventaire ([KeyI]) ;
+     - **« Le tour du vaisseau »** : une vérification par salle visitée (cockpit, sas, soute,
+       machines, carré, quartiers ; couloirs facultatifs), chacune avec son nom et son rôle. Le
+       tour se fait dans n'importe quel ordre, et le repère montre la porte de la prochaine salle
+       non visitée. Il se termine au cockpit, où « Prendre les commandes » commence par
+       s'asseoir.
+  2. **Rôle des salles** : ce que fait chaque salle dans le jeu tel qu'il est, à vérifier dans le
+     code, sans mécanique promise ni fait d'univers inventé. Exemples :
+     - cockpit : piloter, la carte, partir et s'amarrer ;
+     - sas : la seule sortie, à quai ;
+     - soute : la cargaison des contrats ;
+     - machines : le réacteur et le carburant lourd ;
+     - chambre : repos et casiers ;
+     - carré et quartiers : l'équipage.
+  3. **Suite à remettre à jour** :
+     - « Prendre les commandes » commence par s'asseoir ;
+     - « Descendre à quai » : sortie par le sas puis la passerelle ; le fait « sortir par le
+       sas » devient « être dans le hangar », puis vient le hall, puis le bureau ;
+     - « Prendre un contrat » : parler au **PNJ** du bureau (`npc`, rôle `contracts`) ; le fait
+       « au bureau » se détecte par la cellule `bureau` ou par la conversation ;
+     - « Garder le fil » : [KeyC], [KeyI] et [KeyO] ouvrent l'écran du personnage, et
+       `Facts.sheet` compte dès qu'il est ouvert ; textes à corriger s'ils parlent encore de la
+       « fiche du capitaine » (vérifier `ui/character.rs`, `input.rs`).
+  4. **Avancement sauvegardé compatible** : une sauvegarde de M8 ou M9 prise en plein tutoriel
+     se charge. Si l'étape est sauvegardée par son numéro, passer à un identifiant stable ou à un
+     décalage, avec `serde` par défaut. Une sauvegarde d'avant M8 reste « terminé ». Si `save.rs`
+     doit changer, le décrire.
+  5. **Scénario `tutorial`** (`SH_START=new SH_TUTORIAL=1 SH_RAID=0 SH_USER_DIR=…`) :
+     - il joue le nouveau début (casier, tablette, inventaire, tour en marchant de porte en
+       porte, s'asseoir), puis la suite au hangar et au PNJ ;
+     - captures `m8-tuto-*`, plus `m9-tuto-chambre.png` et `m9-tuto-tour.png` ;
+     - coordonnées Blender : apparition `chambre` (−5,3 ; 11,6), cap −120° ; portes quartiers
+       (−1,4 ; 4,6), carré (1,4 ; 5,6), chambre (−1,4 ; 11,0) ; sas de −1,4 à −7,7 sur y = −3 ;
+       cockpit (0 ; 18,4) puis `SitAtHelm` ;
+     - il échoue clairement (erreur et code de sortie) si une étape ne se coche pas.
+  6. **Encart des touches** : fond trop transparent (une ligne illisible devant un bandeau
+     lumineux de la chambre), à rendre plus opaque (≈ 0,85 à 0,9) sans changer la mise en page.
+     Vérifier que le panneau du tutoriel (en haut à droite) ne chevauche ni `HudCorner` ni
+     l'encart, en 1600 × 900 comme en 1920 × 1080.
+- **Contraintes** :
+  - logique pure testée sans `World` ;
+  - textes dans `lang/*/tutorial.ron`, touches en jetons ;
+  - pas d'`unwrap` dans les systèmes ;
+  - `//!` à jour.
+- **Interdits** : comme L7 ; `cargo lint` seulement.
+- **Vérification de l'orchestrateur** : scénario `tutorial` après L7, et captures du panneau à
+  chaque étape (`SH_TUTORIAL_STEP=<n>`).

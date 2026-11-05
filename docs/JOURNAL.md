@@ -2,6 +2,22 @@
 
 > Une entrée courte par session (2 à 5 lignes) : ce qui a été fait, ce qui reste en suspens, les décisions prises. Le plus récent en haut.
 
+## 05/11/2026 — Poste Windows : M9, fin de la vague 2 et passage au poste Linux
+
+- **Commités sans bake final** (assets seuls, aucun code ne les lit encore, c'est L7 qui les branchera) :
+  - **B**, l'intérieur type `corvette` : chambre et casiers, sas à deux portes, cockpit à grande verrière sans meneau, console du réacteur au mur. Revu en aperçus et en jeu (`SH_START=sector:corvette`). Son bake final a été interrompu à la demande de l'auteur : modèles réexportés, 5 lightmaps sur 9 à 512 échantillons ; quartiers, chambre, carré et cockpit datent de l'aperçu à 64 échantillons, peut-être décalés des modèles réexportés.
+  - **D**, le spatioport par défaut `spaceport` : hangar, berceau et passerelle, salles autour, comptoirs de PNJ. Arrêté avant son rapport. Dernier export complet à 17 h 02, avec les cotes réelles de la corvette et des lightmaps d'aperçu. **Aperçus et rapport non relus.**
+- **Arrêtés avant de commencer**, à la demande de l'auteur, pour être relancés sous Linux : C (coque), L7 (renommages, spatioport par défaut, arrivée au hangar, départ dans la chambre, migration des sauvegardes) et L9 (tutoriel dans la chambre et tour des salles). Leurs briefs complets sont dans `docs/m9-retours.md` §8.
+- **Pas de contrôle complet avant ce push** (décision de l'auteur, faute de temps). À faire sur le poste Linux :
+  1. `tools/check.sh`.
+  2. Regarder `SH_START=sector:corvette` et `sector:spaceport` (relire le travail de D : hangar, berceau, comptoirs, noms de salle).
+  3. Bakes finals, l'un après l'autre :
+     - `blender --background --factory-startup --python tools/blender/ships/corvette.py` (≈ 1 h 30 à 2 h sous Windows) ;
+     - `blender --background --factory-startup --python tools/blender/places/spaceport.py`.
+  4. Défaut vu : les cellules d'un secteur n'apparaissent qu'après ≈ 1,5 s (confié à L7).
+- **À mesurer sous Windows** : tout M9 (`tools/perf.ps1 -Preset low -Window fullscreen`), en particulier le hangar.
+- **Reprise sous Linux** : `/orchestrateur docs/m9-retours.md` (§7 : état ; §8 : briefs, dans l'ordre C, L7, L9).
+
 ## 05/11/2026 — Poste Windows : M9, retours de l'auteur (vague 1 et début de la vague 2)
 
 - **Plan** `docs/m9-retours.md` (16 lots, conventions entre lots). Q16–Q18 validées par l'auteur (pas de boucliers : blindage par section ; Hexis monde-usine urbanisé ; mondes isolés en orbite seulement). Jusqu'à dix sous-agents autorisés.
