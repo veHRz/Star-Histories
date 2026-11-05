@@ -1,0 +1,43 @@
+// Mise en scène du système Vorrh en vue Globale (proposition P32, docs/propositions.md).
+// Canon (§3.3, §3.7, §4.1) : Vorrhal, ville-planète capitale, porte un grand hub de Portails ;
+// Vorrh-II est le seul chantier à cuirassés de l'Empire, qui centralise sa production navale sur
+// Vorrh et Ferrok. Le canon ne dit pas où sont ces installations en orbite : les emplacements,
+// les chantiers orbitaux de Vorrh-II et le trafic sont proposés.
+(
+    system: "sys_vorrh",
+    status: Proposition("P32"),
+    structures: [
+        // Le hub de Portails, en orbite de Vorrhal : on en sort en arrivant par Portail (Karza).
+        (
+            id: "vorrh_portal_hub",
+            kind: PortalHub,
+            name_key: "structure.vorrh_portal_hub",
+            around: "vorrhal",
+            altitude_radii: 1.5,
+            angle_deg: 200.0,
+            model: "models/space/portal_hub.gltf",
+        ),
+        // Les chantiers orbitaux de Vorrh-II, au-dessus du seul chantier à cuirassés impérial.
+        (
+            id: "vorrh_shipyards",
+            kind: Shipyard,
+            name_key: "structure.vorrh_shipyards",
+            around: "vorrh_ii",
+            altitude_radii: 1.5,
+            angle_deg: 30.0,
+            model: "models/space/shipyard.gltf",
+        ),
+    ],
+    // Cargos qui font la navette entre le hub et les chantiers : le cœur industriel de l'Empire.
+    traffic: (
+        ships: 20,
+        model: "models/space/freighter.gltf",
+        speed: 900.0,
+    ),
+    arrival: (
+        near: "vorrh_portal_hub",
+        distance: 25000.0,
+        azimuth_deg: -50.0,
+        elevation_deg: 12.0,
+    ),
+)

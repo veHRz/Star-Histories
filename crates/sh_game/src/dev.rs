@@ -32,6 +32,12 @@
 //!   comptoir, le service qu'il ouvre, puis le journal, la fiche et le codex ; captures
 //!   `target/shots/m9-borne-*.png`.
 //! - `SH_KEYHELP=0|1` : force l'encart des touches replié (0) ou déplié (1).
+//! - `SH_AUTOPILOT=<cible>` (M10) : à la première arrivée en vue Globale, l'autopilote est
+//!   engagé vers cette cible du système (astre, station, structure ou port :
+//!   `vorrh_shipyards`, `hexis_spaceport_approach`, `concordia_portal_hub`…).
+//! - `SH_SCENARIO=deliver_vorrh` (avec `SH_START=global:hexis SH_RAID=0`) : contrat vers Vorrh,
+//!   voyage par Portail, autopilote jusqu'aux chantiers de Vorrh-II, livraison et paiement ;
+//!   captures `target/shots/m10-vorrh-*.png`.
 //! - `SH_SCENARIO=pickup_persist` (avec `SH_USER_DIR` et `SH_START=sector:spaceport`) :
 //!   ramasser la tablette de la chambre du vaisseau, sauvegarder, recharger : elle ne revient
 //!   pas sur le bureau et reste dans l'inventaire.
@@ -125,6 +131,21 @@ impl Plugin for AutopilotPlugin {
                 }
                 None => warn!("SH_SCREEN inconnu : « {value} » (inventory, skills)"),
             }
+        }
+        // `SH_AUTOPILOT=<cible>` : l'autopilote engagé vers cette cible du système à la première
+        // arrivée en vue Globale, comme si la carte l'avait demandé (M10).
+        if let Ok(value) = std::env::var("SH_AUTOPILOT") {
+            let target = value.trim().to_owned();
+            app.add_systems(
+                OnEnter(ViewLevel::Global),
+                move |mut request: ResMut<crate::ship::AutopilotRequest>, mut done: Local<bool>| {
+                    if !*done {
+                        *done = true;
+                        info!("SH_AUTOPILOT : autopilote vers {target}");
+                        request.0 = Some(target.clone());
+                    }
+                },
+            );
         }
         // `SH_KEYHELP=0|1` : l'encart des touches replié ou déplié, quoi qu'en dise le défaut.
         if let Ok(value) = std::env::var("SH_KEYHELP") {
@@ -662,6 +683,9 @@ enum Step {
     /// Voler jusqu'à portée de la balise d'approche : virer vers elle, pousser, croisière
     /// tant qu'on a la place de ralentir.
     FlyToBeacon,
+    /// Engager l'autopilote du jeu vers cette cible du système (M10, comme la carte) et
+    /// attendre qu'il s'arrête devant elle, à sa distance d'arrêt.
+    Autopilot(&'static str),
     /// Comme [`Step::Walk`], mais en coordonnées du quartier (repère du jeu : x, z), à quai.
     WalkDistrict(f32, f32, Option<&'static str>),
     /// Marcher jusqu'à la console de cette étiquette, la viser et l'utiliser (comme `E`) ;
@@ -719,6 +743,7 @@ fn is_career_step(step: &Step) -> bool {
             | Step::JumpNear(_)
             | Step::JumpAboveBeacon(_)
             | Step::FlyToBeacon
+            | Step::Autopilot(_)
             | Step::Tutorial(_)
             | Step::QuickSave
             | Step::Script(..)
@@ -840,9 +865,8 @@ const CONTRACT_LOOP: &[Step] = &[
     Step::OpenMap,
     Step::Route("sys_hexis"),
     Step::Depart(sh_sim::travel::TravelMode::Portal),
-    Step::Open(Terminal::Dialogue("hexis_contract_office")),
-    Step::Choose("say:dlg.office.ask_bank"),
-    Step::Choose("say:dlg.office.pay"),
+    Step::Open(Terminal::Dialogue("hexis_bank")),
+    Step::Choose("say:dlg.bank.pay"),
     Step::Choose("close"),
     Step::Assert("échéance payée", |c, _| {
         c.loan
@@ -893,6 +917,37 @@ const CONTRACT_LOOP: &[Step] = &[
     Step::Open(Terminal::Sheet),
     Step::Shot("m5-fiche"),
     Step::Choose("close"),
+];
+
+/// `deliver_vorrh` (avec `SH_START=global:hexis SH_RAID=0`) : un contrat vers Vorrh (M10, le
+/// retour n° 21 de l'auteur), Hexis → Karza → Vorrhal par Portail, arrivée près du hub de
+/// Vorrhal avec le repère de destination, autopilote jusqu'aux chantiers de Vorrh-II, livraison
+/// (touche d'amarrage) et paiement ; captures `target/shots/m10-vorrh-*.png`.
+const DELIVER_VORRH: &[Step] = &[
+    Step::Wait(3.0),
+    Step::Script("contrat vers Vorrh", give_vorrh_contract),
+    Step::Assert("contrat vers Vorrh pris", |c, _| {
+        c.contracts
+            .iter()
+            .any(|k| k.state == sh_sim::ContractState::Active && k.to.as_str() == "sys_vorrh")
+    }),
+    Step::OpenMap,
+    Step::Route("sys_vorrh"),
+    Step::Depart(sh_sim::travel::TravelMode::Portal),
+    // Le temps que le hub et le trafic soient prêts.
+    Step::Wait(3.0),
+    Step::Shot("m10-vorrh-arrivee"),
+    Step::Autopilot("vorrh_shipyards"),
+    Step::Wait(2.0),
+    Step::Shot("m10-vorrh-chantiers"),
+    Step::Hail,
+    Step::Assert("livré à Vorrh et payé", |c, _| {
+        c.contracts
+            .iter()
+            .any(|k| k.state == sh_sim::ContractState::Done && k.to.as_str() == "sys_vorrh")
+    }),
+    Step::Wait(1.0),
+    Step::Shot("m10-vorrh-livre"),
 ];
 
 /// `raid_win` (avec `SH_START=global:cygnara SH_RAID=1`) : l'embuscade de la Ligue, combattue
@@ -1396,6 +1451,8 @@ const CONSOLE_DISTANCE: f32 = 1.4;
 
 /// Délai maximal d'une transition de vue (amarrage, départ) dans un scénario.
 const TRANSITION_SECONDS: f32 = 30.0;
+/// Durée maximale d'un trajet de l'autopilote dans un système (s).
+const AUTOPILOT_SECONDS: f32 = 300.0;
 
 /// Les phases de vol du scénario `fly_ship`, chronométrées.
 #[derive(Default)]
@@ -1488,6 +1545,7 @@ impl Plugin for ScenarioPlugin {
             "voyage" => (VOYAGE, None),
             "voyage_isolated" => (VOYAGE_ISOLATED, None),
             "contract_loop" => (CONTRACT_LOOP, None),
+            "deliver_vorrh" => (DELIVER_VORRH, None),
             "raid_win" => (RAID_WIN, None),
             "raid_flee" => (RAID_FLEE, None),
             "raid_lose" => (RAID_LOSE, None),
@@ -1505,6 +1563,7 @@ impl Plugin for ScenarioPlugin {
                 | "voyage"
                 | "voyage_isolated"
                 | "contract_loop"
+                | "deliver_vorrh"
                 | "raid_win"
                 | "raid_flee"
                 | "raid_lose"
@@ -1514,7 +1573,7 @@ impl Plugin for ScenarioPlugin {
                 | "terminal_tour"
         ) {
             error!(
-                "SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage, voyage_isolated, contract_loop, raid_win, raid_flee, raid_lose, firefight, firefight_lose, tutorial, terminal_tour, menu_return, save_load, pause_escape, map_key, pickup_persist, key_help, character)"
+                "SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage, voyage_isolated, contract_loop, deliver_vorrh, raid_win, raid_flee, raid_lose, firefight, firefight_lose, tutorial, terminal_tour, menu_return, save_load, pause_escape, map_key, pickup_persist, key_help, character)"
             );
             app.add_systems(Startup, |mut exit: MessageWriter<AppExit>| {
                 exit.write(AppExit::error());
@@ -2760,10 +2819,11 @@ fn run_scenario(
     {
         scenario.step_time += time.delta_secs();
         // Une approche en vol prend plus longtemps qu'une transition.
-        let limit = if matches!(step, Step::FlyToBeacon) {
-            120.0
-        } else {
-            TRANSITION_SECONDS
+        let limit = match step {
+            Step::FlyToBeacon => 120.0,
+            // D'une planète à l'autre, en croisière.
+            Step::Autopilot(_) => AUTOPILOT_SECONDS,
+            _ => TRANSITION_SECONDS,
         };
         if scenario.step_time > limit {
             error!(
@@ -3024,6 +3084,7 @@ fn run_scenario(
         | Step::JumpNear(_)
         | Step::JumpAboveBeacon(_)
         | Step::FlyToBeacon
+        | Step::Autopilot(_)
         | Step::Tutorial(_)
         | Step::QuickSave
         | Step::Script(..)
@@ -3445,6 +3506,11 @@ fn career_step(world: &mut World, step: Step) {
             next(world);
         }
         Step::FlyToBeacon => fly_to_beacon(world),
+        Step::Autopilot(target) => match autopilot_step(world, target, issued) {
+            Ok(true) => next(world),
+            Ok(false) => {}
+            Err(message) => fail(world, format!("autopilote vers {target} : {message}")),
+        },
         Step::Tutorial(n) => {
             let enabled = world
                 .get_resource::<crate::options::UserSettings>()
@@ -3528,58 +3594,153 @@ fn beacon_of(world: &mut World) -> Option<(sh_core::SpacePos, f64)> {
         .map(|(b, p)| (p.0, b.range))
 }
 
-/// [`Step::FlyToBeacon`] : un frame de vol vers la balise. Virer vers elle ; une fois aligné,
-/// pousser, et rester en croisière tant que la distance laisse le temps de ralentir (la
-/// croisière coupée, la vitesse décroît en ≈ 1,5 s : environ 1,5 × v mètres).
+/// [`Step::FlyToBeacon`] : un frame de vol vers la balise, par la logique de l'autopilote du
+/// jeu ([`crate::ship::approach`], arrêt visé à mi-portée) ; l'étape finit dès qu'on est à
+/// portée.
 fn fly_to_beacon(world: &mut World) {
-    use bevy::math::DVec3;
     let Some((beacon, range)) = beacon_of(world) else {
         return;
     };
-    let Some(root) = world
-        .get_resource::<crate::sector::ActiveSector>()
-        .map(|s| s.root)
-    else {
+    let Some(sector) = world.get_resource::<crate::sector::ActiveSector>() else {
         return;
     };
+    let (root, ship) = (sector.root, sector.sector.id.to_string());
     let pose = world
         .get::<crate::space::SpacePosition>(root)
         .zip(world.get::<crate::space::SpaceRotation>(root))
         .map(|(p, r)| (p.0, r.0));
-    let speed = world
+    let velocity = world
         .get::<crate::ship::ShipMotion>(root)
-        .map_or(0.0, |m| m.velocity.length());
+        .map_or(bevy::math::DVec3::ZERO, |m| m.velocity);
     let Some((pos, rot)) = pose else {
         return;
     };
-    let to = beacon - pos;
-    let distance = to.length();
-    let mut intent = crate::ship::PilotIntent::default();
+    let distance = beacon.distance(pos);
     if distance < range * 0.85 {
-        info!("scénario tutorial : balise à {distance:.0} m, à portée");
-        *world.resource_mut::<crate::ship::PilotIntent>() = intent;
+        info!("scénario : balise à {distance:.0} m, à portée");
+        *world.resource_mut::<crate::ship::PilotIntent>() = crate::ship::PilotIntent::default();
         let mut scenario = world.resource_mut::<Scenario>();
         scenario.index += 1;
         scenario.issued = None;
         scenario.step_time = 0.0;
         return;
     }
-    let dir = DVec3::new(to.x, to.y, to.z) / distance.max(1e-6);
-    let to_world = rot.as_dquat();
-    let local = to_world.inverse() * dir;
-    let yaw = local.x.atan2(-local.z);
-    let pitch = local.y.atan2(-local.z);
-    intent.turn = Vec2::new(
-        (yaw * 3.0).clamp(-1.0, 1.0) as f32,
-        (pitch * 3.0).clamp(-1.0, 1.0) as f32,
+    let data = world.resource::<Data>().clone();
+    let Some(handling) = data.flight.ships.get(ship.as_str()) else {
+        return;
+    };
+    let surface = crate::ship::nearest_surface(
+        pos,
+        world
+            .query::<(&crate::space::SpacePosition, &crate::ship::SurfaceBody)>()
+            .iter(world)
+            .map(|(p, b)| (p.0, b.radius)),
     );
-    let aligned = (to_world * DVec3::NEG_Z).angle_between(dir).to_degrees() < 10.0;
-    if aligned {
-        intent.thrust = Vec3::NEG_Z;
-        // Jamais à portée : la croisière relancée près du but le dépasserait.
-        intent.cruise = distance > range && distance > 1.6 * speed + 12_000.0;
+    let dt = f64::from(world.resource::<Time>().delta_secs().min(0.1));
+    let step = crate::ship::approach(
+        pos,
+        rot,
+        velocity,
+        beacon,
+        range * 0.5,
+        handling,
+        data.space.scale.cruise_speed_limit(surface),
+        dt,
+    );
+    *world.resource_mut::<crate::ship::PilotIntent>() = step.intent;
+}
+
+/// [`Step::Autopilot`] : pose la demande comme la carte, puis attend que l'autopilote la lève ;
+/// fini (`Ok(true)`) si le vaisseau est alors arrêté à la distance d'arrêt de la cible.
+fn autopilot_step(world: &mut World, target: &str, issued: bool) -> Result<bool, String> {
+    use crate::ship::{AutopilotRequest, NavTarget, ShipMotion};
+    use crate::space::SpacePosition;
+    if !issued {
+        world.insert_resource(AutopilotRequest(Some(target.to_owned())));
+        world.resource_mut::<Scenario>().issued = Some(None);
+        info!("scénario : autopilote engagé vers {target}");
+        return Ok(false);
     }
-    *world.resource_mut::<crate::ship::PilotIntent>() = intent;
+    if world.resource::<AutopilotRequest>().0.is_some() {
+        return Ok(false);
+    }
+    let goal = world
+        .query::<(&NavTarget, &SpacePosition)>()
+        .iter(world)
+        .find(|(t, _)| t.id == target)
+        .map(|(t, p)| (p.0, t.stop));
+    let Some((goal, stop)) = goal else {
+        return Err("cible absente du système".into());
+    };
+    let root = world
+        .get_resource::<crate::sector::ActiveSector>()
+        .map(|s| s.root)
+        .ok_or("pas de vaisseau")?;
+    let ship = world
+        .get::<SpacePosition>(root)
+        .map(|p| p.0)
+        .ok_or("vaisseau sans position")?;
+    let speed = world
+        .get::<ShipMotion>(root)
+        .map_or(0.0, |m| m.velocity.length());
+    let distance = ship.distance(goal);
+    info!(
+        "scénario : autopilote arrêté à {distance:.0} m de {target} (arrêt visé {stop:.0} m, {speed:.1} m/s)"
+    );
+    if distance <= stop + 1_000.0 && speed < 5.0 {
+        Ok(true)
+    } else {
+        Err(format!(
+            "désengagé loin de la cible : {distance:.0} m (arrêt visé {stop:.0} m), {speed:.1} m/s"
+        ))
+    }
+}
+
+/// `deliver_vorrh` : un contrat de transport Hexis → Vorrh, celui du bureau s'il en propose
+/// un, sinon le premier transport offert, détourné vers Vorrh (le scénario ne dépend pas du
+/// classement des offres de la semaine).
+fn give_vorrh_contract(world: &mut World) -> Result<bool, String> {
+    let Some(today) = world
+        .get_resource::<crate::clock::GameClock>()
+        .map(|c| c.date)
+    else {
+        return Ok(false);
+    };
+    if !world.contains_resource::<crate::career::Career>() {
+        return Ok(false);
+    }
+    let data = world.resource::<Data>().clone();
+    let id = |s: &str| sh_core::Id::<sh_data::Place>::new(s).map_err(|e| e.to_string());
+    let (hexis, vorrh) = (id("sys_hexis")?, id("sys_vorrh")?);
+    let offers = world
+        .get_resource::<crate::living::LivingWorld>()
+        .map(|l| sh_sim::contract_offers(&data, &l.sim, &hexis, today))
+        .ok_or("monde vivant absent")?;
+    let contract = offers
+        .iter()
+        .find(|c| c.to == vorrh)
+        .cloned()
+        .or_else(|| {
+            offers
+                .iter()
+                .find(|c| c.kind != sh_sim::ContractKind::Towing)
+                .cloned()
+                .map(|c| sh_sim::Contract {
+                    id: format!("CT-sys_hexis-sys_vorrh-scenario-{}", today.day_index()),
+                    to: vorrh.clone(),
+                    deadline: today.add_days(60),
+                    ..c
+                })
+        })
+        .ok_or("aucun transport proposé à Hexis")?;
+    info!("scénario deliver_vorrh : contrat {}", contract.id);
+    let out = world
+        .resource_mut::<crate::career::Career>()
+        .captain
+        .accept(&data, contract)
+        .map_err(|e| format!("{e:?}"))?;
+    world.write_message(crate::career::CareerOutcomes(out));
+    Ok(true)
 }
 
 /// Une étape de raid, jouée avec le `World` à chaque frame : l'autopilote pilote, tire, lance

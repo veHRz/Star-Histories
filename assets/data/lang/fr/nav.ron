@@ -1,0 +1,18 @@
+// Navigation en vue Globale (M10, lot L4) : points de livraison des systèmes, repère de
+// destination d'un contrat, autopilote vers une cible du système.
+{
+    "structure.generic_portal_hub": "Hub de Portails de {place}",
+    "structure.vorrh_portal_hub": "Hub de Portails de Vorrhal",
+    "structure.vorrh_shipyards": "Chantiers orbitaux de Vorrh-II",
+    "structure.ferrogane_shipyards": "Chantiers orbitaux de Ferrogane",
+    "structure.karvek_shipyards": "Chantiers orbitaux de Karvek",
+    "structure.moisson_depot": "Dépôt de fret de Moisson",
+    "structure.ostrag_majeur_depot": "Dépôt de fret d'Ostrag-Majeur",
+    "nav.delivery.label": "Livraison — {name} · {distance}",
+    "nav.distance.meters": "{distance} m",
+    "nav.distance.kilometers": "{distance} km",
+    "nav.autopilot.engaged": "Autopilote : {target}",
+    "nav.autopilot.arrived": "Autopilote : arrivé — {target}",
+    "nav.autopilot.off": "Autopilote désengagé.",
+    "nav.autopilot.unknown": "Autopilote : cible introuvable dans ce système.",
+}

@@ -1,0 +1,40 @@
+// Mise en scène du système Ferrok en vue Globale (proposition P32, docs/propositions.md).
+// Canon (§3.3) : deuxième système industriel de l'Empire, sans hub de Portails ; Ferrogane
+// (croiseurs lourds, porte-vaisseaux) et Karvek (frégates, corvettes, transports) sont des
+// planètes-chantiers. Les chantiers orbitaux au-dessus d'elles, leurs emplacements et le trafic
+// sont proposés : ils servent de points de livraison aux contrats.
+(
+    system: "sys_ferrok",
+    status: Proposition("P32"),
+    structures: [
+        (
+            id: "ferrogane_shipyards",
+            kind: Shipyard,
+            name_key: "structure.ferrogane_shipyards",
+            around: "ferrogane",
+            altitude_radii: 1.5,
+            angle_deg: 140.0,
+            model: "models/space/shipyard.gltf",
+        ),
+        (
+            id: "karvek_shipyards",
+            kind: Shipyard,
+            name_key: "structure.karvek_shipyards",
+            around: "karvek",
+            altitude_radii: 1.5,
+            angle_deg: 320.0,
+            model: "models/space/shipyard.gltf",
+        ),
+    ],
+    traffic: (
+        ships: 14,
+        model: "models/space/freighter.gltf",
+        speed: 900.0,
+    ),
+    arrival: (
+        near: "ferrogane_shipyards",
+        distance: 25000.0,
+        azimuth_deg: -50.0,
+        elevation_deg: 12.0,
+    ),
+)

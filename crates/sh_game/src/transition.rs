@@ -268,6 +268,8 @@ pub fn request_dock(world: &mut World) {
                 sector: beacon.sector,
                 keep,
             });
+            // L'approche automatique remplace l'autopilote du joueur.
+            world.insert_resource(crate::ship::AutopilotRequest(None));
             notice(world, "notice.dock.cleared");
         }
         Some(ViewLevel::Sector) => {
@@ -422,13 +424,12 @@ fn run_sequence(
                 });
                 commands.remove_resource::<ResumeFlight>();
                 commands.remove_resource::<RoutePlan>();
-                // Par Portail, on sort près du hub d'arrivée ; par l'hyperespace, à l'arrivée
-                // habituelle du système.
-                let hub = data.scene(dest).and_then(|s| {
-                    s.structures
-                        .iter()
-                        .find(|st| st.kind == StructureKind::PortalHub)
-                });
+                // Par Portail, on sort près du hub d'arrivée (mis en scène, ou le hub générique
+                // d'un système sans scène, P32) ; par l'hyperespace, à l'arrivée habituelle du
+                // système.
+                let hub = sh_data::scene::system_structures(&data.galaxy, data.scene(dest), dest)
+                    .into_iter()
+                    .find(|st| st.kind == StructureKind::PortalHub);
                 if plan.mode == TravelMode::Portal
                     && let Some(hub) = hub
                 {
@@ -595,6 +596,8 @@ pub fn start_travel(world: &mut World, dest: Id<Place>, plan: TravelPlan) {
         card.id()
     };
     world.flush();
+    // L'autopilote vise une cible du système qu'on quitte.
+    world.insert_resource(crate::ship::AutopilotRequest(None));
     world.insert_resource(Sequence::Travel {
         dest,
         plan,

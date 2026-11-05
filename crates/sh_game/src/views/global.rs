@@ -7,6 +7,12 @@
 //! Le ciel est généré depuis la position du système dans la galaxie ([`super::sky`]).
 //! Les corps secrets ne sont jamais dessinés.
 //!
+//! **M10** : un système sans hub mis en scène reçoit le hub de Portails canon générique
+//! (`sh_data::scene::generic_hub`, P32), où l'on arrive ; toute structure est un point de
+//! livraison ([`CargoPoint`]). Les ports d'amarrage ont la station orbitale à hangars (P31) et
+//! son niveau de détail ([`LodRange`]). Astres, stations, structures et ports portent une
+//! [`NavTarget`] (l'autopilote, `crate::ship`).
+//!
 //! Le joueur est **à bord de son vaisseau** (départ de partie) : le secteur du vaisseau est
 //! chargé ([`crate::sector`]), sa racine reçoit la pose d'arrivée et devient le référentiel de
 //! l'origine flottante ; le pilotage est dans [`crate::ship`].
@@ -17,18 +23,25 @@
 //! lumière d'une étoile lointaine (un point brillant du ciel, direction tirée de son nom) ; une
 //! planète errante, celle du bulbe galactique, plus faible.
 
+use std::collections::BTreeMap;
+
+use bevy::camera::visibility::VisibilityRange;
 use bevy::light::Skybox;
 use bevy::prelude::*;
-use bevy::world_serialization::WorldAssetRoot;
+use bevy::world_serialization::{WorldAssetRoot, WorldInstanceReady};
 use sh_core::{MapPos, SimRng, SpacePos};
+use sh_data::scene::{
+    DEFAULT_SPACEPORT_MODEL, NavPoint, arrival_of, lod_model, nav_points_in, place_around,
+    structure_name, system_structures,
+};
 use sh_data::travel::{Endpoint, endpoint};
 use sh_data::{Body, BodyKind, Galaxy, Place, PlacedKind, StructureKind, system_layout};
 
 use crate::career::CargoPoint;
-use crate::data::{Data, Texts};
+use crate::data::{Data, Texts, assets_dir};
 use crate::graphics::WorldCamera;
 use crate::sector::{ActiveSector, EnterSector};
-use crate::ship::{ShipMotion, SurfaceBody};
+use crate::ship::{NavTarget, ShipMotion, SurfaceBody};
 use crate::space::{FloatingOrigin, PositionDriver, SpacePosition, SpaceRotation};
 use crate::state::{CurrentPlace, ViewLevel};
 use crate::transition::{ArrivalRequest, DockBeacon};
@@ -42,7 +55,8 @@ pub struct GlobalViewPlugin;
 
 impl Plugin for GlobalViewPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(ViewLevel::Global), spawn_global.after(EnterSector))
+        app.add_observer(apply_lod_range)
+            .add_systems(OnEnter(ViewLevel::Global), spawn_global.after(EnterSector))
             .add_systems(
                 Update,
                 (move_traffic, aim_sunlight, attach_sky)
@@ -53,6 +67,19 @@ impl Plugin for GlobalViewPlugin {
 }
 
 const SCOPE: DespawnOnExit<ViewLevel> = DespawnOnExit(ViewLevel::Global);
+/// Station du spatioport par défaut (P31, cotes du modèle, repère Bevy) : centre de la bouche
+/// du hangar, qui est la balise d'approche (la séquence d'amarrage vise la bouche), et le petit
+/// feu de position, au bout des rampes d'approche, au-dessus de l'axe.
+const STATION_MOUTH: Vec3 = Vec3::new(0.0, -16.5, -201.5);
+const STATION_LIGHT: Vec3 = Vec3::new(0.0, 14.0, -390.0);
+/// Rayon du feu de position (m) et son émissif : un feu de balisage, pas un phare (M8 : ≈ 4
+/// pour un feu, ×3 pour qu'il porte à quelques kilomètres).
+const STATION_LIGHT_RADIUS: f32 = 3.0;
+const STATION_LIGHT_EMISSIVE: LinearRgba = LinearRgba::rgb(12.0, 5.0, 1.0);
+/// Bascule entre le modèle complet et son niveau de détail éloigné (m, fondu entre les deux).
+const LOD_SWITCH: std::ops::Range<f32> = 2500.0..3000.0;
+/// Au-delà, plus rien à dessiner (m) : la station n'est plus qu'un point.
+const LOD_FAR: f32 = 1.0e9;
 /// La caméra du joueur a l'exposition d'intérieur (`Exposure::INDOOR`, EV100 7) : l'extérieur,
 /// vu par le hublot, est réglé pour elle (2,7 IL plus sensible que l'exposition par défaut).
 /// Luminance du ciel (cd/m²) pour une valeur 1 de la cubemap.
@@ -165,10 +192,37 @@ fn make_isolated_sky(galaxy: &Galaxy, root: &Body) -> Image {
     cube_image(&render_sky(&spec, SKY_SIZE))
 }
 
-/// Un point à `radius` mètres de `center`, dans la direction `angle_deg` du plan du système.
-fn around(center: SpacePos, radius: f64, angle_deg: f64) -> SpacePos {
-    let a = angle_deg.to_radians();
-    center + SpacePos::new(radius * a.cos(), 0.0, radius * a.sin())
+/// D'où l'on aborde un objet (unitaire, de l'objet vers l'œil) : du côté de l'étoile
+/// (`to_star`), tourné de `azimuth_deg` dans le plan, levé de `elevation_deg` au-dessus. Les
+/// arrivées et les départs s'y placent ; la bouche du spatioport le regarde.
+fn approach_offset(to_star: Vec3, azimuth_deg: f64, elevation_deg: f64) -> Vec3 {
+    let elevation = elevation_deg.to_radians();
+    let azimuth = azimuth_deg.to_radians() as f32;
+    let horizontal =
+        Quat::from_rotation_y(azimuth) * Vec3::new(to_star.x, 0.0, to_star.z).normalize_or(Vec3::Z);
+    horizontal * elevation.cos() as f32 + Vec3::Y * elevation.sin() as f32
+}
+
+/// Le niveau de détail d'une partie de modèle : posé sur chacun de ses maillages quand il est
+/// prêt (`VisibilityRange` ne se propage pas aux enfants).
+#[derive(Component, Clone)]
+struct LodRange(VisibilityRange);
+
+fn apply_lod_range(
+    event: On<WorldInstanceReady>,
+    mut commands: Commands,
+    parts: Query<&LodRange>,
+    children: Query<&Children>,
+    meshes: Query<(), With<Mesh3d>>,
+) {
+    let Ok(LodRange(range)) = parts.get(event.entity) else {
+        return;
+    };
+    for node in children.iter_descendants(event.entity) {
+        if meshes.contains(node) {
+            commands.entity(node).insert(range.clone());
+        }
+    }
 }
 
 /// Orientation absolue qui pointe l'avant (−Z) d'un objet vers `forward`.
@@ -256,6 +310,18 @@ fn spawn_global(
     {
         title_place = name;
     }
+    // Les cibles de l'autopilote, calculées comme pour la carte (`sh_data::scene::nav_points`).
+    let nav: BTreeMap<String, NavPoint> = nav_points_in(&data, &texts, system, &placed)
+        .into_iter()
+        .map(|p| (p.id.clone(), p))
+        .collect();
+    let nav_target = |id: &str| {
+        nav.get(id).map(|p| NavTarget {
+            id: p.id.clone(),
+            stop: p.stop,
+            delivery: p.is_delivery(),
+        })
+    };
     for p in &placed {
         let id = p.id.as_ref().map(|i| i.as_str().to_owned());
         let name = match (&p.id, p.kind) {
@@ -335,75 +401,142 @@ fn spawn_global(
         commands
             .entity(entity)
             .insert((Name::new(name.clone()), SCOPE, SpacePosition(p.pos)));
+        if let Some(target) = id.as_deref().and_then(nav_target) {
+            commands.entity(entity).insert(target);
+        }
         commands.spawn(label(&fonts, &name, entity));
     }
 
-    // Structures sans fiche canon (hub de Portails, chantiers) : mise en scène proposée.
-    for st in scene.map(|s| s.structures.as_slice()).unwrap_or_default() {
+    // Structures sans fiche canon (hub de Portails, chantiers, dépôt) : mise en scène proposée,
+    // et le hub générique d'un système qui n'en met aucun en scène (P32). Toutes reçoivent la
+    // cargaison des contrats.
+    let structures = system.map_or_else(Vec::new, |s| system_structures(g, scene, &s.id));
+    for st in &structures {
         let Some(body) = placed.iter().find(|q| q.id.as_ref() == Some(&st.around)) else {
             continue;
         };
-        let pos = around(
-            body.pos,
-            body.radius * (1.0 + st.altitude_radii),
-            st.angle_deg,
-        );
+        let Some(pos) = place_around(&placed, &st.around, st.altitude_radii, st.angle_deg) else {
+            continue;
+        };
         let radial = dir(pos - body.pos);
         let facing_dir = match st.kind {
-            // Les anneaux du hub, dans le plan de l'orbite ; les cales, le long de l'orbite.
+            // Les anneaux du hub, dans le plan de l'orbite ; les cales et le dépôt, le long de
+            // l'orbite.
             StructureKind::PortalHub => radial,
-            StructureKind::Shipyard => Vec3::Y.cross(radial),
+            StructureKind::Shipyard | StructureKind::Depot => Vec3::Y.cross(radial),
         };
-        let name = texts.get(&st.name_key);
+        let name = structure_name(&texts, g, st);
         debug!("structure {} en {pos:?}", st.id);
-        let entity = commands
-            .spawn((
-                Name::new(name.clone()),
-                SCOPE,
-                CargoPoint(st.kind),
-                SpacePosition(pos),
-                SpaceRotation(facing(facing_dir)),
-                WorldAssetRoot(
-                    asset_server.load(GltfAssetLabel::Scene(0).from_asset(st.model.clone())),
-                ),
-            ))
-            .id();
+        let mut entity = commands.spawn((
+            Name::new(name.clone()),
+            SCOPE,
+            CargoPoint(st.kind),
+            SpacePosition(pos),
+            SpaceRotation(facing(facing_dir)),
+        ));
+        if let Some(target) = nav_target(&st.id) {
+            entity.insert(target);
+        }
+        // Un modèle pas encore livré (le dépôt a celui de la station orbitale) : un bloc gris
+        // en attendant, plutôt qu'un point de livraison invisible.
+        if assets_dir().join(&st.model).is_file() {
+            entity.insert(WorldAssetRoot(
+                asset_server.load(GltfAssetLabel::Scene(0).from_asset(st.model.clone())),
+            ));
+        } else {
+            warn!("structure {} : modèle absent ({})", st.id, st.model);
+            entity.insert((
+                Mesh3d(meshes.add(Cuboid::new(300.0, 150.0, 600.0))),
+                MeshMaterial3d(materials.add(Color::srgb(0.5, 0.5, 0.52))),
+            ));
+        }
+        let entity = entity.id();
         commands.spawn(label(&fonts, &name, entity));
         anchors.push((st.id.clone(), pos));
         ports.push(pos);
     }
 
-    // Balises d'approche des ports (le spatioport d'Hexis) : un fanal et un repère.
-    let beacon_mesh = meshes.add(Sphere::new(30.0).mesh().uv(16, 8));
-    let beacon_material = materials.add(StandardMaterial {
-        base_color: Color::BLACK,
-        emissive: LinearRgba::rgb(400.0, 160.0, 30.0),
-        ..default()
-    });
+    // Ports d'amarrage (le spatioport d'Hexis) : la station orbitale vue de l'espace (P31), sa
+    // bouche de hangar tournée vers le couloir d'approche (là où l'on ressort au départ), un
+    // petit feu de position ; la balise est le centre de la bouche. Sans le modèle, l'ancien
+    // fanal (une sphère lumineuse) la signale.
+    let arrival_angles = scene.map(|s| (s.arrival.azimuth_deg, s.arrival.elevation_deg));
     for dock in scene.map(|s| s.docks.as_slice()).unwrap_or_default() {
-        let Some(body) = placed.iter().find(|q| q.id.as_ref() == Some(&dock.around)) else {
+        let Some(pos) = place_around(&placed, &dock.around, dock.altitude_radii, dock.angle_deg)
+        else {
             continue;
         };
-        let pos = around(
-            body.pos,
-            body.radius * (1.0 + dock.altitude_radii),
-            dock.angle_deg,
-        );
+        let (azimuth, elevation) = arrival_angles.unwrap_or((0.0, 15.0));
+        let corridor = approach_offset(dir(SpacePos::ZERO - pos), azimuth, elevation);
+        let rotation = facing(corridor);
         let name = texts.get(&dock.name_key);
-        let entity = commands
-            .spawn((
-                Name::new(name.clone()),
-                SCOPE,
-                DockBeacon {
-                    id: dock.id.clone(),
-                    sector: dock.sector.clone(),
-                    range: dock.range,
-                },
-                SpacePosition(pos),
-                Mesh3d(beacon_mesh.clone()),
-                MeshMaterial3d(beacon_material.clone()),
-            ))
-            .id();
+        let mut beacon = commands.spawn((
+            Name::new(name.clone()),
+            SCOPE,
+            DockBeacon {
+                id: dock.id.clone(),
+                sector: dock.sector.clone(),
+                range: dock.range,
+            },
+            SpacePosition(pos),
+            SpaceRotation(rotation),
+        ));
+        if let Some(target) = nav_target(&dock.id) {
+            beacon.insert(target);
+        }
+        let model = dock.model_path();
+        if assets_dir().join(model).is_file() {
+            // Les cotes de la bouche ne valent que pour la station par défaut ; un modèle propre
+            // est centré sur la balise.
+            let mouth = if model == DEFAULT_SPACEPORT_MODEL {
+                STATION_MOUTH
+            } else {
+                Vec3::ZERO
+            };
+            let lod = lod_model(model).filter(|lod| assets_dir().join(lod).is_file());
+            let full = asset_server.load(GltfAssetLabel::Scene(0).from_asset(model.to_owned()));
+            beacon.with_children(|station| {
+                let mut near =
+                    station.spawn((Transform::from_translation(-mouth), WorldAssetRoot(full)));
+                if let Some(lod) = lod {
+                    near.insert(LodRange(VisibilityRange {
+                        start_margin: 0.0..0.0,
+                        end_margin: LOD_SWITCH,
+                        use_aabb: false,
+                    }));
+                    station.spawn((
+                        Transform::from_translation(-mouth),
+                        WorldAssetRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset(lod))),
+                        LodRange(VisibilityRange {
+                            start_margin: LOD_SWITCH,
+                            end_margin: LOD_FAR..LOD_FAR,
+                            use_aabb: false,
+                        }),
+                    ));
+                }
+                station.spawn((
+                    Transform::from_translation(STATION_LIGHT - mouth)
+                        .with_scale(Vec3::splat(STATION_LIGHT_RADIUS)),
+                    Mesh3d(sphere.clone()),
+                    MeshMaterial3d(materials.add(StandardMaterial {
+                        base_color: Color::BLACK,
+                        emissive: STATION_LIGHT_EMISSIVE,
+                        ..default()
+                    })),
+                ));
+            });
+        } else {
+            warn!("port {} : modèle de station absent ({model})", dock.id);
+            beacon.insert((
+                Mesh3d(meshes.add(Sphere::new(30.0).mesh().uv(16, 8))),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: Color::BLACK,
+                    emissive: LinearRgba::rgb(400.0, 160.0, 30.0),
+                    ..default()
+                })),
+            ));
+        }
+        let entity = beacon.id();
         commands.spawn(label(&fonts, &name, entity));
         anchors.push((dock.id.clone(), pos));
     }
@@ -498,7 +631,9 @@ fn spawn_global(
     ));
 
     // Arrivée : du côté de l'étoile, au-dessus du plan, en regardant l'objet visé.
-    let arrival = scene.map(|s| &s.arrival);
+    // Sans mise en scène, un système qui a un hub de Portails s'aborde près de lui (P32).
+    let arrival = system.and_then(|s| arrival_of(g, scene, &s.id));
+    let arrival = arrival.as_ref();
     // Au départ d'un quai, on arrive près de sa balise ; `SH_ARRIVAL=<objet>,<distance>`
     // (autopilote) : arrivée ailleurs, pour les captures.
     let forced = request
@@ -539,15 +674,11 @@ fn spawn_global(
         (None, Some(_)) => (12.0, -50.0),
         (None, None) => (15.0, 0.0),
     };
-    let elevation = elevation.to_radians();
-    let azimuth = azimuth.to_radians() as f32;
     let to_star = match light_dir {
         Some(light) => dir(light),
         None => dir(SpacePos::ZERO - target),
     };
-    let horizontal =
-        Quat::from_rotation_y(azimuth) * Vec3::new(to_star.x, 0.0, to_star.z).normalize_or(Vec3::Z);
-    let offset = horizontal * elevation.cos() as f32 + Vec3::Y * elevation.sin() as f32;
+    let offset = approach_offset(to_star, azimuth, elevation);
     let eye = target
         + SpacePos::new(
             f64::from(offset.x),

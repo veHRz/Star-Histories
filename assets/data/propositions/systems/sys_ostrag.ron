@@ -1,0 +1,27 @@
+// Mise en scène du système Ostrag en vue Globale (proposition P32, docs/propositions.md).
+// Canon (§3.3) : le bagne de l'Empire, sans Portail public, à des mois d'hyperespace de tout ;
+// Ostrag-Majeur, monde de garnison, a l'administration pénitentiaire et un spatioport militaire.
+// Le dépôt de fret en orbite d'Ostrag-Majeur (où les remorqueurs d'Hexa-Corp prennent la
+// cargaison) et son emplacement sont proposés ; aucun trafic ambiant (l'isolement). En attendant
+// un modèle propre, le dépôt a celui de la station orbitale à hangars (P31).
+(
+    system: "sys_ostrag",
+    status: Proposition("P32"),
+    structures: [
+        (
+            id: "ostrag_majeur_depot",
+            kind: Depot,
+            name_key: "structure.ostrag_majeur_depot",
+            around: "ostrag_majeur",
+            altitude_radii: 1.5,
+            angle_deg: 250.0,
+            model: "models/space/spaceport_station/spaceport_station.gltf",
+        ),
+    ],
+    arrival: (
+        near: "ostrag_majeur_depot",
+        distance: 25000.0,
+        azimuth_deg: -50.0,
+        elevation_deg: 12.0,
+    ),
+)

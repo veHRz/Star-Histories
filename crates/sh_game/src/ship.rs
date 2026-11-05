@@ -14,6 +14,13 @@
 //!
 //! Les commandes passent par [`PilotIntent`], que remplissent les actions du contexte Pilotage
 //! ou un scénario de l'autopilote.
+//!
+//! **Autopilote** (M10) : [`AutopilotRequest`] désigne une cible du système courant (astre,
+//! station, structure ou port : une [`NavTarget`] posée par la vue Globale). Aux commandes, le
+//! vaisseau s'aligne, prend la croisière tant qu'il a la place de ralentir, puis freine et
+//! s'arrête à la distance d'arrêt de la cible ([`approach`], logique pure, la même que celle du
+//! pilote des scénarios). Toute commande du joueur, la bascule du vol assisté ou le lever du
+//! siège le désengagent ; la croisière reste interdite près des hostiles (`CruiseLock`).
 
 use bevy::math::DVec3;
 use bevy::prelude::*;
@@ -21,37 +28,166 @@ use bevy_enhanced_input::prelude::*;
 use sh_core::SpacePos;
 use sh_data::{Handling, SystemScale};
 
-use crate::data::Data;
+use crate::data::{Data, Texts};
 use crate::input::{Boost, LeaveSeat, Roll, Steer, Thrust, ToggleFlightAssist};
 use crate::interaction::{seat_eye, sit};
 use crate::player::{Player, PlayerController, PlayerMode, PlayerSystems, ScriptedControl};
 use crate::sector::gltf::{Interactable, Socket};
 use crate::sector::{Aboard, ActiveSector};
 use crate::space::{PositionDriver, SpacePosition, SpaceRotation};
-use crate::state::{ControlMode, ViewLevel};
+use crate::state::{AppState, ControlMode, ViewLevel};
 use crate::transition::Sequence;
+use crate::ui::hud::Notice;
 
 pub struct ShipPlugin;
 
 impl Plugin for ShipPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PilotIntent>()
+            .init_resource::<AutopilotRequest>()
             .add_observer(on_toggle_assist)
             .add_observer(on_leave_seat)
+            // L'autopilote est propre à une partie : une partie quittée ne le garde pas.
+            .add_systems(
+                OnExit(AppState::InGame),
+                |mut request: ResMut<AutopilotRequest>| request.0 = None,
+            )
             .add_systems(
                 Update,
                 (
                     (seat_at_start, sync_control_mode),
-                    // En vol seulement, et pas pendant une approche automatique.
-                    (read_pilot_input, fly)
-                        .run_if(in_state(ViewLevel::Global))
-                        .run_if(not(resource_exists::<Sequence>)),
+                    // En vol seulement, et pas pendant une approche automatique (conditions sur
+                    // chaque système d'un groupe chaîné, AGENTS.md §4).
+                    (
+                        read_pilot_input
+                            .run_if(in_state(ViewLevel::Global))
+                            .run_if(not(resource_exists::<Sequence>)),
+                        run_autopilot
+                            .run_if(in_state(ViewLevel::Global))
+                            .run_if(not(resource_exists::<Sequence>)),
+                        fly.run_if(in_state(ViewLevel::Global))
+                            .run_if(not(resource_exists::<Sequence>)),
+                    )
+                        .chain(),
                 )
                     .chain()
                     .in_set(ShipSystems)
                     .after(PlayerSystems)
                     .run_if(resource_exists::<ActiveSector>),
             );
+    }
+}
+
+/// La cible de l'autopilote : l'identifiant d'un astre, d'une station, d'une structure ou d'un
+/// port du système courant (`sh_data::scene::nav_points`), ou rien. La carte (ou
+/// `SH_AUTOPILOT`) la pose ; le vol la lit en vue Globale et l'efface à l'arrivée.
+#[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
+pub struct AutopilotRequest(pub Option<String>);
+
+/// Une cible de navigation de la vue Globale (posée par `views::global` sur les astres,
+/// stations, structures et balises de ports).
+#[derive(Component, Clone, Debug)]
+pub struct NavTarget {
+    pub id: String,
+    /// Distance au centre (m) où l'autopilote s'arrête (`sh_data::scene::stop_distance`).
+    pub stop: f64,
+    /// Un point de livraison des contrats.
+    pub delivery: bool,
+}
+
+/// Une commande du joueur plus forte que ce seuil désengage l'autopilote (souris : pixels par
+/// frame ; un tremblement de la main ne compte pas).
+const STEER_DEADZONE: f32 = 1.5;
+/// Hors de cet angle (degrés) entre l'avant et la cible, on vire sans pousser.
+const ALIGN_DEGREES: f64 = 10.0;
+/// Marge (m) gardée avant la distance d'arrêt quand on coupe la croisière.
+const CRUISE_MARGIN: f64 = 3_000.0;
+/// En vol de manœuvre, on ne relance la croisière qu'au-delà de cette distance (m) : plus près,
+/// la croisière (au moins 2 km/s) ne ferait qu'osciller.
+const CRUISE_ENGAGE: f64 = 20_000.0;
+/// Arrivé : à moins de cette vitesse (m/s), dans la distance d'arrêt (à cette marge près, m).
+const ARRIVED_SPEED: f64 = 2.0;
+const ARRIVED_SLACK: f64 = 250.0;
+
+/// Ce que l'autopilote commande pour ce frame.
+#[derive(Clone, Debug, Default)]
+pub struct Approach {
+    pub intent: PilotIntent,
+    /// Arrêté à la distance d'arrêt : l'autopilote a fini.
+    pub arrived: bool,
+}
+
+/// Distance (m) pour s'arrêter en vol assisté depuis `speed` : la décroissance de la croisière
+/// jusqu'à la vitesse de manœuvre, puis le freinage (marche arrière).
+pub fn braking_distance(speed: f64, handling: &Handling) -> f64 {
+    let brake = |v: f64| v * v / (2.0 * handling.accel_backward.max(1e-3));
+    if speed > handling.max_speed {
+        handling.cruise_spool_down * (speed - handling.max_speed) + brake(handling.max_speed)
+    } else {
+        brake(speed)
+    }
+}
+
+/// Un frame d'approche vers `target`, arrêt à `stop` mètres de lui : virer vers lui ; une fois
+/// aligné, pousser, et rester en croisière tant que la distance laisse le temps de ralentir (la
+/// croisière coupée, la vitesse décroît en ≈ `cruise_spool_down` s : ≈ 1,5 × v mètres) ; couper
+/// la poussée quand il ne reste que la distance de freinage. Logique pure (jeu et scénarios).
+///
+/// `cruise_limit` : la vitesse de croisière permise ici (m/s), `dt` : la durée du frame (s). La
+/// vitesse qu'aurait le vaisseau au frame suivant en croisière (même montée que [`step`]) doit
+/// encore laisser la place de ralentir : un seul frame de croisière loin de toute surface
+/// (jusqu'à 30 000 km/s) dépasserait sinon une cible proche.
+#[allow(clippy::too_many_arguments)]
+pub fn approach(
+    pos: SpacePos,
+    rotation: Quat,
+    velocity: DVec3,
+    target: SpacePos,
+    stop: f64,
+    handling: &Handling,
+    cruise_limit: f64,
+    dt: f64,
+) -> Approach {
+    let to = target - pos;
+    let distance = to.length();
+    let speed = velocity.length();
+    let remaining = distance - stop;
+    if remaining <= ARRIVED_SLACK && speed < ARRIVED_SPEED {
+        return Approach {
+            intent: PilotIntent::default(),
+            arrived: true,
+        };
+    }
+    let mut intent = PilotIntent::default();
+    if remaining <= 0.0 {
+        // Dans la distance d'arrêt : on laisse le vol assisté freiner.
+        return Approach {
+            intent,
+            arrived: false,
+        };
+    }
+    let dir = DVec3::new(to.x, to.y, to.z) / distance.max(1e-6);
+    let to_world = rotation.as_dquat();
+    let local = to_world.inverse() * dir;
+    let yaw = local.x.atan2(-local.z);
+    let pitch = local.y.atan2(-local.z);
+    intent.turn = Vec2::new(
+        (yaw * 3.0).clamp(-1.0, 1.0) as f32,
+        (pitch * 3.0).clamp(-1.0, 1.0) as f32,
+    );
+    let aligned = (to_world * DVec3::NEG_Z).angle_between(dir).to_degrees() < ALIGN_DEGREES;
+    if aligned && remaining > braking_distance(speed, handling) {
+        intent.thrust = Vec3::NEG_Z;
+        // Déjà lancé (au-dessus de la vitesse de manœuvre) ou loin : la croisière, tant qu'elle
+        // laisse la place de ralentir.
+        let next = speed + (cruise_limit - speed).max(0.0) * (1.0 - (-2.0 * dt).exp());
+        let room = remaining > (handling.cruise_spool_down + 0.2) * next + CRUISE_MARGIN;
+        let launched = speed > handling.max_speed * 1.05 || remaining > CRUISE_ENGAGE;
+        intent.cruise = room && launched;
+    }
+    Approach {
+        intent,
+        arrived: false,
     }
 }
 
@@ -250,6 +386,11 @@ fn read_pilot_input(
     boost: Single<&Action<Boost>>,
     mut intent: ResMut<PilotIntent>,
     settings: Res<crate::options::UserSettings>,
+    (mut autopilot, texts, mut notices): (
+        ResMut<AutopilotRequest>,
+        Res<Texts>,
+        MessageWriter<Notice>,
+    ),
 ) {
     if scripted.0 {
         return;
@@ -258,16 +399,104 @@ fn read_pilot_input(
         *intent = PilotIntent::default();
         return;
     }
-    let steer: Vec2 = ***steer * settings.look_scale();
+    let raw_steer: Vec2 = ***steer;
+    let steer = raw_steer * settings.look_scale();
     *intent = PilotIntent {
         thrust: ***thrust,
         turn: Vec2::new(steer.x, -steer.y) / MOUSE_FULL_TURN,
         roll: ***roll,
         cruise: ***boost,
     };
+    // Le joueur reprend la main : l'autopilote se désengage.
+    let touched = intent.thrust != Vec3::ZERO
+        || intent.roll != 0.0
+        || intent.cruise
+        || raw_steer.length() > STEER_DEADZONE;
+    if touched && autopilot.0.is_some() {
+        disengage(&mut autopilot, &texts, &mut notices);
+    }
 }
 
-fn on_toggle_assist(_: On<Start<ToggleFlightAssist>>, mut ships: Query<&mut ShipMotion>) {
+/// Coupe l'autopilote, et le dit.
+fn disengage(request: &mut AutopilotRequest, texts: &Texts, notices: &mut MessageWriter<Notice>) {
+    if request.0.take().is_some() {
+        info!("autopilote désengagé");
+        notices.write(Notice(texts.get("nav.autopilot.off")));
+    }
+}
+
+/// L'autopilote, aux commandes : il remplace les commandes du frame par celles de l'approche
+/// de la cible. Pas aux commandes (arrivée, pas encore assis) : il attend.
+#[allow(clippy::too_many_arguments)]
+fn run_autopilot(
+    time: Res<Time>,
+    mut request: ResMut<AutopilotRequest>,
+    mode: Res<State<ControlMode>>,
+    data: Res<Data>,
+    texts: Res<Texts>,
+    sector: Res<ActiveSector>,
+    targets: Query<(&NavTarget, &SpacePosition, &Name)>,
+    bodies: Query<(&SpacePosition, &SurfaceBody)>,
+    mut ships: Query<(&SpacePosition, &SpaceRotation, &mut ShipMotion), Without<NavTarget>>,
+    mut intent: ResMut<PilotIntent>,
+    mut notices: MessageWriter<Notice>,
+) {
+    let Some(id) = request.0.clone() else {
+        return;
+    };
+    if *mode.get() != ControlMode::Piloting {
+        return;
+    }
+    let Ok((pos, rotation, mut motion)) = ships.get_mut(sector.root) else {
+        return;
+    };
+    let Some(handling) = data.flight.ships.get(sector.sector.id.as_str()) else {
+        return;
+    };
+    let Some((target, target_pos, name)) = targets.iter().find(|(t, _, _)| t.id == id) else {
+        warn!("autopilote : cible « {id} » absente du système");
+        request.0 = None;
+        notices.write(Notice(texts.get("nav.autopilot.unknown")));
+        return;
+    };
+    // Le freinage compte sur le vol assisté.
+    if motion.mode != FlightMode::Assisted {
+        motion.mode = FlightMode::Assisted;
+    }
+    // La même vitesse limite et le même pas que `fly`.
+    let surface = nearest_surface(pos.0, bodies.iter().map(|(p, b)| (p.0, b.radius)));
+    let step = approach(
+        pos.0,
+        rotation.0,
+        motion.velocity,
+        target_pos.0,
+        target.stop,
+        handling,
+        data.space.scale.cruise_speed_limit(surface),
+        f64::from(time.delta_secs().min(0.1)),
+    );
+    *intent = step.intent;
+    if step.arrived {
+        info!(
+            "autopilote : arrivé à {:.0} m de {id}",
+            pos.0.distance(target_pos.0)
+        );
+        request.0 = None;
+        notices.write(Notice(
+            texts.format("nav.autopilot.arrived", &[("target", name.as_str())]),
+        ));
+    }
+}
+
+fn on_toggle_assist(
+    _: On<Start<ToggleFlightAssist>>,
+    mut ships: Query<&mut ShipMotion>,
+    mut autopilot: ResMut<AutopilotRequest>,
+    texts: Res<Texts>,
+    mut notices: MessageWriter<Notice>,
+) {
+    // L'autopilote vole en assisté : changer de mode, c'est reprendre la main.
+    disengage(&mut autopilot, &texts, &mut notices);
     for mut motion in &mut ships {
         motion.mode = match motion.mode {
             FlightMode::Assisted => FlightMode::Decoupled,
@@ -277,7 +506,14 @@ fn on_toggle_assist(_: On<Start<ToggleFlightAssist>>, mut ships: Query<&mut Ship
     }
 }
 
-fn on_leave_seat(_: On<Start<LeaveSeat>>, mut commands: Commands) {
+fn on_leave_seat(
+    _: On<Start<LeaveSeat>>,
+    mut commands: Commands,
+    mut autopilot: ResMut<AutopilotRequest>,
+    texts: Res<Texts>,
+    mut notices: MessageWriter<Notice>,
+) {
+    disengage(&mut autopilot, &texts, &mut notices);
     commands.queue(|world: &mut World| crate::interaction::stand_up(world));
 }
 
@@ -442,6 +678,112 @@ mod tests {
         let forward = q * Vec3::NEG_Z;
         assert!(forward.x < -0.3, "{forward:?}");
         assert!((m.angular.y - 30f32.to_radians()).abs() < 1e-3);
+    }
+
+    /// Vole avec l'autopilote vers `target` (arrêt à `stop`) depuis `start`, l'avant tourné vers
+    /// `heading` ; une planète de rayon `radius` centrée en `planet` borne la croisière. Rend
+    /// le temps d'arrivée (s), la distance finale et la plus courte distance atteinte.
+    fn autopilot_flight(
+        start: SpacePos,
+        heading: Quat,
+        target: SpacePos,
+        stop: f64,
+        planet: SpacePos,
+        radius: f64,
+    ) -> (Option<f64>, f64, f64) {
+        let (h, s) = (handling(), scale());
+        let mut motion = ShipMotion::default();
+        let (mut pos, mut rot) = (start, heading);
+        let mut closest = f64::MAX;
+        let dt = 1.0 / 60.0;
+        for frame in 0..(900.0 / dt) as usize {
+            let surface = pos.distance(planet) - radius;
+            let limit = s.cruise_speed_limit(surface);
+            let a = approach(pos, rot, motion.velocity, target, stop, &h, limit, dt);
+            if a.arrived {
+                return (Some(frame as f64 * dt), pos.distance(target), closest);
+            }
+            assert!(surface > 0.0, "dans la planète à {pos:?}");
+            rot = step(&mut motion, rot, &a.intent, &h, &s, surface, dt);
+            let d = motion.velocity * dt;
+            pos += SpacePos::new(d.x, d.y, d.z);
+            closest = closest.min(pos.distance(target));
+        }
+        (None, pos.distance(target), closest)
+    }
+
+    #[test]
+    fn l_autopilote_arrive_et_s_arrete_sans_depasser() {
+        // Un point de livraison à 1,5 rayon d'une planète, à 500 000 km de là : croisière,
+        // ralentissement, freinage, arrêt à la distance d'arrêt.
+        let radius = 6.4e5;
+        let planet = SpacePos::new(0.0, 0.0, -2.5 * radius);
+        let stop = 8_000.0;
+        let (time, distance, closest) = autopilot_flight(
+            SpacePos::new(0.0, 0.0, 5.0e8),
+            Quat::IDENTITY,
+            SpacePos::ZERO,
+            stop,
+            planet,
+            radius,
+        );
+        let time = time.unwrap_or_else(|| panic!("jamais arrivé ({distance:.0} m)"));
+        assert!(time < 300.0, "{time} s");
+        assert!(
+            (distance - stop).abs() <= ARRIVED_SLACK + 50.0,
+            "{distance}"
+        );
+        assert!(closest > stop - 1_000.0, "dépassé : {closest}");
+    }
+
+    #[test]
+    fn l_autopilote_vire_vers_une_cible_de_cote() {
+        // La cible sur le côté, à 40 km : virer d'abord, puis approcher.
+        let radius = 6.4e5;
+        let (time, distance, _) = autopilot_flight(
+            SpacePos::ZERO,
+            Quat::IDENTITY,
+            SpacePos::new(40_000.0, 0.0, 0.0),
+            3_000.0,
+            SpacePos::new(0.0, -5.0e6, 0.0),
+            radius,
+        );
+        assert!(time.is_some(), "jamais arrivé ({distance:.0} m)");
+        assert!(
+            (distance - 3_000.0).abs() <= ARRIVED_SLACK + 50.0,
+            "{distance}"
+        );
+    }
+
+    #[test]
+    fn loin_de_toute_surface_la_croisiere_ne_fait_pas_depasser() {
+        // Croisière permise jusqu'à 30 000 km/s : une cible à 60 km ne doit pas être dépassée.
+        let (time, distance, closest) = autopilot_flight(
+            SpacePos::ZERO,
+            Quat::IDENTITY,
+            SpacePos::new(0.0, 0.0, -60_000.0),
+            8_000.0,
+            SpacePos::new(0.0, 0.0, 1.0e10),
+            6.4e5,
+        );
+        assert!(time.is_some(), "jamais arrivé ({distance:.0} m)");
+        assert!(closest > 7_000.0, "dépassé : {closest}");
+    }
+
+    #[test]
+    fn deja_arrete_devant_la_cible() {
+        let a = approach(
+            SpacePos::new(0.0, 0.0, 5_000.0),
+            Quat::IDENTITY,
+            DVec3::ZERO,
+            SpacePos::ZERO,
+            5_100.0,
+            &handling(),
+            2_000.0,
+            1.0 / 60.0,
+        );
+        assert!(a.arrived);
+        assert_eq!(a.intent.thrust, Vec3::ZERO);
     }
 
     #[test]

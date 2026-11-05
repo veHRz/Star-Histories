@@ -1,0 +1,18 @@
+// Navigation in the Global view (M10, batch L4): delivery points of the systems, contract
+// destination marker, autopilot towards a target of the system.
+{
+    "structure.generic_portal_hub": "{place} Portal hub",
+    "structure.vorrh_portal_hub": "Vorrhal Portal hub",
+    "structure.vorrh_shipyards": "Vorrh-II orbital shipyards",
+    "structure.ferrogane_shipyards": "Ferrogane orbital shipyards",
+    "structure.karvek_shipyards": "Karvek orbital shipyards",
+    "structure.moisson_depot": "Moisson freight depot",
+    "structure.ostrag_majeur_depot": "Ostrag-Majeur freight depot",
+    "nav.delivery.label": "Delivery — {name} · {distance}",
+    "nav.distance.meters": "{distance} m",
+    "nav.distance.kilometers": "{distance} km",
+    "nav.autopilot.engaged": "Autopilot: {target}",
+    "nav.autopilot.arrived": "Autopilot: arrived — {target}",
+    "nav.autopilot.off": "Autopilot disengaged.",
+    "nav.autopilot.unknown": "Autopilot: target not found in this system.",
+}

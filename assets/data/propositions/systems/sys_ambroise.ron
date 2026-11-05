@@ -1,0 +1,33 @@
+// Mise en scène du système Ambroise en vue Globale (proposition P32, docs/propositions.md).
+// Canon (§3.3) : le grenier de l'UGL, sans hub de Portails ; Moisson, planète-capitale agricole,
+// est le départ des grands convois alimentaires ; la station Rempart est en construction. Le
+// dépôt de fret en orbite de Moisson (où les remorqueurs d'Hexa-Corp prennent la cargaison), son
+// emplacement et le trafic sont proposés. En attendant un modèle propre, le dépôt a celui de la
+// station orbitale à hangars (P31).
+(
+    system: "sys_ambroise",
+    status: Proposition("P32"),
+    structures: [
+        (
+            id: "moisson_depot",
+            kind: Depot,
+            name_key: "structure.moisson_depot",
+            around: "moisson",
+            altitude_radii: 1.5,
+            angle_deg: 60.0,
+            model: "models/space/spaceport_station/spaceport_station.gltf",
+        ),
+    ],
+    // Les convois qui partent de Moisson : navettes entre le dépôt et Rempart.
+    traffic: (
+        ships: 12,
+        model: "models/space/freighter.gltf",
+        speed: 900.0,
+    ),
+    arrival: (
+        near: "moisson_depot",
+        distance: 25000.0,
+        azimuth_deg: -50.0,
+        elevation_deg: 12.0,
+    ),
+)

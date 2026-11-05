@@ -39,7 +39,8 @@
     ),
     // Le spatioport d'Hexis (P7) : sa balise d'approche en orbite basse, sous L'Enclume. Il
     // utilise le spatioport par défaut (secteur `spaceport`, hangar et salles, M9) : pas de
-    // `sector` ; son nom à quai est le sien.
+    // `sector` ; son nom à quai est le sien. Sans `model`, il a vu de l'espace celui de la station
+    // orbitale à hangars par défaut (P31) ; la balise d'approche est son centre.
     docks: [
         (
             id: "hexis_spaceport_approach",

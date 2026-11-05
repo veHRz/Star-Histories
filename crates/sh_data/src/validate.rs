@@ -680,11 +680,46 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
                 &ctx,
                 format!("port {} : portée ou altitude invalide", dock.id),
             );
+            // Un modèle propre : un glTF (son niveau de détail en découle, `scene::lod_model`).
+            if let Some(model) = &dock.model {
+                c.check(
+                    crate::scene::lod_model(model).is_some(),
+                    &ctx,
+                    format!("port {} : modèle sans extension .gltf : {model}", dock.id),
+                );
+            }
         }
     }
     for id in duplicates(data.scenes.iter().map(|s| s.system.as_str())) {
         c.fail("scènes", format!("système mis en scène deux fois : {id}"));
     }
+    // Points de livraison (P32) : tout système à économie en a un (une structure de sa scène ou
+    // son hub de Portails générique), sinon un contrat vers lui ne pourrait jamais finir.
+    for place in data.sim.economies.keys() {
+        if data.galaxy.system(place).is_some_and(|s| !s.secret) {
+            c.check(
+                crate::scene::has_delivery_point(data, place),
+                "sim.ron",
+                format!(
+                    "économie sans point de livraison (ni scène, ni hub de Portails) : {place}"
+                ),
+            );
+        }
+    }
+    let generic_hubs = data
+        .galaxy
+        .systems
+        .iter()
+        .filter(|s| !s.secret)
+        .any(|s| crate::scene::generic_hub(&data.galaxy, data.scene(&s.id), &s.id).is_some());
+    c.check(
+        !generic_hubs || data.lang.has(crate::scene::GENERIC_HUB_NAME_KEY),
+        "scènes",
+        format!(
+            "clé de nom des hubs génériques absente de la langue : {}",
+            crate::scene::GENERIC_HUB_NAME_KEY
+        ),
+    );
 
     // --- Maniement des vaisseaux ------------------------------------------------------------
     for (ship, h) in &data.flight.ships {

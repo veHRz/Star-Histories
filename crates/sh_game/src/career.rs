@@ -94,8 +94,9 @@ pub struct MissionLog {
     pub lines: Vec<String>,
 }
 
-/// Un point de livraison en orbite (hub de Portails, chantiers) : les remorqueurs
-/// d'Hexa-Corp y prennent la cargaison des contrats.
+/// Un point de livraison en orbite (hub de Portails, chantiers, dépôt de fret ; M10 : tout
+/// système à économie en a un, P32) : les remorqueurs d'Hexa-Corp y prennent la cargaison des
+/// contrats. Le repère de destination (`ui::flight_hud`) montre le plus proche.
 #[derive(Component, Clone, Copy, Debug)]
 pub struct CargoPoint(pub StructureKind);
 
@@ -288,6 +289,16 @@ pub fn rank_name(texts: &Texts, data: &Data, faction: &Id<Faction>, rank: usize)
         .map_or_else(String::new, |r| texts.get(&r.key))
 }
 
+/// Un contrat actif peut-il finir dans ce système (même règle que [`deliver_here`]) ? Le
+/// repère de destination ne se montre que dans ce cas.
+pub fn deliverable_here(captain: &Captain, system: &Id<Place>) -> bool {
+    captain.contracts.iter().any(|c| {
+        c.state == ContractState::Active
+            && &c.to == system
+            && (c.kind != ContractKind::Towing || c.towed)
+    })
+}
+
 /// Livre ce qui peut l'être dans ce système (vue Globale, touche d'amarrage) : contrats arrivés
 /// à destination, épave remorquée jusqu'aux chantiers. Renvoie `true` si quelque chose a été
 /// livré.
@@ -301,6 +312,7 @@ pub fn deliver_here(world: &mut World, system: &Id<Place>) -> bool {
         .contracts
         .iter()
         .filter(|c| c.state == ContractState::Active && &c.to == system)
+        // Même règle que `deliverable_here` : une épave se livre une fois accrochée.
         .filter(|c| c.kind != ContractKind::Towing || c.towed)
         .map(|c| (c.id.clone(), c.commodity.clone(), c.amount))
         .collect();
@@ -502,5 +514,49 @@ fn practice_flight(
     }
     if !out.is_empty() {
         outcomes.write(CareerOutcomes(out));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use sh_core::Year;
+    use sh_sim::{Contract, SimWorld, contract_offers};
+
+    use super::*;
+
+    #[test]
+    fn le_repere_ne_vise_que_ce_qui_se_livre_ici() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/data");
+        let data = sh_data::GameData::load(&dir).unwrap_or_else(|e| panic!("{e}"));
+        let today = StellarDate::start_of(Year(425));
+        let sim = SimWorld::from_data(&data, Some(1));
+        let place = |s: &str| Id::<Place>::new(s).unwrap_or_else(|e| panic!("{e}"));
+        let hexis = place("sys_hexis");
+        let mut captain = Captain::from_start(&data, today);
+        let offers = contract_offers(&data, &sim, &hexis, today);
+        let cargo: Contract = offers
+            .iter()
+            .find(|c| c.kind != ContractKind::Towing)
+            .cloned()
+            .unwrap_or_else(|| panic!("aucun transport : {offers:?}"));
+        let to = cargo.to.clone();
+        assert!(!deliverable_here(&captain, &to));
+        captain
+            .accept(&data, cargo)
+            .unwrap_or_else(|e| panic!("{e:?}"));
+        assert!(deliverable_here(&captain, &to));
+        assert!(!deliverable_here(&captain, &hexis));
+        // Un remorquage : seulement une fois l'épave accrochée.
+        if let Some(tow) = offers.iter().find(|c| c.kind == ContractKind::Towing) {
+            let id = tow.id.clone();
+            captain
+                .accept(&data, tow.clone())
+                .unwrap_or_else(|e| panic!("{e:?}"));
+            assert!(!deliverable_here(&captain, &hexis));
+            captain.attach_tow(&id).unwrap_or_else(|e| panic!("{e:?}"));
+            assert!(deliverable_here(&captain, &hexis));
+        }
     }
 }

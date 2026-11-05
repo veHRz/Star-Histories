@@ -718,7 +718,8 @@ impl Captain {
 }
 
 /// Les offres d'un bureau de contrats Hexa-Corp dans un système : transports (CT) vers les
-/// systèmes du monde vivant, ravitaillements (CR) vers ceux en pénurie, un remorquage (CRS)
+/// systèmes du monde vivant qui ont un point de livraison (`sh_data::scene::has_delivery_point`,
+/// P32), ravitaillements (CR) vers ceux en pénurie, un remorquage (CRS)
 /// sur place quand le système a des chantiers. Déterministe (même jour, mêmes offres).
 pub fn contract_offers(
     data: &GameData,
@@ -757,7 +758,9 @@ pub fn contract_offers(
     let mut routes = Vec::new();
     let capacity = data.career.cargo_capacity;
     for (i, (to, _)) in data.sim.economies.iter().enumerate() {
-        if to == here || data.galaxy.system(to).is_none_or(|s| s.secret) {
+        // Seulement vers un système où l'on peut livrer (une structure en orbite, P32) : sans
+        // elle, le contrat ne pourrait que manquer son délai.
+        if to == here || !sh_data::scene::has_delivery_point(data, to) {
             continue;
         }
         let Some(days) = fastest(to) else {
@@ -833,4 +836,48 @@ pub fn contract_offers(
     }
     offers.sort_by(|a, b| b.reward.cents.cmp(&a.reward.cents).then(a.id.cmp(&b.id)));
     offers
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use sh_core::Year;
+
+    use super::*;
+
+    fn data() -> GameData {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/data");
+        GameData::load(&dir).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    fn place(id: &str) -> Id<Place> {
+        Id::new(id).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    #[test]
+    fn les_offres_ne_visent_que_des_destinations_livrables() {
+        let mut data = data();
+        let sim = SimWorld::from_data(&data, Some(1));
+        let hexis = place("sys_hexis");
+        let start = StellarDate::start_of(Year(425));
+        let weeks = || (0..12).map(|w| start.add_days(7 * w));
+        for day in weeks() {
+            for offer in contract_offers(&data, &sim, &hexis, day) {
+                assert!(
+                    sh_data::scene::has_delivery_point(&data, &offer.to),
+                    "{offer:?}"
+                );
+            }
+        }
+        // Sans sa scène, Ferrok (aucun hub de Portails canon) n'a plus où livrer : aucun bureau
+        // ne propose plus d'y aller.
+        let ferrok = place("sys_ferrok");
+        data.scenes.retain(|s| s.system != ferrok);
+        assert!(!sh_data::scene::has_delivery_point(&data, &ferrok));
+        for day in weeks() {
+            let offers = contract_offers(&data, &sim, &hexis, day);
+            assert!(offers.iter().all(|o| o.to != ferrok), "{offers:?}");
+        }
+    }
 }
