@@ -604,7 +604,8 @@ def trim_band(trim) -> tuple[float, float]:
     return float(trim[0]), float(trim[1])
 
 
-def uv_trim(obj: bpy.types.Object, trim, meters_per_tile: float = 2.0, pad_px: float = 2.0, res: int = 1024) -> None:
+def uv_trim(obj: bpy.types.Object, trim, meters_per_tile: float = 2.0, pad_px: float = 2.0, res: int = 1024,
+            stencil_start: int | None = None) -> None:
     """Pose une bande de trim sheet : U le long de la plus grande dimension de l'objet (à
     l'échelle : `meters_per_tile` mètres par répétition), V = la bande (`trim` : nom de
     `library.TRIMS` ou (v0, v1)), rognée de `pad_px` texels pour que le filtrage ne déborde pas
@@ -613,6 +614,11 @@ def uv_trim(obj: bpy.types.Object, trim, meters_per_tile: float = 2.0, pad_px: f
     Faces le long de l'axe : chaque face montre toute la hauteur de la bande, haut de la bande
     vers le haut (Z) quand c'est possible, jamais en miroir. Cylindre (plus de 8 faces
     latérales) : la bande fait le tour (V = angle). Bouts : la bande, en projection plane.
+
+    M10 : la bande « stencils » (pochoirs) est calée sur un groupe entier de glyphes
+    (`stencil_group`, `_align_stencils`), choisi d'après le nom de l'objet ou par
+    `stencil_start` (première case, 0 à 7 : « 07 », flèche, « A2 », « ! », « 12 », chevrons,
+    « B4 », « 03 »).
     """
     import numpy as np
 
@@ -664,8 +670,71 @@ def uv_trim(obj: bpy.types.Object, trim, meters_per_tile: float = 2.0, pad_px: f
         lo, hi = across.min(), across.max()
         uvs[idx, 0] = (pts @ right) / meters_per_tile
         uvs[idx, 1] = v0 + (across - lo) / max(hi - lo, 1e-9) * (v1 - v0)
+    if trim == "stencils" and not round_:
+        _align_stencils(obj, uvs, side, loop_poly, stencil_start)
     layer = _uv_layer(obj.data)
     layer.data.foreach_set("uv", uvs.ravel())
+
+
+# --- Pochoirs (M10) -------------------------------------------------------------------------------
+# La bande `stencils` de la trim sheet (materials/trim.py) porte huit glyphes, un tous les 25 cm
+# de texture : « 07 », flèche, « A2 », « ! », « 12 », chevrons, « B4 », « 03 ». Une étiquette posée
+# au hasard le long de U en montrait des morceaux, ou « 03 » et « 07 » de part et d'autre de la
+# couture de la tuile (retour 6 de M10). `uv_trim(obj, "stencils")` cale désormais chaque face sur
+# un groupe entier de glyphes voisins, sans franchir la couture : `STENCIL_GROUPS`.
+
+STENCIL_SLOT_M = 0.25  # largeur d'un glyphe et de ses marges, en mètres de texture (tuile de 2 m)
+STENCIL_SLOTS = 8
+# Marge qu'on peut rogner ou ajouter de chaque côté d'un groupe sans entamer un glyphe (le plus
+# large, la flèche, laisse ≈ 5 cm de vide de chaque côté de sa case).
+STENCIL_MARGIN_M = 0.04
+# Premières cases des groupes « voulus », par nombre de glyphes : un code seul, un code et son
+# pictogramme (« 07 → », « A2 ! », « 12 » » : jamais deux codes accolés comme « 03 07 »), un code,
+# un pictogramme et un code…
+STENCIL_GROUPS = {
+    1: (0, 2, 4, 6, 7, 3),
+    2: (0, 2, 4),
+    3: (0, 2, 4),
+}
+
+
+def stencil_group(key: str, width_m: float, start: int | None = None) -> tuple[int, int]:
+    """(première case, nombre de cases) du groupe de glyphes d'une étiquette de `width_m` mètres
+    de texture : autant de glyphes que la largeur en contient (au plus les huit), groupe choisi
+    par `start` ou, sinon, de façon stable d'après `key` (le nom de l'objet)."""
+    import zlib
+
+    k = int(min(STENCIL_SLOTS, max(1, round(width_m / STENCIL_SLOT_M))))
+    starts = STENCIL_GROUPS.get(k, tuple(range(0, STENCIL_SLOTS - k + 1)))
+    if start is not None:
+        s = int(start) % STENCIL_SLOTS
+        return (min(s, STENCIL_SLOTS - k), k)
+    return (starts[zlib.crc32(key.encode("utf-8")) % len(starts)], k)
+
+
+def _align_stencils(obj, uvs, side, loop_poly, start) -> None:
+    """Recale U de chaque face latérale d'une étiquette `stencils` sur un groupe entier de
+    glyphes (`stencil_group`), à l'échelle d'origine à ± `STENCIL_MARGIN_M` près : jamais un
+    glyphe coupé, jamais la couture « 03 | 07 »."""
+    import numpy as np
+
+    faces = [np.nonzero(loop_poly == poly)[0] for poly in np.nonzero(side)[0]]
+    faces = [idx for idx in faces if idx.size]
+    if not faces:
+        return
+    tile_m = STENCIL_SLOT_M * STENCIL_SLOTS
+    width = max(float(np.ptp(uvs[idx, 0])) for idx in faces) * tile_m
+    s0, k = stencil_group(obj.name, width, start)
+    target = float(np.clip(width, k * STENCIL_SLOT_M - 2 * STENCIL_MARGIN_M, k * STENCIL_SLOT_M + 2 * STENCIL_MARGIN_M))
+    center = (s0 + k / 2) / STENCIL_SLOTS
+    half = target / tile_m / 2
+    for idx in faces:
+        u = uvs[idx, 0]
+        lo, span = float(u.min()), float(np.ptp(u))
+        if span < 1e-9:
+            uvs[idx, 0] = center
+            continue
+        uvs[idx, 0] = center - half + (u - lo) / span * 2 * half
 
 
 def export_gltf(rel_path: str, objects: list[bpy.types.Object]) -> Path:

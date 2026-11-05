@@ -2,8 +2,9 @@
 
 Un secteur est décrit par des dictionnaires simples :
 - `cells` : id → (x0, x1, y0, y1, hauteur sous plafond), intérieurs, en mètres (repère Blender) ;
-- `portals` : (cellule a, cellule b, genre, x, y, axe) ; b peut être un point d'attache externe
-  « @… » (amarrage) ; « axis » = mur traversé ("x" : mur perpendiculaire à X) ;
+- `portals` : (cellule a, cellule b, genre, x, y, axe[, modèle de porte]) ; b peut être un point
+  d'attache externe « @… » (amarrage) ; « axis » = mur traversé ("x" : mur perpendiculaire à X) ;
+  le 7e élément facultatif (M10) est le modèle de porte propre à ce portail (voir plus bas) ;
 - `windows` : id → [(côté, position, largeur, hauteur, allège)] ;
 - `spawns` : (id, cellule, x, y, z, cap en degrés autour de Z, 0 = +Y).
 
@@ -25,6 +26,13 @@ M9 (lot A, docs/m9-retours.md §3) :
 - décor par niveau : `export_sector` fusionne par (matériau, niveau) (`common.join_by_material`),
   ne garde que le niveau 0 dans la version simplifiée (LOD) et refuse un collider marqué
   `detail` ; le bake (`lightmap.bake_cells`) coupe l'ombre du décor optionnel.
+
+M10 (lot A, docs/m10.md §3.1) : modèle de porte **par portail**. `portal_record(…, door_model=…)`
+écrit `door_model: Some("<chemin>")` dans le portail (champ omis sinon : le jeu prend le
+`door_model` du secteur). Deux façons de le donner : un 7e élément au tuple du portail, ou
+`meta["door_models"] = {id du portail: chemin}` (l'id est « <a>__<b sans @> », ex.
+« sas__dock ») ; `door_panels` pose alors ce modèle dans les aperçus (`AIRLOCK_DOOR` : la porte
+blindée du sas, `kit.door_airlock`).
 """
 
 from __future__ import annotations
@@ -52,6 +60,9 @@ ROOM_USAGES = (
     "hangar", "arrivals_hall", "contracts_office", "tavern", "market", "bank", "shipyard_office",
 )
 
+# Porte blindée du sas (M10) : chemin à donner en `door_model` au portail du sas qui donne sur le vide.
+AIRLOCK_DOOR = "models/kit/ship_interior/door_airlock.gltf"
+
 # Aides aux volumes d'interaction (M9) : voir `common.half_extents` et `common.fit_interact`.
 half_extents = c.half_extents
 fit_interact = c.fit_interact
@@ -72,7 +83,7 @@ def openings_for(cell: str, cells: dict, portals: list, windows: dict) -> list:
     """Ouvertures de la coque d'une cellule, déduites des portails (et ses fenêtres)."""
     x0, x1, y0, y1, h = cells[cell]
     out = []
-    for a, b, kind, x, y, axis in portals:
+    for a, b, kind, x, y, axis, *_ in portals:
         if cell not in (a, b):
             continue
         if kind == "Opening":
@@ -92,7 +103,10 @@ def openings_for(cell: str, cells: dict, portals: list, windows: dict) -> list:
     return out
 
 
-def portal_record(cells: dict, a, b, kind, x, y, axis) -> dict:
+def portal_record(cells: dict, a, b, kind, x, y, axis, door_model: str | None = None) -> dict:
+    """Portail du descripteur (repère du jeu). `door_model` (M10, facultatif) : modèle de porte
+    propre à ce portail (chemin relatif à `assets/`, ex. `AIRLOCK_DOOR`), écrit
+    `door_model: Some(…)` ; None : celui du secteur (clé absente du dictionnaire)."""
     x0, x1, y0, y1, h = cells[a]
     if kind == "Opening":
         width = (x1 - x0) if axis == "y" else (y1 - y0)
@@ -119,7 +133,22 @@ def portal_record(cells: dict, a, b, kind, x, y, axis) -> dict:
         "normal": c.to_bevy(normal),
         "width": round(width, 3),
         "height": round(height, 3),
+        **({"door_model": door_model} if door_model else {}),
     }
+
+
+def portal_records(meta: dict, cells: dict, portals: list) -> list[dict]:
+    """Portails du descripteur, `door_model` compris : 7e élément du tuple ou
+    `meta["door_models"]` ({id du portail: chemin}, prioritaire). Un id inconnu est une erreur."""
+    by_id = dict(meta.get("door_models", {}))
+    records = [portal_record(cells, *p) for p in portals]
+    unknown = sorted(set(by_id) - {r["id"] for r in records})
+    if unknown:
+        raise ValueError(f"meta['door_models'] cite des portails inconnus : {unknown}")
+    for r in records:
+        if r["id"] in by_id:
+            r["door_model"] = by_id[r["id"]]
+    return records
 
 
 def fmt(v) -> str:
@@ -129,7 +158,8 @@ def fmt(v) -> str:
 def sector_ron(meta: dict, cells: dict, portals: list, spawns: list, lightmaps: dict) -> str:
     """Descripteur RON. `meta` : id, kind, name_key, status, door_model, models, comment ;
     `model_ext` facultatif (défaut `MODEL_EXT`, glTF séparé) ; `rooms` facultatif (M9) :
-    {cellule: usage} → `name_key: Some("room.<usage>")` dans la cellule."""
+    {cellule: usage} → `name_key: Some("room.<usage>")` dans la cellule ; `door_models`
+    facultatif (M10) : {id du portail: chemin} → `door_model: Some("…")` dans le portail."""
     ext = meta.get("model_ext", MODEL_EXT)
     rooms = meta.get("rooms", {})
     unknown = sorted(set(rooms) - set(cells))
@@ -169,8 +199,7 @@ def sector_ron(meta: dict, cells: dict, portals: list, spawns: list, lightmaps: 
         lines.append("        ),")
     lines.append("    ],")
     lines.append("    portals: [")
-    for p in portals:
-        r = portal_record(cells, *p)
+    for r in portal_records(meta, cells, portals):
         lines += [
             "        (",
             f'            id: "{r["id"]}",',
@@ -181,6 +210,10 @@ def sector_ron(meta: dict, cells: dict, portals: list, spawns: list, lightmaps: 
             f"            normal: {fmt(r['normal'])},",
             f"            width: {r['width']:.3f},",
             f"            height: {r['height']:.3f},",
+        ]
+        if r.get("door_model"):
+            lines.append(f'            door_model: Some("{r["door_model"]}"),')
+        lines += [
             "        ),",
         ]
     lines.append("    ],")
@@ -289,7 +322,7 @@ def export_sector(
         for cell, parts in built.items():
             # Faces jamais vues retirées (sauf autour des passages), puis dépliage assez dense.
             x0, x1, y0, y1, h = cells[cell]
-            doors = [(x, y) for a, b, _kind, x, y, _axis in portals if cell in (a, b)]
+            doors = [(x, y) for a, b, _kind, x, y, _axis, *_ in portals if cell in (a, b)]
             visual, culled[cell] = lm.cull_hidden_faces(parts["visual"], (x0, y0, 0.0), (x1, y1, h), keep_near=doors)
             alive = set(visual)
             parts["visual"] = visual
@@ -341,20 +374,23 @@ def export_sector(
 # --- Aperçus -------------------------------------------------------------------------------------
 
 
-def door_panels(portals: list, cells: dict, m: dict, coll, style: str = "station") -> list:
+def door_panels(portals: list, cells: dict, m: dict, coll, style: str = "station", door_models: dict | None = None) -> list:
     """Panneaux de porte fermés aux portails de type porte, posés comme le jeu
     (`sector/doors.rs` : à la base du portail, l'avant du modèle vers la normale). Aperçus
-    seulement : jamais exportés avec les cellules."""
+    seulement : jamais exportés avec les cellules. M10 : un portail dont le modèle de porte
+    (7e élément, ou `door_models` = `meta["door_models"]`) est la porte blindée reçoit
+    `kit.door_airlock`."""
     out = []
-    for i, p in enumerate(portals):
+    for i, r in enumerate(portal_records({"door_models": door_models or {}}, cells, portals)):
+        p = portals[i]
         if p[2] != "Door":
             continue
-        r = portal_record(cells, *p)
         nx, nz = r["normal"][0], r["normal"][2]
         # Bevy (x, −y Blender) → Blender : normale (nx, −nz).
         bx, by = nx, -nz
         facing = math.atan2(-bx, by)
-        vis, col, _ = kit.door_panel(f"preview_door{i}", m, coll, style=style)
+        own = "airlock" if "door_airlock" in r.get("door_model", "") else style
+        vis, col, _ = kit.door_panel(f"preview_door{i}", m, coll, style=own)
         for o in col:
             bpy.data.objects.remove(o, do_unlink=True)
         x, y = p[3], p[4]

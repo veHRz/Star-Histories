@@ -20,7 +20,14 @@
 				6,
 				7,
 				8,
-				9
+				9,
+				10,
+				11,
+				12,
+				13,
+				14,
+				15,
+				16
 			]
 		}
 	],
@@ -44,6 +51,23 @@
 		},
 		{
 			"extras":{
+				"interact":"locker_label",
+				"container":"kit_locker_bank_1",
+				"half_extents":[
+					0.14,
+					0.055,
+					0.04
+				]
+			},
+			"name":"INTERACT_locker_bank_1_label",
+			"translation":[
+				-0.6000000238418579,
+				1.4248000383377075,
+				-0.31700000166893005
+			]
+		},
+		{
+			"extras":{
 				"interact":"locker",
 				"container":"kit_locker_bank_2",
 				"half_extents":[
@@ -61,6 +85,23 @@
 		},
 		{
 			"extras":{
+				"interact":"locker_label",
+				"container":"kit_locker_bank_2",
+				"half_extents":[
+					0.14,
+					0.055,
+					0.04
+				]
+			},
+			"name":"INTERACT_locker_bank_2_label",
+			"translation":[
+				0,
+				1.4248000383377075,
+				-0.31700000166893005
+			]
+		},
+		{
+			"extras":{
 				"interact":"locker",
 				"container":"kit_locker_bank_3",
 				"half_extents":[
@@ -74,6 +115,23 @@
 				0.6000000238418579,
 				1,
 				-0.019999999552965164
+			]
+		},
+		{
+			"extras":{
+				"interact":"locker_label",
+				"container":"kit_locker_bank_3",
+				"half_extents":[
+					0.14,
+					0.055,
+					0.04
+				]
+			},
+			"name":"INTERACT_locker_bank_3_label",
+			"translation":[
+				0.6000000238418579,
+				1.4248000383377075,
+				-0.31700000166893005
 			]
 		},
 		{
@@ -155,6 +213,57 @@
 				0,
 				1.9700000286102295,
 				-0.28700000047683716
+			]
+		},
+		{
+			"mesh":7,
+			"name":"locker_bank_sh_utility",
+			"rotation":[
+				0,
+				-0.7071068286895752,
+				0.7071068286895752,
+				3.090862321641907e-08
+			],
+			"translation":[
+				-0.41499999165534973,
+				1.274999976158142,
+				-0.2840000092983246
+			]
+		},
+		{
+			"extras":{
+				"usage":"label",
+				"container":"kit_locker_bank_1"
+			},
+			"name":"SOCKET_locker_bank_1_label",
+			"translation":[
+				-0.6000000238418579,
+				1.4248000383377075,
+				-0.2879999876022339
+			]
+		},
+		{
+			"extras":{
+				"usage":"label",
+				"container":"kit_locker_bank_2"
+			},
+			"name":"SOCKET_locker_bank_2_label",
+			"translation":[
+				0,
+				1.4248000383377075,
+				-0.2879999876022339
+			]
+		},
+		{
+			"extras":{
+				"usage":"label",
+				"container":"kit_locker_bank_3"
+			},
+			"name":"SOCKET_locker_bank_3_label",
+			"translation":[
+				0.6000000238418579,
+				1.4248000383377075,
+				-0.2879999876022339
 			]
 		}
 	],
@@ -310,6 +419,40 @@
 					"index":18
 				}
 			}
+		},
+		{
+			"emissiveFactor":[
+				1,
+				1,
+				1
+			],
+			"emissiveTexture":{
+				"index":20
+			},
+			"extensions":{
+				"KHR_materials_emissive_strength":{
+					"emissiveStrength":4
+				}
+			},
+			"extras":{
+				"sh_library":"trim_utility",
+				"sh_tile_m":2.0
+			},
+			"name":"sh_utility",
+			"normalTexture":{
+				"index":21
+			},
+			"occlusionTexture":{
+				"index":22
+			},
+			"pbrMetallicRoughness":{
+				"baseColorTexture":{
+					"index":23
+				},
+				"metallicRoughnessTexture":{
+					"index":22
+				}
+			}
 		}
 	],
 	"meshes":[
@@ -414,6 +557,21 @@
 					"material":5
 				}
 			]
+		},
+		{
+			"name":"locker_bank_sh_utility",
+			"primitives":[
+				{
+					"attributes":{
+						"POSITION":32,
+						"NORMAL":33,
+						"TEXCOORD_0":34,
+						"TANGENT":35
+					},
+					"indices":36,
+					"material":6
+				}
+			]
 		}
 	],
 	"textures":[
@@ -496,6 +654,22 @@
 		{
 			"sampler":0,
 			"source":19
+		},
+		{
+			"sampler":0,
+			"source":20
+		},
+		{
+			"sampler":0,
+			"source":21
+		},
+		{
+			"sampler":0,
+			"source":22
+		},
+		{
+			"sampler":0,
+			"source":23
 		}
 	],
 	"images":[
@@ -598,6 +772,26 @@
 			"mimeType":"image/png",
 			"name":"trim_ship_color.png",
 			"uri":"../../../textures/materials/trim_ship_color.png"
+		},
+		{
+			"mimeType":"image/png",
+			"name":"trim_utility_emissive.png",
+			"uri":"../../../textures/materials/trim_utility_emissive.png"
+		},
+		{
+			"mimeType":"image/png",
+			"name":"trim_utility_normal.png",
+			"uri":"../../../textures/materials/trim_utility_normal.png"
+		},
+		{
+			"mimeType":"image/png",
+			"name":"trim_utility_orm.png",
+			"uri":"../../../textures/materials/trim_utility_orm.png"
+		},
+		{
+			"mimeType":"image/png",
+			"name":"trim_utility_color.png",
+			"uri":"../../../textures/materials/trim_utility_color.png"
 		}
 	],
 	"accessors":[
@@ -826,9 +1020,9 @@
 		{
 			"bufferView":27,
 			"componentType":5126,
-			"count":240,
+			"count":168,
 			"max":[
-				0.7954000234603882,
+				0.7908000349998474,
 				0.0020000000949949026,
 				1.6938000917434692
 			],
@@ -842,25 +1036,65 @@
 		{
 			"bufferView":28,
 			"componentType":5126,
-			"count":240,
+			"count":168,
 			"type":"VEC3"
 		},
 		{
 			"bufferView":29,
 			"componentType":5126,
-			"count":240,
+			"count":168,
 			"type":"VEC2"
 		},
 		{
 			"bufferView":30,
 			"componentType":5126,
-			"count":240,
+			"count":168,
 			"type":"VEC4"
 		},
 		{
 			"bufferView":31,
 			"componentType":5123,
+			"count":252,
+			"type":"SCALAR"
+		},
+		{
+			"bufferView":32,
+			"componentType":5126,
 			"count":360,
+			"max":[
+				0.315000057220459,
+				0.003000053111463785,
+				0.009000021032989025
+			],
+			"min":[
+				-1.2089999914169312,
+				-0.0020000895019620657,
+				-0.19480004906654358
+			],
+			"type":"VEC3"
+		},
+		{
+			"bufferView":33,
+			"componentType":5126,
+			"count":360,
+			"type":"VEC3"
+		},
+		{
+			"bufferView":34,
+			"componentType":5126,
+			"count":360,
+			"type":"VEC2"
+		},
+		{
+			"bufferView":35,
+			"componentType":5126,
+			"count":360,
+			"type":"VEC4"
+		},
+		{
+			"bufferView":36,
+			"componentType":5123,
+			"count":504,
 			"type":"SCALAR"
 		}
 	],
@@ -1029,32 +1263,62 @@
 		},
 		{
 			"buffer":0,
-			"byteLength":2880,
+			"byteLength":2016,
 			"byteOffset":53040,
 			"target":34962
 		},
 		{
 			"buffer":0,
+			"byteLength":2016,
+			"byteOffset":55056,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":1344,
+			"byteOffset":57072,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":2688,
+			"byteOffset":58416,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":504,
+			"byteOffset":61104,
+			"target":34963
+		},
+		{
+			"buffer":0,
+			"byteLength":4320,
+			"byteOffset":61608,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":4320,
+			"byteOffset":65928,
+			"target":34962
+		},
+		{
+			"buffer":0,
 			"byteLength":2880,
-			"byteOffset":55920,
+			"byteOffset":70248,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":1920,
-			"byteOffset":58800,
+			"byteLength":5760,
+			"byteOffset":73128,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":3840,
-			"byteOffset":60720,
-			"target":34962
-		},
-		{
-			"buffer":0,
-			"byteLength":720,
-			"byteOffset":64560,
+			"byteLength":1008,
+			"byteOffset":78888,
 			"target":34963
 		}
 	],
@@ -1066,7 +1330,7 @@
 	],
 	"buffers":[
 		{
-			"byteLength":65280,
+			"byteLength":79896,
 			"uri":"locker_bank.bin"
 		}
 	]

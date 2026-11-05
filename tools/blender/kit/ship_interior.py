@@ -34,6 +34,18 @@ M9 (lot A, docs/m9-retours.md §3) :
   (comptoir de PNJ, `SOCKET_<nom>_npc`), `wall_desk`, `shelf`, `cabin_porthole` ; style de coque
   `hangar` et `floor_holes` ; pièces de hangar dans `kit/hangar.py` (aussi `kit.hangar_shell`…).
 
+M10 (lot A, docs/m10.md §1.2 et §3) :
+- porte blindée du sas `door_airlock` (et `door_panel(style="airlock")`), mêmes cotes et même
+  animation que `door_sliding` ;
+- frigo `fridge(container=)` ; tableau électrique `cabinet` refait (compteur sous verre,
+  disjoncteurs, pictogramme de danger électrique, gaines ; signature et collider inchangés) ;
+- casiers d'un seul style : `locker` décoratif (interactif, sans contenu : « verrouillé ») ou
+  fonctionnel (plaque de nom), `locker_bank` à plaques de nom (`INTERACT_<n>_label`,
+  `SOCKET_<n>_label`) ; plus de pochoir sur les casiers ;
+- lit : couverture drapée d'un seul tenant (`_blanket`) ;
+- faces dessinées des appareils dans l'atlas `trim_utility` (matériau `utility`, `uv_cell`) ;
+- étiquettes au pochoir calées sur un groupe entier de glyphes (`common.uv_trim`, « stencils »).
+
 Grille modulaire : 2 m (P5). Repères : X = tribord, Y = avant, Z = haut (Blender).
 """
 
@@ -125,6 +137,10 @@ def palette() -> dict:
         "grating_plain": c.textured_material("sh_grating_plain", "grating"),
         "fabric_light": c.textured_material("sh_fabric_light", "fabric", tint=(0.66, 0.66, 0.63)),
         "glass_dark": c.material("sh_glass_dark", (0.02, 0.026, 0.032), roughness=0.08),
+        # M10 : faces dessinées des appareils (compteur, disjoncteurs, pictogramme, plaque de
+        # nom, afficheur et porte du frigo), atlas `trim_utility` (materials/utility_atlas.py) ;
+        # cases posées avec `uv_cell`. Émission ≈ 4 pour les voyants, ≈ 1,5 pour l'afficheur.
+        "utility": c.textured_material("sh_utility", "trim_utility", emissive=(1.0, 1.0, 1.0), emissive_strength=4.0),
     }
     # Clés historiques (M1), désormais texturées.
     m.update({
@@ -160,6 +176,42 @@ def _uv(obj, uv="box", tile=None):
     else:
         c.uv_trim(obj, uv, meters_per_tile=tile or 2.0)
     return obj
+
+
+def _utility_atlas():
+    """Module `utility_atlas` (cases de l'atlas `trim_utility`), importé à la demande."""
+    import importlib
+
+    path = str(Path(__file__).resolve().parents[1] / "materials")
+    if path not in sys.path:
+        sys.path.insert(0, path)
+    return importlib.import_module("utility_atlas")
+
+
+def uv_cell(obj, cell: str, pad_px: float = 3.0):
+    """Pose une case de l'atlas `trim_utility` (matériau `utility` de la palette) sur un pavé
+    de `_ori` : U le long de son axe local X (la « droite » de la face), V le long de son axe
+    local Y (le « haut ») ; la face +Z locale montre la case entière, à l'endroit. Les tranches
+    reprennent le bord de la case. `cell` : nom de `utility_atlas.CELLS` ou `SUBCELLS`."""
+    u0, v0, u1, v1 = _utility_atlas().cell_rect(cell, pad_px)
+    mesh = obj.data
+    xs = [v.co.x for v in mesh.vertices]
+    ys = [v.co.y for v in mesh.vertices]
+    x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+    if len(mesh.uv_layers) == 0:
+        mesh.uv_layers.new(name=c.UV_TEXTURE)
+    layer = mesh.uv_layers[0]
+    for loop in mesh.loops:
+        co = mesh.vertices[loop.vertex_index].co
+        tu = (co.x - x0) / max(x1 - x0, 1e-9)
+        tv = (co.y - y0) / max(y1 - y0, 1e-9)
+        layer.data[loop.index].uv = (u0 + tu * (u1 - u0), v0 + tv * (v1 - v0))
+    return obj
+
+
+def _cell_quad(name, size, center, right, up, m, coll, cell, bevel=0.0):
+    """Plaque (`_ori`) habillée d'une case de l'atlas `trim_utility`."""
+    return uv_cell(_ori(name, size, center, right, up, m["utility"], coll, None, bevel=bevel), cell)
 
 
 def apply_uvs(objects, offset=(0.0, 0.0)) -> None:
@@ -1045,7 +1097,8 @@ def bunk(name: str, center, facing: float, m: dict, coll):
 def bed(name: str, center, facing: float, m: dict, coll, size=(2.1, 1.0), *, lamp: bool = True, wall_pad: bool = True,
         pad_gaps=()):
     """Couchette de capitaine (M9) : socle de rangement sombre à deux tiroirs (face +Y), cadre de
-    métal brut, matelas et oreiller matelassés, couverture pliée, tête de lit (−X) à coussin et
+    métal brut, matelas et oreiller matelassés, couverture drapée d'un seul tenant (M10, `_blanket` :
+    plus de rabat en pavé), tête de lit (−X) à coussin et
     tablette, pied de lit à barre ; `wall_pad` : dosseret matelassé côté −Y (le lit s'adosse au
     mur par −Y), interrompu sur 0,26 m à chaque position x locale de `pad_gaps` (nervure du mur
     de `room_shell`, tous les 2 m) ; `lamp` : liseuse chaude et son repère `LIGHT_<name>_lamp`
@@ -1060,8 +1113,9 @@ def bed(name: str, center, facing: float, m: dict, coll, size=(2.1, 1.0), *, lam
         _box(f"{name}_kick", (L - 0.08, Wd - 0.1, 0.08), (0, -0.03, 0.04), m["rubber"], coll),
         _box(f"{name}_mattress", (L - 0.12, Wd - 0.1 - ys, 0.17), (0.0, ys / 2, mz + 0.085), m["fabric_light"], coll, bevel=0.04),
         _box(f"{name}_pillow", (0.38, Wd - 0.34, 0.11), (-L / 2 + 0.3, ys / 2, mz + 0.22), m["fabric_light"], coll, bevel=0.045),
-        _box(f"{name}_blanket", (0.72, Wd - 0.05 - ys, 0.06), (L / 2 - 0.46, ys / 2, mz + 0.2), m["fabric_dark"], coll, bevel=0.025),
-        _box(f"{name}_blanket_fold", (0.26, Wd - 0.07 - ys, 0.05), (L / 2 - 0.24, ys / 2, mz + 0.255), m["fabric_dark"], coll, bevel=0.022),
+        # Couverture : du bas de l'oreiller au pied, retombant sur les flancs et bordée au pied.
+        _blanket(f"{name}_blanket", -L / 2 + 0.56, L / 2 - 0.06, ys / 2, (Wd - 0.1 - ys) / 2 + 0.004, mz + 0.17 + 0.008,
+                 m["fabric_dark"], coll),
     ]
     drawer_z = 0.08 + (base_h - 0.08) / 2
     for i, x in enumerate((-L / 4 + 0.04, L / 4 - 0.04)):
@@ -1104,6 +1158,96 @@ def bed(name: str, center, facing: float, m: dict, coll, size=(2.1, 1.0), *, lam
         marks.append(c.empty(f"LIGHT_{name}_lamp", (lx + 0.15, ly, hb - 0.3), coll, {"lumens": 220.0, "range": 2.5, "color": WARM, "shadow_candidate": 0}))
     _place(vis + col + marks, center, facing)
     return vis, col, marks
+
+
+def _blanket(name: str, x0: float, x1: float, yc: float, hw: float, ztop: float, mat, coll, *,
+             side_drop: float = 0.14, foot_drop: float = 0.13, tuck: float = 0.022, thick: float = 0.012):
+    """Couverture drapée d'un seul tenant (M10, retour 5) : dessus de x0 (tête, bord roulé et
+    rentré) à x1 (pied), demi-largeur `hw` autour de y = `yc`, à la hauteur `ztop` ; elle tombe
+    sur les deux flancs (`side_drop`) et au pied (`foot_drop`) en s'arrondissant sur l'arête du
+    matelas, coins pliés nets. Une grille paramétrique (u le long du lit, v en travers) est
+    « drapée » : un point hors du dessus retombe d'autant qu'il dépasse ; les UV sont ces
+    paramètres eux-mêmes (longueurs vraies), donc la texture coule sans couture du dessus aux
+    retombées, bourrelets du matelassé en travers du lit. Ombrage lisse."""
+    rr_side, rr_foot, rr_head = 0.028, 0.016, 0.011
+    head = [x0 - tuck, x0 - tuck * 0.6, x0 - tuck * 0.25]
+    inner_u = [x0 + (x1 - x0) * i / 6 for i in range(7)]
+    foot = [x1 + e for e in (0.006, 0.014, 0.024, 0.05, 0.09, foot_drop)]
+    us = head + inner_u + foot
+    side = [0.007, 0.018, 0.032, 0.06, 0.1, side_drop]
+    inner_v = [-hw + 2 * hw * i / 4 for i in range(5)]
+    vs = [-hw - e for e in reversed(side)] + inner_v + [hw + e for e in side]
+
+    def axis(t, lo, hi):
+        if t < lo - 1e-9:
+            return lo, lo - t, -1.0
+        if t > hi + 1e-9:
+            return hi, t - hi, 1.0
+        return t, 0.0, 0.0
+
+    def drape(u, v):
+        px, ex, sx = axis(u, x0, x1)
+        py, ey, sy = axis(v, -hw, hw)
+        # Dessus légèrement bombé (on voit le volume du matelas sous la couverture).
+        crown = 0.006 * (1.0 - (py / hw) ** 2) * min(1.0, (px - x0) / 0.25 + 0.3)
+        e = max(ex, ey)
+        if e <= 0.0:
+            return Vector((px, yc + py, ztop + crown))
+        rr = rr_head if sx < 0 else (rr_foot if ex >= ey and sx > 0 else rr_side)
+        n = math.hypot(ex, ey)
+        dx, dy = sx * ex / n, sy * ey / n
+        if e <= rr * math.pi / 2:
+            th = e / rr
+            off, dz = rr * math.sin(th), rr * (1 - math.cos(th))
+        else:
+            off, dz = rr, rr + (e - rr * math.pi / 2)
+        return Vector((px + dx * off, yc + py + dy * off, ztop + crown * 0.5 - dz))
+
+    mesh = bpy.data.meshes.new(name)
+    bm = bmesh.new()
+    grid = [[bm.verts.new(drape(u, v)) for v in vs] for u in us]
+    uv_layer = bm.loops.layers.uv.new(c.UV_TEXTURE)
+    for i in range(len(us) - 1):
+        for j in range(len(vs) - 1):
+            f = bm.faces.new((grid[i][j], grid[i + 1][j], grid[i + 1][j + 1], grid[i][j + 1]))
+            f.smooth = True
+            for loop, (a, b) in zip(f.loops, ((i, j), (i + 1, j), (i + 1, j + 1), (i, j + 1))):
+                # Longueurs vraies (une retombée mesure ce qu'elle dépasse), à 0,6 de la densité
+                # du matelassé (bourrelets de ≈ 20 cm : une couette, pas un matelas), bourrelets
+                # en travers du lit.
+                loop[uv_layer].uv = ((us[a] - x0 + tuck) * 0.6, (vs[b] + hw + side_drop) * 0.6)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    # Épaisseur : la face du dessus doit regarder vers le haut et vers l'extérieur.
+    if bm.faces and sum(f.normal.z for f in bm.faces) < 0:
+        bmesh.ops.reverse_faces(bm, faces=bm.faces)
+    # Ourlet : bande d'épaisseur sous les bords libres (flancs, pied, bord roulé de la tête),
+    # tournée dans le prolongement de l'étoffe (de l'avant-dernière rangée vers le bord).
+    bm.normal_update()
+    nu, nv = len(us), len(vs)
+    borders = [
+        ([grid[i][0] for i in range(nu)], [grid[i][1] for i in range(nu)]),
+        ([grid[i][-1] for i in range(nu)], [grid[i][-2] for i in range(nu)]),
+        ([grid[-1][j] for j in range(nv)], [grid[-2][j] for j in range(nv)]),
+        ([grid[0][j] for j in range(nv)], [grid[1][j] for j in range(nv)]),
+    ]
+    for edge, prev in borders:
+        inner = [bm.verts.new(vtx.co - (vtx.normal if vtx.normal.length > 0 else Vector((0, 0, 1))) * thick) for vtx in edge]
+        for k in range(len(edge) - 1):
+            f = bm.faces.new((edge[k], edge[k + 1], inner[k + 1], inner[k]))
+            f.normal_update()
+            out = (edge[k].co + edge[k + 1].co) / 2 - (prev[k].co + prev[k + 1].co) / 2
+            if f.normal.dot(out) < 0:
+                f.normal_flip()
+            f.smooth = True
+            for loop in f.loops:
+                loop[uv_layer].uv = (0.5, 0.5)
+    bm.normal_update()
+    bm.to_mesh(mesh)
+    bm.free()
+    mesh.materials.append(mat)
+    obj = bpy.data.objects.new(name, mesh)
+    coll.objects.link(obj)
+    return obj
 
 
 def counter(name: str, center, facing: float, m: dict, coll, length: float = 2.4, *, role: str = "contracts",
@@ -1327,40 +1471,121 @@ def crate(name: str, center, facing: float, m: dict, coll, size=(0.9, 0.9, 0.9),
     return _finish(vis, col, [], detail)
 
 
-def locker(name: str, center, facing: float, m: dict, coll, both_sides: bool = True, *, container: str | None = None):
-    """Casier : caisson sombre, porte peinte à grilles, poignée, pochoir. `both_sides` : une porte
-    sur chaque face ±Y (les scripts de M1 l'adossent indifféremment par l'une ou l'autre).
-    `container` (M9) : identifiant unique du contenu (ex. « corvette_chambre_casier_1 ») ; le
-    casier devient interactif (`INTERACT_<name>`, `interact: "locker"`, `container`, volume
-    qui couvre tout le casier). None : décor (comportement de M8)."""
-    vis = [_box(f"{name}", (0.6, 0.51, 2.0), (0, 0, 1.0), m["dark"], coll, bevel=0.015)]
-    for sy in ((1, -1) if both_sides else (1,)):
-        right = (-sy, 0, 0)
-        y = sy * 0.255
-        vis.append(_ori(f"{name}_door{sy}", (0.52, 1.86, 0.022), (0, y + sy * 0.011, 1.0), right, (0, 0, 1), m["panel"], coll, ("box", (0.3 if sy > 0 else 0.7, 0.2))))
-        for i, z in enumerate((1.7, 0.32)):
-            vis.append(_ori(f"{name}_vent{sy}{i}", (0.42, 0.16, 0.006), (0, y + sy * 0.025, z), right, (0, 0, 1), m["trim_sheet"], coll, "vent"))
-        vis.append(_ori(f"{name}_label{sy}", (0.36, 0.1, 0.004), (0, y + sy * 0.024, 1.45), right, (0, 0, 1), m["trim_sheet"], coll, "stencils"))
-        vis.append(_box(f"{name}_handle{sy}", (0.03, 0.03, 0.2), (sy * -0.18, y + sy * 0.04, 1.05), m["bare"], coll))
-        vis.append(_ori(f"{name}_lock{sy}", (0.06, 0.08, 0.006), (sy * -0.18, y + sy * 0.024, 1.22), right, (0, 0, 1), m["buttons"], coll))
-    col = [c.collider_box(f"{name}", (0.6, 0.55, 2.0), (0, 0, 1.0), coll)]
+# Casiers (M10, retour 6) : un seul style, celui de la rangée fonctionnelle (`locker_bank`). Plus
+# de pochoir sur les portes ; un casier fonctionnel porte une plaque de nom vierge (le jeu y
+# projette le nom choisi par le joueur), un casier décoratif est interactif mais sans contenu
+# (« Casier verrouillé »). Convention docs/m10.md §3.3.
+
+# Plaque de nom : taille de la case `nameplate` de l'atlas (proportions respectées).
+NAMEPLATE = (0.26, 0.09)
+
+
+def _locker_face(prefix: str, x: float, yf: float, sy: int, width: float, height: float, door_mat, m: dict, coll,
+                 hand: int = 1, uv_off=(0.0, 0.0), locked: bool = False):
+    """Façade d'un casier sur la face `sy` (+1 : +Y, −1 : −Y) : montant, porte peinte biseautée
+    (`door_mat`), deux grilles, poignée et serrure côté `hand` (+1 : +X local de la rangée), deux
+    charnières de l'autre côté. Voyant de serrure : rouge si `locked` (casier décoratif,
+    « verrouillé »), vert sinon. `yf` : face avant du bâti (distance au centre).
+    Renvoie (objets, face avant de la porte, (z centre, hauteur) de la porte)."""
+    right, up = (-sy, 0, 0), (0, 0, 1)
+    dz = 0.1 + (height - 0.2) / 2 + 0.02
+    dh = height - 0.24
+    dw = width - 0.07
+    df = yf + 0.022
+    vis = [
+        _box(f"{prefix}_stile", (0.04, 0.03, height - 0.18), (x - width / 2 + 0.02, sy * (yf + 0.015), 0.1 + (height - 0.18) / 2 + 0.03), m["dark"], coll),
+        _ori(f"{prefix}_door", (dw, dh, 0.022), (x, sy * (yf + 0.011), dz), right, up, door_mat, coll, ("box", uv_off), bevel=0.004),
+    ]
+    for j, z in enumerate((dz + dh * 0.36, dz - dh * 0.38)):
+        vis.append(_ori(f"{prefix}_vent{j}", (dw * 0.72, 0.15, 0.006), (x, sy * (df + 0.003), z), right, up, m["trim_sheet"], coll, "vent"))
+    hx = x + hand * (dw / 2 - 0.08)
+    vis.append(_box(f"{prefix}_handle", (0.03, 0.035, 0.22), (hx, sy * (df + 0.025), dz), m["bare"], coll, bevel=0.006))
+    vis.append(_ori(f"{prefix}_lock", (0.05, 0.07, 0.006), (hx, sy * (df + 0.003), dz + 0.2), right, up, m["buttons"], coll, tile=0.3))
+    vis.append(_cell_quad(f"{prefix}_lock_led", (0.018, 0.018, 0.004), (hx, sy * (df + 0.002), dz + 0.255), right, up, m, coll,
+                          "led_red" if locked else "led_green"))
+    for k, z in enumerate((dz + dh / 2 - 0.18, dz - dh / 2 + 0.18)):
+        vis.append(_box(f"{prefix}_hinge{k}", (0.025, 0.03, 0.12), (x - hand * (dw / 2 - 0.01), sy * (df + 0.008), z), m["bare"], coll))
+    return vis, df, (dz, dh)
+
+
+def _nameplate(prefix: str, iname: str, x: float, z: float, df: float, m: dict, coll, container: str):
+    """Plaque de nom vierge posée sur la porte (face +Y, avant de la porte à `df`), et ses
+    repères (docs/m10.md §3.3) : `INTERACT_<iname>_label` (`interact: "locker_label"`,
+    `container`, volume serré sur la plaque qui dépasse de 6 cm devant la porte, donc devant le
+    volume du casier) et `SOCKET_<iname>_label` (`usage: "label"`, `container`) au centre de la
+    plaque, axe +Y vers l'extérieur (ancre du texte)."""
+    pw, ph = NAMEPLATE
+    t = 0.005
+    plate = _cell_quad(f"{prefix}_nameplate", (pw, ph, t), (x, df + t / 2, z), *_FRONT, m, coll, "nameplate", bevel=0.0015)
+    yp = df + t
+    marks = [
+        _interact(f"{iname}_label", (x, yp + 0.03, z), (pw, 0.06, ph), {"interact": "locker_label", "container": container}, coll, margin=0.01),
+        c.empty(f"SOCKET_{iname}_label", (x, yp + 0.001, z), coll, {"usage": "label", "container": container}, size=0.1),
+    ]
+    return [plate], marks
+
+
+def locker(name: str, center, facing: float, m: dict, coll, both_sides: bool = True, *, container: str | None = None,
+           tint: str = "panel"):
+    """Casier vertical (0,6 × 0,51 × 2 m, `center` au centre de la base), au style de la rangée
+    `locker_bank` (M10) : bâti sombre, socle de caoutchouc, couronne rivée, porte peinte (`tint` :
+    clé de palette) à charnières, deux grilles, poignée et serrure. `both_sides` : une porte sur
+    chaque face ±Y (les scripts de M1 l'adossent indifféremment par l'une ou l'autre).
+
+    Toujours interactif (M10) : `INTERACT_<name>` (`interact: "locker"`, `half_extents` qui
+    couvre tout le casier) ;
+    - `container` = None : casier **décoratif**, sans `container` : le jeu dit « Casier
+      verrouillé » ;
+    - `container` (identifiant unique du contenu, ex. « corvette_chambre_casier_1 ») : casier
+      fonctionnel, plaque de nom vierge sur la face +Y, `INTERACT_<name>_label` et
+      `SOCKET_<name>_label` (`_nameplate`). La face −Y (si `both_sides`) n'a pas de plaque."""
+    W, D, H = 0.6, 0.51, 2.0
+    vis = [
+        _box(f"{name}_body", (W, D - 0.06, H - 0.12), (0, 0, 0.1 + (H - 0.12) / 2), m["dark"], coll),
+        _box(f"{name}_plinth", (W - 0.04, D - 0.12, 0.1), (0, 0, 0.05), m["rubber"], coll),
+        _box(f"{name}_crown", (W + 0.03, D + 0.02, 0.06), (0, 0, H - 0.03), m["dark"], coll, bevel=0.01),
+    ]
+    yf = D / 2 - 0.03  # face avant du bâti (la porte et ses ferrures dépassent de 3 à 7 cm)
     marks = []
+    df = yf + 0.022
+    door = (1.0, 1.7)
+    for sy in ((1, -1) if both_sides else (1,)):
+        face, df_, door = _locker_face(f"{name}_f{sy}", 0.0, yf, sy, W, H, m[tint], m, coll, hand=-sy, uv_off=(0.3 if sy > 0 else 0.7, 0.2),
+                                       locked=not container)
+        vis += face
+        vis.append(_box(f"{name}_stile_end{sy}", (0.04, 0.03, H - 0.18), (W / 2 - 0.02, sy * (yf + 0.015), 0.1 + (H - 0.18) / 2 + 0.03), m["dark"], coll))
+        vis.append(_ori(f"{name}_crown_rivets{sy}", (W * 0.8, 0.045, 0.004), (0, sy * (D / 2 + 0.012), H - 0.03), (-sy, 0, 0), (0, 0, 1), m["trim_sheet"], coll, "rivets"))
+        if sy > 0:
+            df = df_
+    if not both_sides:
+        vis.append(_box(f"{name}_back", (W - 0.02, 0.02, H - 0.2), (0, -(D / 2 - 0.02), 0.1 + (H - 0.2) / 2), m["dark"], coll))
+    col = [c.collider_box(f"{name}", (W, 0.55, H), (0, 0, H / 2), coll)]
+    props = {"interact": "locker"}
     if container:
-        marks.append(_interact(name, (0, 0, 1.0), (0.6, 0.55, 2.0), {"interact": "locker", "container": container}, coll, margin=0.03))
+        props["container"] = container
+    marks.append(_interact(name, (0, 0, H / 2), (W, 0.55, H), props, coll, margin=0.03))
+    if container:
+        dz, dh = door
+        v, mk = _nameplate(name, name, 0.0, dz + dh * 0.23, df, m, coll, container)
+        vis += v
+        marks += mk
     _place(vis + col + marks, center, facing)
     return vis, col, marks
 
 
 def locker_bank(name: str, center, facing: float, m: dict, coll, count: int = 3, *, containers=None,
-                width: float = 0.6, depth: float = 0.55, height: float = 2.0, tint: str = "panel"):
+                width: float = 0.6, depth: float = 0.55, height: float = 2.0, tint: str = "panel", nameplates: bool = True):
     """Rangée de `count` casiers verticaux (M9), portes vers +Y, `center` au milieu de la base de
     la rangée (adossable à un mur par −Y). Bâti commun sombre (socle, couronne, montants),
-    chaque porte peinte avec ses charnières, ses deux grilles, son numéro au pochoir, sa
-    serrure à voyant et sa poignée ; un collider pour la rangée.
+    chaque porte peinte avec ses charnières, ses deux grilles, sa serrure à voyant et sa
+    poignée ; un collider pour la rangée. M10 : plus de numéro au pochoir ; chaque casier porte
+    une plaque de nom vierge (`nameplates`), que le joueur nomme.
 
     Chaque casier est interactif : `INTERACT_<name>_<i>` (i = 1…count), `interact: "locker"`,
-    `container` et `half_extents` (le casier, de la face avant au mur). `containers` : liste
-    d'identifiants (un par casier), ou préfixe (« corvette_chambre_casier » →
+    `container` et `half_extents` (le casier, de la face avant au mur) ; et, avec sa plaque,
+    `INTERACT_<name>_<i>_label` (`interact: "locker_label"`, même `container`) et
+    `SOCKET_<name>_<i>_label` (`usage: "label"`), convention docs/m10.md §3.3. `containers` :
+    liste d'identifiants (un par casier), ou préfixe (« corvette_chambre_casier » →
     « corvette_chambre_casier_1 »…) ; None : « <name>_<i> ». `tint` : clé de palette des portes."""
     if isinstance(containers, str) or containers is None:
         prefix = containers or name
@@ -1376,47 +1601,110 @@ def locker_bank(name: str, center, facing: float, m: dict, coll, count: int = 3,
     ]
     marks = []
     yf = depth / 2 - 0.015  # face avant du bâti
-    door_mat = m[tint]
     for i in range(count):
         x = -W / 2 + width * (i + 0.5)
-        # Montant entre deux portes (et aux deux bouts).
-        vis.append(_box(f"{name}_stile{i}", (0.04, 0.03, height - 0.18), (x - width / 2 + 0.02, yf + 0.015, 0.1 + (height - 0.18) / 2 + 0.03), m["dark"], coll))
-        dz = 0.1 + (height - 0.2) / 2 + 0.02
-        dh = height - 0.24
-        dw = width - 0.07
-        vis.append(_ori(f"{name}_door{i}", (dw, dh, 0.022), (x, yf + 0.011, dz), *_FRONT, door_mat, coll, ("box", (0.31 * i, 0.17 * i)), bevel=0.004))
-        df = yf + 0.022
-        for j, z in enumerate((dz + dh * 0.36, dz - dh * 0.38)):
-            vis.append(_ori(f"{name}_vent{i}{j}", (dw * 0.72, 0.15, 0.006), (x, df + 0.003, z), *_FRONT, m["trim_sheet"], coll, "vent"))
-        # Numéro au pochoir : chaque porte montre un autre caractère de la bande (U calé sur
-        # le début d'un groupe : « 07 », « 12 », « B4 », « 03 », « A2 »).
-        lab = _ori(f"{name}_label{i}", (0.2, 0.1, 0.004), (x - dw * 0.18, df + 0.002, dz + dh * 0.18), *_FRONT, m["trim_sheet"], coll, None)
-        c.uv_trim(lab, "stencils", meters_per_tile=2.0)
-        u0 = min(d.uv[0] for d in lab.data.uv_layers[0].data)
-        _shift_uv(lab, _STENCIL_STARTS[i % len(_STENCIL_STARTS)] - u0)
-        hx = x + dw / 2 - 0.08  # côté poignée (charnières de l'autre côté)
-        vis.append(lab)
-        vis.append(_box(f"{name}_handle{i}", (0.03, 0.035, 0.22), (hx, df + 0.025, dz), m["bare"], coll, bevel=0.006))
-        vis.append(_ori(f"{name}_lock{i}", (0.05, 0.07, 0.006), (hx, df + 0.003, dz + 0.2), *_FRONT, m["buttons"], coll, tile=0.3))
-        for k, z in enumerate((dz + dh / 2 - 0.18, dz - dh / 2 + 0.18)):
-            vis.append(_box(f"{name}_hinge{i}{k}", (0.025, 0.03, 0.12), (x - dw / 2 + 0.01, df + 0.008, z), m["bare"], coll))
-        marks.append(_interact(f"{name}_{i + 1}", (x, 0.02, height / 2), (width - 0.02, depth + 0.04, height),
+        face, df, (dz, dh) = _locker_face(f"{name}_{i}", x, yf, 1, width, height, m[tint], m, coll, hand=1, uv_off=(0.31 * i, 0.17 * i))
+        vis += face
+        iname = f"{name}_{i + 1}"
+        marks.append(_interact(iname, (x, 0.02, height / 2), (width - 0.02, depth + 0.04, height),
                                {"interact": "locker", "container": containers[i]}, coll, margin=0.0))
+        if nameplates:
+            v, mk = _nameplate(f"{name}_{i}", iname, x, dz + dh * 0.23, df, m, coll, containers[i])
+            vis += v
+            marks += mk
     vis.append(_box(f"{name}_stile_end", (0.04, 0.03, height - 0.18), (W / 2 - 0.02, yf + 0.015, 0.1 + (height - 0.18) / 2 + 0.03), m["dark"], coll))
     col = [c.collider_box(f"{name}", (W, depth, height), (0, 0, height / 2), coll)]
     _place(vis + col + marks, center, facing)
     return vis, col, marks
 
 
-# Début (en U, tuile de 2 m) de groupes de caractères de la bande `stencils` de la trim sheet.
-_STENCIL_STARTS = (0.022, 0.522, 0.772, 0.892, 0.272)
+def fridge(name: str, center, facing: float, m: dict, coll, *, container: str | None = None, size=(0.9, 0.7, 2.0),
+           body: str = "panel"):
+    """Armoire réfrigérée de vaisseau (M10, retour 4) : `center` au centre de la base, porte vers
+    +Y (adossable au mur par −Y). Caisson peint (`body` : clé de palette), socle de caoutchouc à
+    grille perforée, bandeau de commande en haut (afficheur à flocon et jauge, voyant, grille du
+    groupe froid), porte lourde émaillée (atlas `fridge_door` : vitre givrée sur les clayettes
+    éclairées et les rations, condensation, givre au joint, traces de mains) dans son joint de
+    caoutchouc épais, cadre de vitre en métal brut, deux grosses charnières à gauche,
+    loquet à levier à droite et sa gâche. `size` : (largeur, profondeur, hauteur), ≈ 0,9 × 0,7 ×
+    2 m.
 
-
-def _shift_uv(obj, du: float) -> None:
-    """Décale le 1er jeu d'UV le long de U (`du` en unités de texture)."""
-    layer = obj.data.uv_layers[0]
-    for d in layer.data:
-        d.uv = (d.uv[0] + du, d.uv[1])
+    `container` (docs/m10.md §3.3) : identifiant du contenu (ex. « corvette_carre_frigo ») ;
+    `INTERACT_<name>` (`interact: "locker"`, `container`, `half_extents` qui couvre tout le frigo).
+    La règle « nourriture seulement » est dans les données (`items.ron`), pas dans le glTF. None :
+    décor, sans interaction. Un collider (tout le frigo)."""
+    W, D, H = size
+    yf = D / 2 - 0.05  # face avant du caisson (la porte et ses ferrures dépassent de 5 à 11 cm)
+    right, up = _FRONT
+    plinth = 0.12
+    top_h = 0.16  # bandeau de commande
+    vis = [
+        _box(f"{name}_body", (W, D - 0.1, H - plinth), (0, 0.0, plinth + (H - plinth) / 2), m[body], coll, bevel=0.012),
+        _box(f"{name}_plinth", (W - 0.06, D - 0.16, plinth), (0, -0.03, plinth / 2), m["rubber"], coll),
+        _box(f"{name}_top_cap", (W + 0.02, D - 0.06, 0.04), (0, -0.02, H - 0.02), m["dark"], coll, bevel=0.008),
+        # Grille perforée du socle (aspiration du groupe froid).
+        _cell_quad(f"{name}_kick_vent", (W - 0.16, plinth - 0.03, 0.006), (0, D / 2 - 0.08 + 0.003, plinth / 2), right, up, m, coll, "vent_round"),
+    ]
+    # Bandeau de commande : platine sombre, afficheur, voyant, grille.
+    zc = H - 0.04 - top_h / 2
+    vis.append(_ori(f"{name}_ctrl", (W - 0.04, top_h, 0.03), (0, yf + 0.015, zc), right, up, m["dark"], coll, bevel=0.006))
+    vis.append(_cell_quad(f"{name}_display", (0.16, 0.07, 0.006), (-W / 2 + 0.16, yf + 0.033, zc + 0.01), right, up, m, coll, "display"))
+    vis.append(_cell_quad(f"{name}_led", (0.022, 0.022, 0.006), (-W / 2 + 0.28, yf + 0.033, zc + 0.03), right, up, m, coll, "led_green"))
+    vis.append(_cell_quad(f"{name}_top_vent", (W * 0.48, 0.1, 0.006), (W / 2 - 0.04 - W * 0.24, yf + 0.033, zc), right, up, m, coll, "vent_round"))
+    # Porte : joint épais (cadre de caoutchouc), vantail émaillé, chants sombres.
+    z0, z1 = plinth + 0.04, H - 0.06 - top_h
+    dh = z1 - z0
+    dw = W - 0.08
+    dzc = (z0 + z1) / 2
+    gasket = 0.028
+    for tag, sx_, sz_, x, z in (
+        ("gasket_t", dw + 2 * gasket, gasket, 0.0, z1 + gasket / 2),
+        ("gasket_b", dw + 2 * gasket, gasket, 0.0, z0 - gasket / 2),
+        ("gasket_l", gasket, dh, -dw / 2 - gasket / 2, dzc),
+        ("gasket_r", gasket, dh, dw / 2 + gasket / 2, dzc),
+    ):
+        vis.append(_ori(f"{name}_{tag}", (sx_, sz_, 0.03), (x, yf + 0.015, z), right, up, m["rubber"], coll))
+    vis.append(_box(f"{name}_door_core", (dw, 0.05, dh), (0, yf + 0.025, dzc), m["dark"], coll, bevel=0.01))
+    vis.append(_cell_quad(f"{name}_door", (dw - 0.012, dh - 0.012, 0.008), (0, yf + 0.054, dzc), right, up, m, coll, "fridge_door", bevel=0.003))
+    df = yf + 0.058  # face avant de la porte
+    # Cadre de la vitre (atlas : `utility_atlas.FRIDGE_WINDOW`, en fractions de la face).
+    fx0, fy0, fx1, fy1 = _utility_atlas().FRIDGE_WINDOW
+    qw, qh = dw - 0.012, dh - 0.012
+    wx0, wx1 = -qw / 2 + fx0 * qw, -qw / 2 + fx1 * qw
+    wz0, wz1 = dzc - qh / 2 + fy0 * qh, dzc - qh / 2 + fy1 * qh
+    # La face regarde +Y : sa droite est −X, donc u = 0 (gauche de la case) est à +X.
+    wx0, wx1 = -wx1, -wx0
+    fw = 0.022
+    for tag, sx_, sz_, x, z in (
+        ("win_t", wx1 - wx0 + 2 * fw, fw, (wx0 + wx1) / 2, wz1 + fw / 2 - 0.004),
+        ("win_b", wx1 - wx0 + 2 * fw, fw, (wx0 + wx1) / 2, wz0 - fw / 2 + 0.004),
+        ("win_l", fw, wz1 - wz0, wx0 - fw / 2 + 0.004, (wz0 + wz1) / 2),
+        ("win_r", fw, wz1 - wz0, wx1 + fw / 2 - 0.004, (wz0 + wz1) / 2),
+    ):
+        vis.append(_ori(f"{name}_{tag}", (sx_, sz_, 0.012), (x, df + 0.006, z), right, up, m["bare"], coll, bevel=0.003))
+    # Charnières lourdes à gauche (−X vu de face = +X Blender ; la face regarde +Y, sa droite
+    # est −X) : corps, nœud cylindrique, quatre vis.
+    hx = dw / 2 - 0.01
+    for k, z in enumerate((z1 - 0.22, z0 + 0.22)):
+        vis.append(_box(f"{name}_hinge{k}", (0.12, 0.03, 0.14), (hx - 0.04, df + 0.015, z), m["bare"], coll, bevel=0.006))
+        vis.append(_cyl(f"{name}_hinge_pin{k}", 0.022, 0.18, (dw / 2 + 0.02, df - 0.005, z), m["bare"], coll, segments=10))
+        vis.append(_box(f"{name}_hinge_leaf{k}", (0.05, 0.05, 0.13), (dw / 2 + 0.035, yf + 0.02, z), m["dark"], coll))
+    # Loquet à levier (côté −X Blender = droite vu de face) et sa gâche sur le caisson.
+    lx = -dw / 2 + 0.06
+    zl = dzc + 0.1
+    vis.append(_box(f"{name}_latch_base", (0.08, 0.03, 0.2), (lx, df + 0.015, zl), m["bare"], coll, bevel=0.008))
+    vis.append(_cyl(f"{name}_latch_pivot", 0.022, 0.05, (lx, df + 0.045, zl + 0.06), m["dark"], coll, axis="Y", segments=10))
+    vis.append(_box(f"{name}_latch_lever", (0.04, 0.035, 0.42), (lx, df + 0.075, zl - 0.12), m["bare"], coll, bevel=0.012))
+    vis.append(_box(f"{name}_latch_grip", (0.05, 0.045, 0.14), (lx, df + 0.08, zl - 0.27), m["rubber"], coll, bevel=0.01))
+    vis.append(_box(f"{name}_keeper", (0.05, 0.06, 0.12), (-W / 2 + 0.005, yf + 0.04, zl + 0.06), m["bare"], coll, bevel=0.008))
+    # Marques de condensation sur le caisson : bas de porte (bac de récupération).
+    vis.append(_box(f"{name}_drip_tray", (dw - 0.1, 0.05, 0.025), (0, df - 0.005, z0 - gasket - 0.012), m["bare"], coll, bevel=0.004))
+    col = [c.collider_box(f"{name}", (W, D, H), (0, 0, H / 2), coll)]
+    marks = []
+    if container:
+        marks.append(_interact(name, (0, 0.05, H / 2), (W + 0.04, D + 0.1, H), {"interact": "locker", "container": container}, coll, margin=0.03))
+    _place(vis + col + marks, center, facing)
+    return vis, col, marks
 
 
 def table(name: str, center, facing: float, m: dict, coll, size=(1.8, 0.9)):
@@ -1587,7 +1875,11 @@ def door_panel(name: str, m: dict, coll, *, style: str = "ship"):
     porte par `room_shell` suffit). Caisson haut : hublot de verre fumé opaque (un bloc qui
     traverse le vantail, dans son joint), trappe de visite, plaque à pochoirs ; traverse
     médiane lumineuse ; caisson bas : raidisseurs rivés, grille ; montant d'attaque (−X) à bande
-    de danger et voyant. Dimensions, collider et fonctionnement inchangés."""
+    de danger et voyant. Dimensions, collider et fonctionnement inchangés.
+
+    M10 : `style` "airlock" : la porte blindée du sas (`door_airlock`)."""
+    if style == "airlock":
+        return door_airlock(name, m, coll)
     W, H = DOOR_W, DOOR_H
     paint = m["door_paint"] if style == "ship" else m["paint_yellow"]
     rail = m["dark"] if style == "ship" else m["paint_black"]
@@ -1642,6 +1934,113 @@ def door_panel(name: str, m: dict, coll, *, style: str = "ship"):
             up = nrm.cross(diag)
             ctr = (gx * (W / 2 - 0.15), sy * (0.03 + 0.011), H - 0.17 if gz > 0 else 0.3)
             vis.append(_ori(f"{name}_gusset{sy}{gx}{gz}", (0.22, 0.08, 0.022), ctr, tuple(diag), tuple(up), rail, coll))
+    col = [c.collider_box(f"{name}", (DOOR_W, 0.12, DOOR_H), (0, 0, DOOR_H / 2), coll)]
+    return vis, col, []
+
+
+def door_airlock(name: str, m: dict, coll):
+    """Porte blindée de sas (M10, retour 1) : elle donne sur le vide. Mêmes cotes et même
+    fonctionnement que `door_panel` (le jeu, `sector/doors.rs`, fait coulisser **tout** le modèle
+    vers +X de `largeur + 5 cm`, sans nœud animé à part) : vantail de DOOR_W × DOOR_H, origine au
+    centre de sa base, collider identique (DOOR_W × 0,12 × DOOR_H), relief contenu dans ±0,095 m
+    pour rentrer dans la cloison de 0,2 m. Deux faces identiques (±Y).
+
+    Vantail d'acier sombre ceint d'un joint de pression (caoutchouc sur tout le chant), cadre
+    blindé épais et boulonné, quatre tôles d'armure en acier brut, trois barres de verrouillage dans
+    leurs guides (pênes côté bord d'attaque −X, vérins côté +X), hublot étroit de verre fumé
+    opaque dans un encadrement boulonné, plinthe et montant d'attaque à bandes de danger, feu
+    rouge (émissif 4, AGENTS.md §4) sur la traverse haute, levier de secours jaune. Pas d'écran.
+    Objet mobile sans lightmap, éclairé par l'ambiante en Bas et Moyen : teintes moyennes,
+    accents émissifs."""
+    W, H = DOOR_W, DOOR_H
+    lamp = c.material("sh_lamp_red", (0.55, 0.05, 0.03), emission=(1.0, 0.12, 0.06), emission_strength=4.0, roughness=0.3)
+    # Tôles d'armure en acier brut (pas de grille ni de trappe peintes, comme sur la tôle des portes
+    # ordinaires) : la porte du sas se distingue au premier regard des portes intérieures.
+    paint, rim, bare, rubber, trim = m["bare"], m["dark"], m["bare"], m["rubber"], m["trim_sheet"]
+    core_t = 0.1  # épaisseur du vantail (±0,05)
+    vis = [_box(f"{name}_core", (W - 0.05, core_t, H - 0.05), (0, 0, H / 2), rim, coll)]
+    # Joint de pression sur tout le chant (il dépasse à peine des deux faces).
+    g = 0.026
+    for tag, size, ctr in (
+        ("gasket_l", (g, core_t + 0.006, H), (-W / 2 + g / 2, 0, H / 2)),
+        ("gasket_r", (g, core_t + 0.006, H), (W / 2 - g / 2, 0, H / 2)),
+        ("gasket_t", (W - 2 * g, core_t + 0.006, g), (0, 0, H - g / 2)),
+        ("gasket_b", (W - 2 * g, core_t + 0.006, g), (0, 0, g / 2)),
+    ):
+        vis.append(_box(f"{name}_{tag}", size, ctr, rubber, coll))
+    rw = 0.15  # largeur du cadre blindé
+    bars_z = (0.62, 1.1, 1.58)
+    wz, ww, wh = 1.86, 0.11, 0.32  # hublot : centre, largeur, hauteur
+    for sy in (1, -1):
+        right, up = (-sy, 0, 0), (0, 0, 1)
+        y0 = core_t / 2  # face du vantail
+
+        def plate(tag, w_, h_, x, z, th, mat, uv="box", bevel=0.0, dy=0.0, tile=None):
+            obj = _ori(f"{name}_{tag}{sy}", (w_, h_, th), (x, sy * (y0 + dy + th / 2), z), right, up, mat, coll, uv, bevel=bevel, tile=tile)
+            vis.append(obj)
+            return obj
+
+        # Cadre blindé : traverses et montants épais (0,028), biseautés.
+        rt = 0.028
+        plate("rim_t", W - 2 * g, rw, 0, H - g - rw / 2, rt, rim, bevel=0.012)
+        plate("rim_b", W - 2 * g, rw, 0, g + rw / 2, rt, rim, bevel=0.012)
+        plate("rim_l", rw, H - 2 * g - 2 * rw, -W / 2 + g + rw / 2, H / 2, rt, rim, bevel=0.012)
+        plate("rim_r", rw, H - 2 * g - 2 * rw, W / 2 - g - rw / 2, H / 2, rt, rim, bevel=0.012)
+        # Boulons du cadre, tous les ≈ 0,18 m sur la ligne médiane.
+        yb = sy * (y0 + rt + 0.006)
+        pts = []
+        xl, xr = -W / 2 + g + rw / 2, W / 2 - g - rw / 2
+        zb, zt = g + rw / 2, H - g - rw / 2
+        nx = max(2, round((xr - xl) / 0.18))
+        nz = max(2, round((zt - zb) / 0.18))
+        pts += [(xl + (xr - xl) * i / nx, z) for i in range(nx + 1) for z in (zb, zt)]
+        pts += [(x, zb + (zt - zb) * k / nz) for k in range(1, nz) for x in (xl, xr)]
+        for i, (x, z) in enumerate(pts):
+            vis.append(_cyl(f"{name}_bolt{sy}_{i}", 0.015, 0.012, (x, yb, z), bare, coll, axis="Y", segments=6))
+        # Tôles d'armure peintes entre les barres (en retrait du cadre), plinthe à bandes de danger.
+        ax0, ax1 = -W / 2 + g + rw, W / 2 - g - rw
+        aw, axc = ax1 - ax0, (ax0 + ax1) / 2
+        zk = g + rw
+        plate("kick", aw, 0.28, axc, zk + 0.14, 0.014, trim, "hazard")
+        spans = [(zk + 0.3, bars_z[0] - 0.05), (bars_z[0] + 0.05, bars_z[1] - 0.05), (bars_z[1] + 0.05, bars_z[2] - 0.05),
+                 (bars_z[2] + 0.05, H - g - rw - 0.02)]
+        for k, (za, zb_) in enumerate(spans):
+            plate(f"armor{k}", aw - 0.03, zb_ - za, axc, (za + zb_) / 2, 0.016, paint, ("box", (0.21 * k, 0.37 * k)), bevel=0.006)
+        # Montant d'attaque (−X) : bande de danger verticale.
+        plate("lead_hazard", 0.07, 1.0, -W / 2 + g + rw / 2, 0.75, 0.004, trim, "hazard", dy=rt)
+        # Barres de verrouillage, guides, pênes (−X) et vérins (+X).
+        yr = sy * (y0 + 0.036)
+        for k, z in enumerate(bars_z):
+            x0b, x1b = -W / 2 + 0.03, W / 2 - g - rw - 0.02
+            vis.append(_cyl(f"{name}_bar{sy}{k}", 0.026, x1b - x0b, ((x0b + x1b) / 2, yr, z), rim, coll, axis="X", segments=10))
+            for gxk in (-W / 2 + g + rw / 2, 0.0):
+                plate(f"guide{k}_{gxk:.2f}", 0.08, 0.085, gxk, z, 0.017, rim, dy=0.028 if gxk < -0.1 else 0.016, bevel=0.006)
+            plate(f"dog{k}", 0.05, 0.07, -W / 2 + 0.035, z, 0.04, bare, bevel=0.006)
+            vis.append(_cyl(f"{name}_ram{sy}{k}", 0.036, 0.16, (W / 2 - g - rw / 2 + 0.01, sy * (y0 + 0.04), z), rim, coll, axis="X", segments=10))
+            vis.append(_cyl(f"{name}_ram_rod{sy}{k}", 0.014, 0.08, (W / 2 - g - rw - 0.04, sy * (y0 + 0.04), z), bare, coll, axis="X", segments=8))
+        # Hublot étroit : encadrement boulonné épais, joint.
+        fw = 0.05
+        for tag, w_, h_, x, z in (
+            ("win_t", ww + 2 * fw, fw, 0.0, wz + wh / 2 + fw / 2),
+            ("win_b", ww + 2 * fw, fw, 0.0, wz - wh / 2 - fw / 2),
+            ("win_l", fw, wh, -ww / 2 - fw / 2, wz),
+            ("win_r", fw, wh, ww / 2 + fw / 2, wz),
+        ):
+            plate(tag, w_, h_, x, z, 0.03, rim, bevel=0.008)
+        plate("win_seal", ww + 0.012, wh + 0.012, 0.0, wz, 0.02, rubber)
+        for i, (x, z) in enumerate(((-ww / 2 - fw / 2, wz + wh / 2 + fw / 2), (ww / 2 + fw / 2, wz + wh / 2 + fw / 2),
+                                    (-ww / 2 - fw / 2, wz - wh / 2 - fw / 2), (ww / 2 + fw / 2, wz - wh / 2 - fw / 2))):
+            vis.append(_cyl(f"{name}_win_bolt{sy}{i}", 0.012, 0.012, (x, sy * (y0 + 0.036), z), bare, coll, axis="Y", segments=6))
+        # Feu rouge sur la traverse haute, bande d'avertissement rouge dessous.
+        plate("lamp_box", 0.2, 0.075, 0.0, H - g - rw / 2 + 0.01, 0.016, rim, dy=rt, bevel=0.005)
+        plate("lamp", 0.15, 0.04, 0.0, H - g - rw / 2 + 0.01, 0.01, lamp, None, dy=rt + 0.012)
+        plate("warning", 0.6, 0.05, 0.0, H - g - rw / 2 - 0.05, 0.004, trim, "warning_red", dy=rt)
+        # Levier de secours (bord d'attaque, mi-hauteur) : boîtier sombre, poignée jaune.
+        plate("override", 0.1, 0.22, -W / 2 + g + rw / 2, 1.34, 0.016, rim, dy=rt - 0.004, bevel=0.005)
+        plate("override_t", 0.07, 0.025, -W / 2 + g + rw / 2, 1.3, 0.02, m["paint_yellow"], dy=rt + 0.004)
+        plate("override_stem", 0.018, 0.08, -W / 2 + g + rw / 2, 1.34, 0.012, m["paint_yellow"], dy=rt + 0.004)
+    # Verre fumé opaque du hublot : traverse tout le vantail.
+    vis.append(_box(f"{name}_window", (ww, core_t + 0.024, wh), (0.0, 0, wz), m["glass_dark"], coll))
     col = [c.collider_box(f"{name}", (DOOR_W, 0.12, DOOR_H), (0, 0, DOOR_H / 2), coll)]
     return vis, col, []
 
@@ -1925,18 +2324,101 @@ def beacon(name: str, center, facing: float, m: dict, coll, lumens: float = 900.
     return _finish(vis, [], marks, detail)
 
 
-def cabinet(name: str, center, facing: float, m: dict, coll, size=(1.1, 0.32, 1.7), *, detail: int = 0):
-    """Armoire électrique posée au sol contre un mur : boutons, écran, grille, pochoir ;
-    collider. `center` : pied, sur la face du mur."""
+def cabinet(name: str, center, facing: float, m: dict, coll, size=(1.1, 0.32, 1.7), *, detail: int = 0,
+            conduit_rise: float = 0.45):
+    """Tableau électrique posé au sol contre un mur (M10, retour 7 : on doit y reconnaître un
+    compteur au premier regard). `center` : pied, sur la face du mur ; face vers +Y ; `size` :
+    (largeur, profondeur, hauteur du coffret), posé sur un socle de 0,1 m (encombrement et
+    collider inchangés depuis M8).
+
+    Coffret d'acier sombre à deux portes peintes (tôle de la pièce) :
+    - porte haute vitrée : compteur à totalisateur et à disque (atlas `meter`), un ou deux
+      cadrans ronds (`gauge`), scellé de plomb sur son fil (`seal`) ;
+    - porte basse à fenêtre : une ou deux rangées de disjoncteurs (`breakers`), pictogramme de
+      danger électrique (triangle jaune à éclair, sans texte, `danger`) ;
+    - charnières, serrures à quart de tour, trois voyants (vert, ambre, rouge) sur le bandeau ;
+    - gaines de câbles : trois qui sortent du dessus, montent de `conduit_rise` m et rentrent
+      dans le mur ; deux qui descendent du presse-étoupe du bas dans le sol.
+    Aucune saillie de plus de 0,1 m hors du collider."""
     sx, sd, sz = size
+    z0, z1 = 0.1, 0.1 + sz
+    right, up = _FRONT
+    yf = sd  # face avant du coffret
     vis = [
-        _box(f"{name}", (sx, sd, sz), (0, sd / 2, sz / 2 + 0.1), m["dark"], coll, bevel=0.015),
+        _box(f"{name}", (sx, sd, sz), (0, sd / 2, z0 + sz / 2), m["dark"], coll, bevel=0.015),
         _box(f"{name}_plinth", (sx - 0.06, sd - 0.06, 0.1), (0, sd / 2, 0.05), m["rubber"], coll),
-        _ori(f"{name}_buttons", (sx * 0.45, 0.4, 0.01), (-sx * 0.18, sd + 0.005, sz * 0.72), *_FRONT, m["buttons"], coll),
-        _ori(f"{name}_screen", (sx * 0.27, 0.22, 0.01), (sx * 0.27, sd + 0.005, sz * 0.78), *_FRONT, m["screen"], coll, tile=0.75),
-        _ori(f"{name}_vent", (sx * 0.82, 0.25, 0.006), (0, sd + 0.003, sz * 0.32), *_FRONT, m["trim_sheet"], coll, "vent"),
-        _ori(f"{name}_label", (sx * 0.64, 0.12, 0.004), (0, sd + 0.002, sz * 0.97), *_FRONT, m["trim_sheet"], coll, "stencils"),
     ]
+    door_mat = m["panel"]
+    dw = sx - 0.07
+    # Voyants sur le bandeau du haut (côté poignées : −X, la droite vue de face).
+    for i, cell in enumerate(("led_green", "led_amber", "led_red")):
+        vis.append(_cell_quad(f"{name}_led{i}", (0.024, 0.024, 0.005), (-sx / 2 + 0.08 + i * 0.045, yf + 0.0025, z1 - 0.035), right, up, m, coll, cell))
+    # --- Porte haute : compteur sous verre ---------------------------------------------------
+    zt = z1 - 0.07
+    hu = min(0.6, max(0.44, sz * 0.36))
+    ub = zt - hu
+    uc = (zt + ub) / 2
+    vis.append(_ori(f"{name}_door_hi", (dw, hu, 0.02), (0, yf + 0.01, uc), right, up, door_mat, coll, ("box", (0.27, 0.41)), bevel=0.004))
+    dfront = yf + 0.02
+    two_gauges = hu >= 0.42
+    win_w, win_h = 0.30 + 0.035 + 0.15, 0.30
+    wx = 0.07 * (sx / 1.1)  # fenêtre décalée vers les charnières, poignée à côté
+    wz = uc + 0.01
+    vis.append(_ori(f"{name}_window_bezel", (win_w + 0.07, win_h + 0.07, 0.016), (wx, dfront + 0.008, wz), right, up, m["dark"], coll, bevel=0.008))
+    vis.append(_ori(f"{name}_window_gasket", (win_w + 0.03, win_h + 0.03, 0.006), (wx, dfront + 0.019, wz), right, up, m["rubber"], coll))
+    face_y = dfront + 0.0215
+    mx = wx + win_w / 2 - 0.15  # le compteur côté charnières (+X), les cadrans côté poignée
+    vis.append(_cell_quad(f"{name}_meter", (0.30, 0.30, 0.004), (mx, face_y, wz), right, up, m, coll, "meter"))
+    gx = wx - win_w / 2 + 0.075
+    if two_gauges:
+        for k, dz in enumerate((0.075, -0.075)):
+            vis.append(_cell_quad(f"{name}_gauge{k}", (0.145, 0.145, 0.004), (gx, face_y, wz + dz), right, up, m, coll, "gauge"))
+    else:
+        vis.append(_cell_quad(f"{name}_gauge0", (0.15, 0.15, 0.004), (gx, face_y, wz), right, up, m, coll, "gauge"))
+    # Scellé de plomb au coin bas de la fenêtre, pendu à son fil.
+    vis.append(_cell_quad(f"{name}_seal", (0.03, 0.03, 0.006), (wx - win_w / 2 - 0.01, dfront + 0.019, wz - win_h / 2 - 0.03), right, up, m, coll, "seal"))
+    # --- Porte basse : disjoncteurs ----------------------------------------------------------
+    lb = z0 + 0.1
+    lt = ub - 0.03
+    hl = lt - lb
+    lc = (lt + lb) / 2
+    vis.append(_ori(f"{name}_door_lo", (dw, hl, 0.02), (0, yf + 0.01, lc), right, up, door_mat, coll, ("box", (0.61, 0.13)), bevel=0.004))
+    rows = 2 if hl >= 0.62 else 1
+    n = max(1, int((dw - 0.12) // 0.41))
+    bw, bh = 0.40, 0.16
+    bez_w, bez_h = n * (bw + 0.01) + 0.04, rows * (bh + 0.03) + 0.02
+    btop = lt - 0.06
+    bz = btop - bez_h / 2
+    vis.append(_ori(f"{name}_breaker_bezel", (bez_w, bez_h, 0.014), (0, dfront + 0.007, bz), right, up, m["dark"], coll, bevel=0.006))
+    for r_ in range(rows):
+        for k in range(n):
+            x = -(n - 1) / 2 * (bw + 0.01) + k * (bw + 0.01)
+            z = btop - 0.02 - bh / 2 - r_ * (bh + 0.03)
+            vis.append(_cell_quad(f"{name}_breakers{r_}{k}", (bw, bh, 0.004), (x, dfront + 0.016, z), right, up, m, coll, "breakers"))
+    room = (btop - bez_h) - lb
+    if room >= 0.17:
+        tri = min(0.16, room - 0.06)
+        vis.append(_cell_quad(f"{name}_danger", (tri, tri, 0.004), (wx, dfront + 0.002, lb + room / 2 + 0.01), right, up, m, coll, "danger"))
+    # --- Ferrures : charnières (+X), serrures à quart de tour (−X) ----------------------------
+    for tag, zc, hh in (("hi", uc, hu), ("lo", lc, hl)):
+        for k, z in enumerate((zc + hh / 2 - 0.1, zc - hh / 2 + 0.1)):
+            vis.append(_box(f"{name}_hinge_{tag}{k}", (0.025, 0.03, 0.09), (dw / 2 - 0.005, dfront + 0.008, z), m["bare"], coll))
+        lx = -dw / 2 + 0.07
+        vis.append(_cyl(f"{name}_lock_{tag}", 0.024, 0.02, (lx, dfront + 0.01, zc), m["bare"], coll, axis="Y", segments=12))
+        vis.append(_box(f"{name}_lock_lever_{tag}", (0.018, 0.022, 0.07), (lx, dfront + 0.03, zc - 0.02), m["dark"], coll, bevel=0.004))
+    # --- Gaines de câbles ----------------------------------------------------------------------
+    for i, (x, r) in enumerate(((-sx * 0.3, 0.03), (-sx * 0.12, 0.024), (sx * 0.22, 0.036))):
+        y = sd * 0.5
+        vis.append(_cyl(f"{name}_gland_top{i}", r + 0.012, 0.035, (x, y, z1 + 0.0175), m["bare"], coll, segments=12))
+        vis.append(_cyl(f"{name}_conduit_up{i}", r, conduit_rise - r, (x, y, z1 + (conduit_rise - r) / 2), m["rubber"], coll, segments=10))
+        # Coude, puis la gaine rentre dans le mur (−Y).
+        vis.append(_box(f"{name}_conduit_elbow{i}", (2 * r + 0.006, 2 * r + 0.006, 2 * r + 0.006), (x, y, z1 + conduit_rise), m["rubber"], coll, bevel=r * 0.6))
+        vis.append(_cyl(f"{name}_conduit_wall{i}", r, y, (x, y / 2, z1 + conduit_rise), m["rubber"], coll, axis="Y", segments=10))
+        vis.append(_cyl(f"{name}_conduit_clip{i}", r + 0.008, 0.02, (x, y, z1 + conduit_rise * 0.5), m["dark"], coll, segments=10))
+    vis.append(_box(f"{name}_gland_plate", (sx * 0.45, 0.05, 0.08), (sx * 0.12, yf + 0.025, z0 + 0.045), m["dark"], coll, bevel=0.006))
+    for i, x in enumerate((sx * 0.02, sx * 0.22)):
+        vis.append(_cyl(f"{name}_gland_lo{i}", 0.034, 0.025, (x, yf + 0.03, 0.06), m["bare"], coll, segments=12))
+        vis.append(_cyl(f"{name}_conduit_down{i}", 0.026, 0.06, (x, yf + 0.03, 0.03), m["rubber"], coll, segments=10))
     cols = [c.collider_box(f"{name}", (sx, sd + 0.02, sz + 0.1), (0, sd / 2, (sz + 0.1) / 2), coll)]
     _place(vis + cols, center, facing)
     return _finish(vis, cols, [], detail)
@@ -1983,14 +2465,16 @@ def __getattr__(name):
 # --- Export des pièces du kit ------------------------------------------------------------------
 
 KIT_DIR = "assets/models/kit/ship_interior"
-# Interactions qui doivent couvrir leur objet (M9, docs/m9-retours.md §3.3).
-_VOLUME_INTERACTIONS = ("seat", "console", "locker", "npc")
+# Interactions qui doivent couvrir leur objet (M9, docs/m9-retours.md §3.3 ; M10 : plaque de nom).
+_VOLUME_INTERACTIONS = ("seat", "console", "locker", "npc", "locker_label")
 
 
 def _check_interactions(objects, name: str) -> None:
-    """Tout siège, console, casier ou comptoir de PNJ exporté a son `half_extents` ; un siège a
-    son œil `SOCKET_<nom>_eye` ; un PNJ son `SOCKET_<nom>_npc`."""
-    names = {o.name for o in objects}
+    """Tout siège, console, casier, plaque de nom ou comptoir de PNJ exporté a son
+    `half_extents` ; un siège a son œil `SOCKET_<nom>_eye` ; un PNJ son `SOCKET_<nom>_npc` ; une
+    plaque de nom `INTERACT_<n>_label` a son casier `INTERACT_<n>` (même `container`) et son
+    ancre `SOCKET_<n>_label` (M10, docs/m10.md §3.3)."""
+    by_name = {o.name: o for o in objects}
     for obj in objects:
         if not obj.name.startswith("INTERACT_"):
             continue
@@ -1998,10 +2482,17 @@ def _check_interactions(objects, name: str) -> None:
         if kind in _VOLUME_INTERACTIONS and "half_extents" not in obj.keys():
             raise RuntimeError(f"{name} : {obj.name} ({kind}) sans half_extents")
         base = obj.name[len("INTERACT_"):]
-        if kind == "seat" and f"SOCKET_{base}_eye" not in names:
+        if kind == "seat" and f"SOCKET_{base}_eye" not in by_name:
             raise RuntimeError(f"{name} : siège {obj.name} sans SOCKET_{base}_eye")
-        if kind == "npc" and f"SOCKET_{base}_npc" not in names:
+        if kind == "npc" and f"SOCKET_{base}_npc" not in by_name:
             raise RuntimeError(f"{name} : PNJ {obj.name} sans SOCKET_{base}_npc")
+        if kind == "locker_label":
+            locker = by_name.get(f"INTERACT_{base[:-len('_label')]}")
+            sock = by_name.get(f"SOCKET_{base}")
+            if locker is None or sock is None:
+                raise RuntimeError(f"{name} : plaque {obj.name} sans son casier ou sans SOCKET_{base}")
+            if not (obj.get("container") == locker.get("container") == sock.get("container")):
+                raise RuntimeError(f"{name} : plaque {obj.name} : container différent de celui du casier")
 
 
 def export_kit() -> dict:
@@ -2034,12 +2525,17 @@ def export_kit() -> dict:
     piece("airlock", lambda k: shell(room_shell("al", -2, 2, -2, 2, 0, 2.6, [("E", 0, DOOR_W, DOOR_H), ("W", 0, DOOR_W, DOOR_H)], m, k)))
     piece("door_sliding", lambda k: door_panel("door", m, k))
     piece("door_station", lambda k: door_panel("door_st", m, k, style="station"))
+    # M10 : porte blindée du sas (même animation que door_sliding : tout le modèle coulisse).
+    piece("door_airlock", lambda k: door_airlock("door_airlock", m, k))
     piece("console", lambda k: console("console", (0, 0, 0), 0.0, m, k))
     piece("console_low", lambda k: console("console_low", (0, 0, 0), 0.0, m, k, low=True))
     piece("seat", lambda k: seat("seat", (0, 0, 0), 0.0, m, k))
     piece("bunk", lambda k: bunk("bunk", (0, 0, 0), 0.0, m, k))
     piece("crate", lambda k: crate("crate", (0, 0, 0), 0.0, m, k))
-    piece("locker", lambda k: locker("locker", (0, 0, 0), 0.0, m, k, container="kit_locker"))
+    # M10 : casier décoratif (verrouillé), casier fonctionnel à plaque de nom, frigo.
+    piece("locker", lambda k: locker("locker", (0, 0, 0), 0.0, m, k))
+    piece("locker_named", lambda k: locker("locker_named", (0, 0, 0), 0.0, m, k, both_sides=False, container="kit_locker"))
+    piece("fridge", lambda k: fridge("fridge", (0, 0, 0), 0.0, m, k, container="kit_fridge"))
     piece("table", lambda k: table("table", (0, 0, 0), 0.0, m, k))
     # Objet ramassable : mallette rattachée à son repère (convention des secteurs, `attach_pickup`).
     piece("pickup", lambda k: (lambda r: ([r[0]], [], r[1]))(attach_pickup(pickup("pickup", (0, 0, 0), 0.0, m, k, item="spare_parts"))))
