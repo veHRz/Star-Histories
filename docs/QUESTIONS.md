@@ -5,15 +5,6 @@
 
 ## Ouvertes
 
-16. **Boucliers sur le schéma de la coque (M9).** Tu demandes un schéma de « l'état des boucliers et de la coque ». Or le jeu n'a jamais de boucliers énergétiques (règle du projet, P26 : seul le blindage protège). Le schéma doit-il montrer autre chose à leur place ?
-   → *Hypothèse en attendant* : le schéma montre le **blindage de chaque section** (proue, poupe, bâbord, tribord) et l'état du cœur, sans bouclier.
-
-17. **Hexis « planète-ville » (M9).** Le canon (§3.3) décrit Hexis comme un « monde-usine et place forte », un ancien monde industriel ravagé de ≈ 1,5 Md d'habitants, sans dire « planète-ville ». Faut-il une écuménopole entière, ou un monde-usine très urbanisé ?
-   → *Hypothèse en attendant* : monde-usine très urbanisé : nappes de villes et de complexes industriels visibles de jour, lumières des villes côté nuit, zones ravagées encore visibles.
-
-18. **Voyage vers les mondes isolés (M9).** Les astres hors système (§3.4) deviennent des destinations par l'hyperespace (ils n'ont pas de Portail). Myrth (« on n'y atterrit pas sans invitation ») et Vashyra (« refuse tout contact prolongé ») : jusqu'où le joueur peut-il aller ?
-   → *Hypothèse en attendant* : arrivée en orbite seulement, pour tous (aucun n'a de spatioport) ; les astres secrets restent hors de la carte.
-
 ## Tranchées
 
 1. **Départ de la v1.** Capitaine indépendant à Hexis, endetté auprès de la Banque (P1) : ça te va ?
@@ -57,3 +48,12 @@
 
 15. **Préréglage de la cible de performance.** (Remarque de l'auteur pendant M8, sans question préalable.)
    → **« Cette machine, qui est la machine de référence (pour l'instant), est très faible niveau puissance : les tests de performance à atteindre doivent passer de moyen à bas en qualité graphique. »** (04/11/2026) — le critère devient ≥ 60 i/s en 1080p au préréglage **Bas** sur l'UHD 770 (30 i/s minimum partout) ; `tools/perf.ps1` / `perf.sh` mesurent en Bas par défaut ; AGENTS.md §0 et §10, `docs/refonte-visuelle.md`, feuille de route à jour. Hypothèse réversible : le préréglage proposé par défaut au joueur reste Moyen.
+
+16. **Boucliers sur le schéma de la coque (M9).** Tu demandes un schéma de « l'état des boucliers et de la coque ». Or le jeu n'a jamais de boucliers énergétiques (règle du projet, P26 : seul le blindage protège). Le schéma doit-il montrer autre chose à leur place ?
+   → **Hypothèse validée par l'auteur** (05/11/2026) : le schéma montre le **blindage de chaque section** (proue, poupe, bâbord, tribord) et l'état du cœur, sans bouclier.
+
+17. **Hexis « planète-ville » (M9).** Le canon (§3.3) décrit Hexis comme un « monde-usine et place forte », un ancien monde industriel ravagé de ≈ 1,5 Md d'habitants, sans dire « planète-ville ». Faut-il une écuménopole entière, ou un monde-usine très urbanisé ?
+   → **Hypothèse validée par l'auteur** (05/11/2026) : monde-usine très urbanisé : nappes de villes et de complexes industriels visibles de jour, lumières des villes côté nuit, zones ravagées encore visibles.
+
+18. **Voyage vers les mondes isolés (M9).** Les astres hors système (§3.4) deviennent des destinations par l'hyperespace (ils n'ont pas de Portail). Myrth (« on n'y atterrit pas sans invitation ») et Vashyra (« refuse tout contact prolongé ») : jusqu'où le joueur peut-il aller ?
+   → **Hypothèse validée par l'auteur** (05/11/2026) : arrivée en orbite seulement, pour tous (aucun n'a de spatioport) ; les astres secrets restent hors de la carte.

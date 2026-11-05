@@ -31,17 +31,18 @@
 
 ## 2. Décisions et hypothèses (réversibles, marquées)
 
+Q16, Q17 et Q18 : hypothèses **validées par l'auteur** le 05/11/2026.
+
 - **Pas de boucliers** (AGENTS.md §9.3 et §13, canon) : le schéma du vaisseau montre le **blindage
-  par section** (proue, poupe, bâbord, tribord, P26) et l'état du cœur, jamais de bouclier.
-  Question Q16.
+  par section** (proue, poupe, bâbord, tribord, P26) et l'état du cœur, jamais de bouclier (Q16).
 - **Hexis** : le canon dit « monde-usine et place forte », ancien monde industriel ravagé,
-  ≈ 1,5 Md d'habitants (§3.3), pas « planète-ville ». Hypothèse : un monde-usine très urbanisé,
+  ≈ 1,5 Md d'habitants (§3.3), pas « planète-ville ». Retenu : un monde-usine très urbanisé,
   nappes de villes et de complexes industriels visibles de jour, lumières des villes côté nuit,
-  zones ravagées. Question Q17.
+  zones ravagées (Q17).
 - **Mondes isolés** (astres hors système, §3.4) : on peut s'y rendre par l'hyperespace (aucun
   Portail) et arriver en orbite ; pas d'amarrage (aucun n'a de spatioport). Les astres secrets 🔒
   restent hors de la carte. Myrth (« on n'y atterrit pas sans invitation ») et Vashyra (« refuse tout
-  contact ») : orbite seulement. Question Q18.
+  contact ») : orbite seulement (Q18).
 - **Intérieur type** : le vaisseau du joueur, « petit marchand de taille corvette » (P12), utilise
   l'intérieur type `corvette` ; d'autres vaisseaux de la classe pourront le réutiliser. Mise à jour
   de P12.
