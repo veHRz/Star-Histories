@@ -77,6 +77,14 @@ step "scénario pause_escape" \
 step "scénario map_key" \
     run_game "ERROR|panicked|map_key" SH_START=new SH_RAID=0 SH_SCENARIO=map_key
 
+# L'encart des touches à la vraie touche (F1 tenue) : il bascule une fois par appui.
+step "scénario key_help" \
+    run_game "ERROR|panicked|key_help" SH_START=sector:hexis_spaceport SH_SPAWN=hall SH_SCENARIO=key_help
+
+# L'écran du personnage aux vraies touches (I, O, Échap sans pause derrière), puis un casier.
+step "scénario character" \
+    run_game "ERROR|panicked|sc.{1,3}nario character" SH_START=sector:player_ship SH_SPAWN=soute SH_SCENARIO=character
+
 # Sauvegarde puis chargement, en vol et à quai : argent, date, vue et pose du vaisseau retrouvés.
 for start in new sector:hexis_spaceport; do
     step "scénario save_load (${start})" \
@@ -103,6 +111,9 @@ step "scénario port_loop" \
 # Critère de M3 : Hexis → Cygnara par Portail, retour par l'hyperespace, durées vérifiées.
 step "scénario voyage" \
     run_game "ERROR|panicked|sc.{1,3}nario voyage : sys_|sc.{1,3}nario .*termin" SH_START=global:hexis SH_SCENARIO=voyage SH_RAID=0
+# M9 : un monde isolé (Calderis, sans Portail) par l'hyperespace, aller et retour, durées vérifiées.
+step "scénario voyage_isolated" \
+    run_game "ERROR|panicked|sc.{1,3}nario voyage_isolated" SH_START=global:hexis SH_SCENARIO=voyage_isolated SH_RAID=0
 step "scénario contract_loop" \
     run_game "ERROR|panicked|v.{1,3}rifi|sc.{1,3}nario .*termin" SH_START=global:hexis SH_SCENARIO=contract_loop SH_RAID=0
 

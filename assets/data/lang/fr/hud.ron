@@ -1,5 +1,6 @@
 // Interface en jeu (M9, lot L2) : bandeau du lieu, encart des touches (ui/keys_panel.rs),
-// schéma du vaisseau (ui/combat_hud.rs), HUD de vol, conseils de première fois (tips.rs).
+// schéma du vaisseau (ui/combat_hud.rs), HUD de vol, conseils de première fois (tips.rs),
+// arme absente au combat à pied (combat/foot.rs).
 // Les `view.*.hint` ne s'affichent plus (les commandes sont dans l'encart des touches) ; gardés
 // tant que des appelants de `views::view_banner` les citent.
 {
@@ -55,14 +56,16 @@
     "tips.title": "Conseil",
     "tips.helm": "Aux commandes : [KeyW][KeyA][KeyS][KeyD] et [Space]/[ControlLeft] pour pousser, la souris pour diriger, [KeyQ]/[KeyE] pour le roulis. [ShiftLeft] : la croisière, pour traverser le système. [KeyF] : vous lever.",
     "tips.dock": "Pour vous amarrer au spatioport, approchez la balise « Approche du spatioport » et appuyez sur [KeyG] : la manœuvre se fait seule. [KeyM] ouvre la carte de la galaxie.",
-    "tips.port": "À quai. Le hall du spatioport mène au bureau des contrats d'Hexa-Corp, au marché et à la taverne : [KeyE] pour parler ou utiliser une console. [KeyC] : votre fiche, [KeyJ] : le journal, [KeyK] : le codex.",
+    "tips.port": "À quai. Le hall du spatioport mène au bureau des contrats d'Hexa-Corp, au marché et à la taverne : [KeyE] pour parler ou utiliser une console. [KeyI] (ou [KeyC]) : votre personnage, inventaire et réputations ; [KeyO] : les compétences ; [KeyJ] : le journal ; [KeyK] : le codex.",
     "tips.foot": "Vous marchez dans votre vaisseau : [KeyE] ouvre les portes et utilise les consoles. Le siège du pilote est au cockpit, à l'avant.",
     "tips.map": "La carte : cliquez sur un système pour tracer une route, puis [Digit1] pour partir par les Portails ou [Digit2] par l'hyperespace. [KeyM] : retour aux commandes.",
     "tips.contract": "Votre contrat est au journal ([KeyJ]). Livrez en orbite de la destination : [KeyG] près du hub de Portails ou des chantiers.",
     "tips.raid": "Combat ! Clic gauche : canons, clic droit : missile sur la cible, [KeyX] : leurres. Pas de croisière à moins de 8 km d'un hostile : éloignez-vous pour fuir.",
     "tips.boarding": "Abordage ! Clic gauche : tirer, [KeyR] : recharger, [ControlLeft] : s'accroupir derrière un abri.",
-    "view.global.hint": "Aux commandes : [KeyW][KeyA][KeyS][KeyD], [Space]/[ControlLeft] : poussée   ·   Souris : diriger   ·   [KeyQ]/[KeyE] : roulis   ·   [ShiftLeft] : croisière   ·   [KeyZ] : assistance de vol   ·   [KeyG] : amarrage   ·   [KeyF] : se lever   ·   [KeyC] : fiche   ·   [KeyJ] : journal   ·   [KeyK] : codex   ·   [Escape] : pause",
-    "view.sector.hint": "[KeyW][KeyA][KeyS][KeyD] : se déplacer   ·   Souris : regarder   ·   [ShiftLeft] : courir   ·   [KeyC] : fiche   ·   [KeyJ] : journal   ·   [KeyK] : codex   ·   [Escape] : pause",
+    "combat.foot.unarmed": "Aucune arme équipée : [KeyI] pour l'inventaire.",
+    "combat.foot.hud_unarmed": "Santé {health}   ·   sans arme",
+    "view.global.hint": "Aux commandes : [KeyW][KeyA][KeyS][KeyD], [Space]/[ControlLeft] : poussée   ·   Souris : diriger   ·   [KeyQ]/[KeyE] : roulis   ·   [ShiftLeft] : croisière   ·   [KeyZ] : assistance de vol   ·   [KeyG] : amarrage   ·   [KeyF] : se lever   ·   [KeyI] : personnage   ·   [KeyJ] : journal   ·   [KeyK] : codex   ·   [Escape] : pause",
+    "view.sector.hint": "[KeyW][KeyA][KeyS][KeyD] : se déplacer   ·   Souris : regarder   ·   [ShiftLeft] : courir   ·   [KeyI] : personnage   ·   [KeyJ] : journal   ·   [KeyK] : codex   ·   [Escape] : pause",
     "hud.flight.dock": "[KeyG] : demander l'amarrage — {name}, {distance} km",
     "hud.flight.speed_ms": "{value} m/s",
     "hud.flight.speed_kms": "{value} km/s",

@@ -7,7 +7,10 @@
 //!   En combat, ils cherchent une **couverture** (un point où un obstacle les cache accroupis,
 //!   d'où ils voient le joueur debout), s'y rendent par les portails du secteur (en ouvrant les
 //!   portes), puis tirent par rafales en se relevant ; pris à revers, ils changent d'abri.
-//! - Le joueur tire au clic gauche, recharge sur [`Reload`] ; le recul relève la visée.
+//! - Le joueur tire au clic gauche, recharge sur [`Reload`] ; le recul relève la visée. Depuis
+//!   M9, il lui faut une arme dans l'emplacement Arme de son équipement
+//!   ([`crate::items::Equipment`]) : le pistolet retiré dans l'écran du personnage, il ne tire
+//!   plus et l'arme en main disparaît (un message bref le lui dit s'il essaie).
 //!
 //! `SH_BOARDING=N` (autopilote) : N pirates abordent le vaisseau du joueur, par le couloir
 //! arrière.
@@ -423,6 +426,32 @@ fn hostiles_present(fighters: &Query<&Fighter>) -> bool {
     fighters.iter().any(Fighter::alive)
 }
 
+/// Le joueur a-t-il une arme dans l'emplacement Arme ? Sans équipement (hors partie, tests
+/// headless qui ne le posent pas), on le considère armé : rien ne change avant M9.
+fn weapon_equipped(equipment: Option<&crate::items::Equipment>) -> bool {
+    equipment.is_none_or(|e| e.get(sh_data::EquipSlot::Weapon).is_some())
+}
+
+/// Délai minimal (s) entre deux rappels « sans arme » : chaque message sonne.
+const UNARMED_NOTICE_SECONDS: f32 = 2.0;
+
+/// Le rappel « sans arme » : la détente était-elle déjà tenue au frame précédent, et depuis
+/// quand le dernier rappel est-il parti.
+struct UnarmedTrigger {
+    held: bool,
+    since_notice: f32,
+}
+
+impl Default for UnarmedTrigger {
+    fn default() -> Self {
+        Self {
+            held: false,
+            // Le premier essai est toujours signalé.
+            since_notice: UNARMED_NOTICE_SECONDS,
+        }
+    }
+}
+
 /// L'arme du joueur : tir, recul, rechargement.
 #[allow(clippy::too_many_arguments)]
 fn player_firearm(
@@ -441,6 +470,12 @@ fn player_firearm(
     mut player: Single<&mut PlayerController, With<Player>>,
     mut rng: Local<Option<SimRng>>,
     mut noises: MessageWriter<Noise>,
+    (equipment, texts, mut notices, mut unarmed): (
+        Option<Res<crate::items::Equipment>>,
+        Res<Texts>,
+        MessageWriter<Notice>,
+        Local<UnarmedTrigger>,
+    ),
 ) {
     let Some(mut arms) = arms else {
         return;
@@ -455,7 +490,19 @@ fn player_firearm(
         let on_foot = *mode.get() == ControlMode::OnFoot;
         (on_foot && ***fire, on_foot && ***reload)
     };
+    let pressed = want_fire && !unarmed.held;
+    unarmed.held = want_fire;
+    unarmed.since_notice += dt;
     if arms.health <= 0.0 || !hostiles_present(&fighters) {
+        return;
+    }
+    // Sans arme équipée : ni tir ni rechargement. Le rappel suit un nouvel appui (pas chaque
+    // frame du bouton tenu), espacé : il s'affiche et sonne.
+    if !weapon_equipped(equipment.as_deref()) {
+        if pressed && unarmed.since_notice >= UNARMED_NOTICE_SECONDS {
+            unarmed.since_notice = 0.0;
+            notices.write(Notice(texts.get("combat.foot.unarmed")));
+        }
         return;
     }
     if arms.reload > 0.0 {
@@ -511,19 +558,21 @@ struct HeldWeapon;
 /// rester dans la capsule du joueur (rayon 0,3 m) et ne pas traverser les cloisons.
 const HELD_REST: Vec3 = Vec3::new(0.15, -0.19, -0.28);
 
-/// Montre l'arme du joueur quand elle est en main (des hostiles debout), avec un recul à
-/// chaque coup et l'arme baissée pendant le rechargement.
+/// Montre l'arme du joueur quand elle est en main (des hostiles debout, une arme équipée), avec
+/// un recul à chaque coup et l'arme baissée pendant le rechargement.
 fn held_weapon(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     arms: Option<Res<PlayerArms>>,
+    equipment: Option<Res<crate::items::Equipment>>,
     fighters: Query<&Fighter>,
     camera: Single<Entity, With<PlayerCamera>>,
     mut held: Query<(Entity, &mut Transform), With<HeldWeapon>>,
 ) {
+    let armed = weapon_equipped(equipment.as_deref());
     let model = arms
         .as_ref()
-        .filter(|a| a.health > 0.0 && hostiles_present(&fighters))
+        .filter(|a| armed && a.health > 0.0 && hostiles_present(&fighters))
         .and_then(|a| a.weapon.model.clone());
     let Some(model) = model else {
         for (entity, _) in &held {
@@ -1066,6 +1115,7 @@ fn foot_hud(
     fonts: Res<UiFonts>,
     sector: Res<ActiveSector>,
     arms: Option<Res<PlayerArms>>,
+    equipment: Option<Res<crate::items::Equipment>>,
     fighters: Query<&Fighter>,
     mut hud: Query<(&mut Text, &mut Visibility), With<FootHud>>,
 ) {
@@ -1099,8 +1149,11 @@ fn foot_hud(
         return;
     }
     let shown = hostiles_present(&fighters) || arms.health < arms.max_health;
+    // Sans arme équipée, la ligne ne compte pas de munitions qu'on ne peut pas tirer.
     let line = texts.format(
-        if arms.reload > 0.0 {
+        if !weapon_equipped(equipment.as_deref()) {
+            "combat.foot.hud_unarmed"
+        } else if arms.reload > 0.0 {
             "combat.foot.hud_reload"
         } else {
             "combat.foot.hud"

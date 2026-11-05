@@ -101,6 +101,30 @@ Step "scénario map_key" {
     $global:LASTEXITCODE = $code
 }
 
+# L'encart des touches à la vraie touche (F1 tenue) : il bascule une fois par appui.
+Step "scénario key_help" {
+    $env:SH_START = "sector:hexis_spaceport"
+    $env:SH_SPAWN = "hall"
+    $env:SH_SCENARIO = "key_help"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_START, Env:SH_SPAWN, Env:SH_SCENARIO -ErrorAction SilentlyContinue
+    $log | Select-String -Pattern "ERROR|panicked|key_help" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
+# L'écran du personnage aux vraies touches (I, O, Échap sans pause derrière), puis un casier.
+Step "scénario character" {
+    $env:SH_START = "sector:player_ship"
+    $env:SH_SPAWN = "soute"
+    $env:SH_SCENARIO = "character"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_START, Env:SH_SPAWN, Env:SH_SCENARIO -ErrorAction SilentlyContinue
+    $log | Select-String -Pattern "ERROR|panicked|sc.{1,3}nario character" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
 # Sauvegarde puis chargement, en vol et à quai : argent, date, vue et pose du vaisseau retrouvés.
 foreach ($start in @("new", "sector:hexis_spaceport")) {
     Step "scénario save_load ($start)" {
@@ -170,6 +194,18 @@ Step "scénario voyage" {
     $code = $LASTEXITCODE
     Remove-Item Env:SH_START, Env:SH_SCENARIO, Env:SH_RAID -ErrorAction SilentlyContinue
     $log | Select-String -Pattern "ERROR|panicked|sc.{1,3}nario voyage : sys_|sc.{1,3}nario .*termin" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
+# M9 : un monde isolé (Calderis, sans Portail) par l'hyperespace, aller et retour, durées vérifiées.
+Step "scénario voyage_isolated" {
+    $env:SH_START = "global:hexis"
+    $env:SH_SCENARIO = "voyage_isolated"
+    $env:SH_RAID = "0"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_START, Env:SH_SCENARIO, Env:SH_RAID -ErrorAction SilentlyContinue
+    $log | Select-String -Pattern "ERROR|panicked|sc.{1,3}nario voyage_isolated" | ForEach-Object { "   $_" }
     $global:LASTEXITCODE = $code
 }
 

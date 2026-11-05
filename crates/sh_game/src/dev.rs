@@ -31,6 +31,12 @@
 //! - `SH_SCENARIO=pickup_persist` (avec `SH_USER_DIR` et `SH_START=sector:hexis_spaceport`) :
 //!   ramasser la tablette des quartiers du vaisseau, sauvegarder, recharger : elle ne revient
 //!   pas sur le bureau et reste dans l'inventaire.
+//! - `SH_SCENARIO=voyage_isolated` (avec `SH_START=global:hexis SH_RAID=0`) : Hexis → Calderis
+//!   (monde isolé, sans Portail) par l'hyperespace, capture en orbite, retour ; durées vérifiées.
+//! - `SH_SCENARIO=key_help` (avec `SH_START=sector:hexis_spaceport SH_SPAWN=hall`) : F1 tenue
+//!   comme par un joueur bascule l'encart des touches, une fois par appui.
+//! - `SH_SCENARIO=character` (avec `SH_START=sector:player_ship SH_SPAWN=soute`) : I, O, Échap
+//!   dans l'écran du personnage (sans pause derrière), puis un casier : Entrée, E.
 //!
 //! À la sortie, le temps de frame moyen et maximal est toujours journalisé (hors démarrage).
 
@@ -747,6 +753,25 @@ const VOYAGE: &[Step] = &[
     Step::Choose("close"),
 ];
 
+/// `voyage_isolated` (avec `SH_START=global:hexis SH_RAID=0`) : un monde isolé (M9, Q18),
+/// Calderis, planète errante sans Portail ; aller par l'hyperespace jusqu'à son orbite, puis
+/// retour à Hexis. ≈ 19,4 jours par sens : les deux sens tiennent dans le réservoir (60 jours).
+const VOYAGE_ISOLATED: &[Step] = &[
+    Step::Mark,
+    Step::OpenMap,
+    Step::Route("calderis"),
+    Step::Depart(sh_sim::travel::TravelMode::Hyperspace),
+    Step::Expect("calderis", 15.0 * 24.0, 25.0 * 24.0),
+    // Le temps que l'astre et ses textures (calculées en tâche de fond) soient prêts.
+    Step::Wait(2.0),
+    Step::Shot("m9-isole-orbite"),
+    Step::Mark,
+    Step::OpenMap,
+    Step::Route("sys_hexis"),
+    Step::Depart(sh_sim::travel::TravelMode::Hyperspace),
+    Step::Expect("sys_hexis", 15.0 * 24.0, 25.0 * 24.0),
+];
+
 /// `contract_loop` : contrat de transport Hexis → Cygnara, livraison, paiement, réputation,
 /// échéance de la Banque, puis trahison d'un second contrat et ses conséquences (critère de M5).
 const CONTRACT_LOOP: &[Step] = &[
@@ -1121,11 +1146,26 @@ impl Plugin for ScenarioPlugin {
                 .add_systems(Update, pickup_persist);
             return;
         }
+        // Touches tenues comme par un joueur : la touche est relâchée avant que le scénario
+        // regarde la suite.
+        if name == "key_help" {
+            app.init_resource::<HeldKey>()
+                .init_resource::<KeyHelpCheck>()
+                .add_systems(PreUpdate, (release_key, key_help).chain());
+            return;
+        }
+        if name == "character" {
+            app.init_resource::<HeldKey>()
+                .init_resource::<CharacterCheck>()
+                .add_systems(PreUpdate, (release_key, character_screen).chain());
+            return;
+        }
         let (steps, flight) = match name.as_str() {
             "walk_ship" => (WALK_SHIP, None),
             "fly_ship" => (FLY_SHIP_WALK, Some(FlightCheck::default())),
             "port_loop" => (PORT_LOOP, None),
             "voyage" => (VOYAGE, None),
+            "voyage_isolated" => (VOYAGE_ISOLATED, None),
             "contract_loop" => (CONTRACT_LOOP, None),
             "raid_win" => (RAID_WIN, None),
             "raid_flee" => (RAID_FLEE, None),
@@ -1142,6 +1182,7 @@ impl Plugin for ScenarioPlugin {
                 | "fly_ship"
                 | "port_loop"
                 | "voyage"
+                | "voyage_isolated"
                 | "contract_loop"
                 | "raid_win"
                 | "raid_flee"
@@ -1152,7 +1193,7 @@ impl Plugin for ScenarioPlugin {
                 | "terminal_tour"
         ) {
             error!(
-                "SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage, contract_loop, raid_win, raid_flee, raid_lose, firefight, firefight_lose, tutorial, terminal_tour, menu_return, save_load, pause_escape, map_key, pickup_persist)"
+                "SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage, voyage_isolated, contract_loop, raid_win, raid_flee, raid_lose, firefight, firefight_lose, tutorial, terminal_tour, menu_return, save_load, pause_escape, map_key, pickup_persist, key_help, character)"
             );
             app.add_systems(Startup, |mut exit: MessageWriter<AppExit>| {
                 exit.write(AppExit::error());
@@ -1477,6 +1518,337 @@ fn map_key(world: &mut World) {
     );
     let mut check = world.resource_mut::<MapKeyCheck>();
     check.holding = Some(KEY_HOLD_SECONDS);
+    check.step += 1;
+    check.since = 0.0;
+}
+
+/// La touche que tient un scénario (`key_help`, `character`) et le temps qu'il reste avant de
+/// la relâcher : un appui humain dure ≈ 150 ms ([`KEY_HOLD_SECONDS`]), bien plus qu'un frame,
+/// et l'écran qui s'ouvre voit la touche encore enfoncée (AGENTS.md §4, touche tenue d'un
+/// contexte à l'autre).
+#[derive(Resource, Default)]
+struct HeldKey(Option<(KeyCode, f32)>);
+
+/// Délai après le relâchement d'une touche avant d'en regarder l'effet (écran ouvert ou fermé,
+/// mode de commande changé : quelques frames suffisent, on laisse de la marge).
+const KEY_SETTLE_SECONDS: f32 = 0.6;
+
+/// La touche logique d'un message clavier simulé : le jeu lit les touches physiques, la
+/// logique ne sert qu'à la saisie de texte.
+fn logical_key(code: KeyCode) -> bevy::input::keyboard::Key {
+    use bevy::input::keyboard::{Key, NativeKey};
+    match code {
+        KeyCode::Escape => Key::Escape,
+        KeyCode::Enter => Key::Enter,
+        KeyCode::F1 => Key::F1,
+        KeyCode::KeyE => Key::Character("e".into()),
+        KeyCode::KeyI => Key::Character("i".into()),
+        KeyCode::KeyO => Key::Character("o".into()),
+        _ => Key::Unidentified(NativeKey::Unidentified),
+    }
+}
+
+/// Enfonce une touche (vrai message clavier : contextes d'entrée et écrans la voient comme
+/// celle d'un joueur) ; [`release_key`] la relâche après [`KEY_HOLD_SECONDS`].
+fn hold_key(world: &mut World, code: KeyCode) {
+    send_key(world, code, logical_key(code), true);
+    world.resource_mut::<HeldKey>().0 = Some((code, KEY_HOLD_SECONDS));
+}
+
+/// Relâche la touche tenue quand son temps est écoulé.
+fn release_key(world: &mut World) {
+    let dt = world.resource::<Time<Real>>().delta_secs();
+    let mut held = world.resource_mut::<HeldKey>();
+    let Some((code, left)) = held.0 else {
+        return;
+    };
+    if left > dt {
+        held.0 = Some((code, left - dt));
+        return;
+    }
+    held.0 = None;
+    send_key(world, code, logical_key(code), false);
+}
+
+/// Une touche est-elle encore tenue (le scénario attend son relâchement) ?
+fn key_held(world: &World) -> bool {
+    world.resource::<HeldKey>().0.is_some()
+}
+
+/// Le mode de commande courant.
+fn control_mode(world: &World) -> Option<crate::state::ControlMode> {
+    world
+        .get_resource::<State<crate::state::ControlMode>>()
+        .map(|s| *s.get())
+}
+
+/// `key_help` : l'encart des touches, à la vraie touche.
+#[derive(Resource, Default)]
+struct KeyHelpCheck {
+    step: u8,
+    since: f32,
+    total: f32,
+    /// L'encart était-il déplié au départ ?
+    initial: bool,
+}
+
+/// `key_help` (avec `SH_START=sector:hexis_spaceport SH_SPAWN=hall`) : à pied, F1 tenue comme
+/// par un joueur bascule l'encart des touches (`ui::keys_panel::KeyHelpVisible`) une seule
+/// fois malgré la touche tenue ; un second appui le remet comme au départ.
+fn key_help(world: &mut World) {
+    use crate::state::ControlMode;
+    use crate::ui::keys_panel::KeyHelpVisible;
+    const DONE: u8 = u8::MAX;
+    let dt = world.resource::<Time<Real>>().delta_secs();
+    let mut check = world.resource_mut::<KeyHelpCheck>();
+    check.since += dt;
+    check.total += dt;
+    let (step, since, total, initial) = (check.step, check.since, check.total, check.initial);
+    if step == DONE {
+        return;
+    }
+    let fail = |world: &mut World, message: String| {
+        error!("scénario key_help : {message}");
+        world.write_message(AppExit::error());
+        world.resource_mut::<KeyHelpCheck>().step = DONE;
+    };
+    if total > 90.0 {
+        fail(world, format!("bloqué à l'étape {step}"));
+        return;
+    }
+    if key_held(world) {
+        return;
+    }
+    let on_foot = world.contains_resource::<crate::sector::ActiveSector>()
+        && control_mode(world) == Some(ControlMode::OnFoot);
+    let Some(visible) = world.get_resource::<KeyHelpVisible>().map(|v| v.0) else {
+        return;
+    };
+    let settled = since > KEY_HOLD_SECONDS + KEY_SETTLE_SECONDS;
+    match step {
+        // À pied depuis un moment : on note l'état de l'encart, puis F1.
+        0 if on_foot && since > 3.0 => {
+            world.resource_mut::<KeyHelpCheck>().initial = visible;
+        }
+        // F1 relâchée : l'encart a basculé une fois (puis il est revenu).
+        1 | 2 if settled => {
+            let expected = if step == 1 { !initial } else { initial };
+            if visible != expected {
+                fail(
+                    world,
+                    format!(
+                        "après l'appui {step} sur F1, encart déplié {visible} (attendu {expected})"
+                    ),
+                );
+                return;
+            }
+            if step == 2 {
+                let (start, other) = if initial {
+                    ("déplié", "replié")
+                } else {
+                    ("replié", "déplié")
+                };
+                info!(
+                    "scénario key_help terminé : F1 tenue bascule l'encart des touches une fois par appui ({start} → {other} → {start})"
+                );
+                world.write_message(AppExit::Success);
+                world.resource_mut::<KeyHelpCheck>().step = DONE;
+                return;
+            }
+        }
+        _ => return,
+    }
+    hold_key(world, KeyCode::F1);
+    let mut check = world.resource_mut::<KeyHelpCheck>();
+    check.step += 1;
+    check.since = 0.0;
+}
+
+/// Le casier ouvert par le scénario `character` (contenu de départ : `gameplay/items.ron`).
+const CHARACTER_LOCKER: &str = "corvette_chambre_casier_1";
+
+/// `character` : l'écran du personnage et le rangement d'un casier, aux vraies touches.
+#[derive(Resource, Default)]
+struct CharacterCheck {
+    step: u8,
+    since: f32,
+    total: f32,
+    /// Le casier et l'inventaire avant le transfert.
+    before: Option<(
+        std::collections::BTreeMap<String, u32>,
+        std::collections::BTreeMap<String, u32>,
+    )>,
+}
+
+/// Le contenu du casier du scénario et l'inventaire du joueur.
+fn locker_and_pack(
+    world: &World,
+) -> Option<(
+    std::collections::BTreeMap<String, u32>,
+    std::collections::BTreeMap<String, u32>,
+)> {
+    let locker = world
+        .get_resource::<crate::items::Containers>()?
+        .contents(CHARACTER_LOCKER)
+        .cloned()
+        .unwrap_or_default();
+    let pack = world
+        .get_resource::<crate::interaction::Inventory>()?
+        .items
+        .clone();
+    Some((locker, pack))
+}
+
+/// `character` (avec `SH_START=sector:player_ship SH_SPAWN=soute`) : I tenue ouvre l'écran du
+/// personnage (onglet Inventaire), O passe aux Compétences, Échap le ferme sans ouvrir la
+/// pause derrière, retour à pied ; puis un casier ([`CHARACTER_LOCKER`]) : Entrée prend la case
+/// choisie (comme au clavier dans l'écran), E referme le rangement.
+fn character_screen(world: &mut World) {
+    use crate::state::ControlMode;
+    use crate::ui::character::{CharacterScreen, ScreenView};
+    use crate::ui::{character, pause};
+    const DONE: u8 = u8::MAX;
+    let dt = world.resource::<Time<Real>>().delta_secs();
+    let mut check = world.resource_mut::<CharacterCheck>();
+    check.since += dt;
+    check.total += dt;
+    let (step, since, total) = (check.step, check.since, check.total);
+    if step == DONE {
+        return;
+    }
+    let fail = |world: &mut World, message: String| {
+        error!("scénario character : {message}");
+        world.write_message(AppExit::error());
+        world.resource_mut::<CharacterCheck>().step = DONE;
+    };
+    if total > 120.0 {
+        fail(world, format!("bloqué à l'étape {step}"));
+        return;
+    }
+    if key_held(world) {
+        return;
+    }
+    let settled = since > KEY_HOLD_SECONDS + KEY_SETTLE_SECONDS;
+    let mode = control_mode(world);
+    let view = world
+        .get_resource::<CharacterScreen>()
+        .map(|s| s.view.clone());
+    let shown = character::is_shown(world);
+    let paused = world.contains_resource::<pause::Paused>() || pause::is_shown(world);
+    // L'écran est fermé pour de bon : ni ressource, ni entités, ni pause, et à pied.
+    let closed = view.is_none() && !shown && !paused && mode == Some(ControlMode::OnFoot);
+    let state = format!("(écran {view:?}, affiché {shown}, pause {paused}, mode {mode:?})");
+    let key = match step {
+        // À pied depuis un moment, la partie prête : I.
+        0 => {
+            let ready = world.contains_resource::<crate::sector::ActiveSector>()
+                && world.contains_resource::<crate::career::Career>()
+                && locker_and_pack(world).is_some()
+                && mode == Some(ControlMode::OnFoot);
+            if !(ready && since > 3.0) {
+                return;
+            }
+            KeyCode::KeyI
+        }
+        // L'inventaire est affiché, en mode Menu (curseur libre) : O.
+        1 if settled => {
+            let expected = ScreenView::Tab(crate::items::CharacterTab::Inventory);
+            if view.as_ref() != Some(&expected) || !shown || mode != Some(ControlMode::Menu) {
+                fail(world, format!("I n'ouvre pas l'inventaire {state}"));
+                return;
+            }
+            KeyCode::KeyO
+        }
+        // Les compétences : Échap.
+        2 if settled => {
+            let expected = ScreenView::Tab(crate::items::CharacterTab::Skills);
+            if view.as_ref() != Some(&expected) || !shown {
+                fail(world, format!("O ne passe pas aux compétences {state}"));
+                return;
+            }
+            KeyCode::Escape
+        }
+        // Échap a fermé l'écran, sans pause derrière : le casier (comme le ferait la touche
+        // d'interaction en le visant ; le vaisseau de départ n'a pas encore ce casier).
+        3 if settled => {
+            if !closed {
+                fail(
+                    world,
+                    format!("Échap ne referme pas proprement l'écran {state}"),
+                );
+                return;
+            }
+            let before = locker_and_pack(world);
+            world.write_message(crate::items::OpenContainer(CHARACTER_LOCKER.to_owned()));
+            let mut check = world.resource_mut::<CharacterCheck>();
+            check.before = before;
+            (check.step, check.since) = (4, 0.0);
+            return;
+        }
+        // Le rangement est affiché, le casier n'est pas vide : Entrée prend la case choisie.
+        4 if since > 1.0 => {
+            let expected = ScreenView::Container(CHARACTER_LOCKER.to_owned());
+            if view.as_ref() != Some(&expected) || !shown {
+                fail(world, format!("le casier ne s'ouvre pas {state}"));
+                return;
+            }
+            let empty = world
+                .resource::<CharacterCheck>()
+                .before
+                .as_ref()
+                .is_none_or(|(locker, _)| locker.is_empty());
+            if empty {
+                fail(world, format!("casier {CHARACTER_LOCKER} vide ou inconnu"));
+                return;
+            }
+            KeyCode::Enter
+        }
+        // Un objet est passé du casier à l'inventaire, en entier : E referme le rangement.
+        5 if settled => {
+            let before = world.resource::<CharacterCheck>().before.clone();
+            let (Some((locker_before, pack_before)), Some((locker_after, pack_after))) =
+                (before, locker_and_pack(world))
+            else {
+                fail(world, "casier ou inventaire disparus".into());
+                return;
+            };
+            let moved = locker_before.iter().find_map(|(item, n)| {
+                let left = locker_after.get(item).copied().unwrap_or(0);
+                (left < *n).then(|| (item.clone(), n - left))
+            });
+            let Some((item, count)) = moved else {
+                fail(world, format!("Entrée n'a rien pris au casier {state}"));
+                return;
+            };
+            let had = pack_before.get(&item).copied().unwrap_or(0);
+            let has = pack_after.get(&item).copied().unwrap_or(0);
+            if has != had + count {
+                fail(
+                    world,
+                    format!("{count} × {item} pris au casier, inventaire {had} → {has}"),
+                );
+                return;
+            }
+            info!("scénario character : {count} × {item} pris au casier {CHARACTER_LOCKER}");
+            KeyCode::KeyE
+        }
+        // E relâchée : le rangement est fermé, retour à pied.
+        6 if settled => {
+            if !closed {
+                fail(world, format!("E ne referme pas le casier {state}"));
+                return;
+            }
+            info!(
+                "scénario character terminé : I ouvre l'inventaire, O les compétences, Échap ferme sans pause ; au casier, Entrée prend un objet et E referme"
+            );
+            world.write_message(AppExit::Success);
+            world.resource_mut::<CharacterCheck>().step = DONE;
+            return;
+        }
+        _ => return,
+    };
+    hold_key(world, key);
+    let mut check = world.resource_mut::<CharacterCheck>();
     check.step += 1;
     check.since = 0.0;
 }

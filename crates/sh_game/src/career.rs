@@ -399,7 +399,8 @@ fn spawn_wrecks(
 }
 
 /// La touche d'amarrage en vue Globale, avant l'amarrage : accrocher une épave à portée, ou
-/// livrer les contrats du système près d'un hub ou de chantiers. Renvoie `true` si elle a servi.
+/// livrer les contrats du système près d'un hub ou de chantiers, à défaut ouvrir l'écran du
+/// chantier (réparation, carburant). Renvoie `true` si elle a servi.
 pub fn deliver_or_tow(world: &mut World, ship: SpacePos) -> bool {
     if !world.contains_resource::<Career>() {
         return false;
@@ -439,7 +440,9 @@ pub fn deliver_or_tow(world: &mut World, ship: SpacePos) -> bool {
     if deliver_here(world, &system) {
         return true;
     }
-    // Rien à livrer, mais un vaisseau abîmé près des chantiers qui le réparent : le devis.
+    // Rien à livrer, mais un vaisseau abîmé ou un réservoir entamé près des chantiers qui le
+    // réparent : le devis (réparation et carburant sont sur le même écran, M9). Sans le
+    // réservoir dans la condition, un vaisseau intact ne pouvait faire le plein qu'à quai.
     let data = world.resource::<Data>().clone();
     let damaged = world
         .resource::<Career>()
@@ -447,7 +450,12 @@ pub fn deliver_or_tow(world: &mut World, ship: SpacePos) -> bool {
         .hull
         .as_ref()
         .is_some_and(|h| h.damage_points() > 0.0);
-    if damaged
+    // Même seuil que le devis du chantier (`ui::terminal::fuel::quote`) : moins d'un centième
+    // d'unité de place, le réservoir est plein (arrondis des voyages).
+    let thirsty = world
+        .get_resource::<crate::voyage::ShipFuel>()
+        .is_some_and(|tank| tank.capacity - tank.units >= 0.01);
+    if (damaged || thirsty)
         && near.contains(&StructureKind::Shipyard)
         && data.combat.repair.systems.contains(&system)
     {

@@ -957,6 +957,31 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
             format!("système de réparation inconnu ou secret : {system}"),
         );
     }
+    // Le carburant vendu au chantier sort des stocks du système (`SimCommand::Take`) : une
+    // marchandise inconnue de la simulation serait prélevée dans le vide. Un prix ou une tranche
+    // nuls rendraient le plein gratuit ou le bouton de tranche inopérant.
+    let refuel = &combat.refuel;
+    c.check(
+        sim.base_prices.contains_key(&refuel.commodity),
+        "combat.ron : refuel",
+        format!(
+            "marchandise inconnue de sim.ron (base_prices) : {}",
+            refuel.commodity
+        ),
+    );
+    c.check(
+        refuel.day_price.is_finite() && refuel.day_price > 0.0,
+        "combat.ron : refuel",
+        format!(
+            "prix d'un jour de carburant invalide : {}",
+            refuel.day_price
+        ),
+    );
+    c.check(
+        refuel.step_days.is_finite() && refuel.step_days > 0.0,
+        "combat.ron : refuel",
+        format!("tranche de ravitaillement invalide : {}", refuel.step_days),
+    );
 
     // --- Objets -----------------------------------------------------------------------------
     let items_ctx = crate::paths::ITEMS;
