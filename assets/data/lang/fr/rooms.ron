@@ -1,0 +1,20 @@
+// Noms des salles par usage (`name_key` des cellules des descripteurs de secteur,
+// docs/m9-retours.md §3.5 ; M9, lot L2). Une clé de cellule absente est une erreur de
+// validation.
+{
+    "room.cockpit": "Cockpit",
+    "room.cabin": "Chambre",
+    "room.airlock": "Sas",
+    "room.cargo_hold": "Soute",
+    "room.engine_room": "Salle des machines",
+    "room.mess": "Carré",
+    "room.crew_quarters": "Quartiers de l'équipage",
+    "room.corridor": "Couloir",
+    "room.hangar": "Hangar",
+    "room.arrivals_hall": "Hall des arrivées",
+    "room.contracts_office": "Bureau des contrats",
+    "room.tavern": "Taverne",
+    "room.market": "Marché",
+    "room.bank": "Banque",
+    "room.shipyard_office": "Bureau du chantier",
+}

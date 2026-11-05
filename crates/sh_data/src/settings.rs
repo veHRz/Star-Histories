@@ -87,10 +87,25 @@ pub struct GraphicsPreset {
     pub anisotropy: u16,
     /// Distance d'affichage maximale des détails (mètres), pour les `VisibilityRange`.
     pub detail_distance: f32,
+    /// Niveau de décor affiché (docs/m9-retours.md §3.2) : un nœud glTF dont l'extra `detail`
+    /// dépasse ce niveau est caché avec ses enfants. 0 en Bas (le décor de base seul), 1 en
+    /// Moyen, 2 en Haut (tout le décor) ; au plus [`GraphicsPreset::MAX_DECOR_DETAIL`].
+    #[serde(default)]
+    pub decor_detail: u8,
 }
 
 fn default_anisotropy() -> u16 {
     1
+}
+
+impl GraphicsPreset {
+    /// Le niveau de décor le plus riche qu'un objet puisse demander.
+    pub const MAX_DECOR_DETAIL: u8 = 2;
+
+    /// Un décor de ce niveau (extra glTF `detail`, absent = 0) est-il affiché ?
+    pub fn shows_detail(&self, detail: u8) -> bool {
+        detail <= self.decor_detail
+    }
 }
 
 /// Espace de la vue Globale (AGENTS.md §6.4).

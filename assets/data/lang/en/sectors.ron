@@ -1,0 +1,8 @@
+// Noms des secteurs et des ports d'amarrage (descripteurs de secteur, mises en scène des
+// systèmes ; M9, lot L7).
+{
+    "sector.player_ship": "Your ship",
+    "dock.hexis_spaceport": "Hexis spaceport approach",
+    "sector.hexis_spaceport": "Hexis spaceport",
+    "sector.salle_temoin": "Material test room",
+}

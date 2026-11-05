@@ -19,9 +19,11 @@ mod dev_tools;
 pub mod graphics;
 pub mod input;
 pub mod interaction;
+pub mod items;
 pub mod living;
 pub mod loading;
 pub mod materials;
+pub mod npc;
 pub mod options;
 pub mod player;
 pub mod save;
@@ -90,6 +92,9 @@ impl Plugin for StarHistoriesPlugin {
             tips::TipsPlugin,
             // Tutoriel guidé (M8).
             tutorial::TutorialPlugin,
+            // M9 : objets du joueur (catalogue, casiers, équipement), PNJ de comptoir.
+            items::ItemsPlugin,
+            npc::NpcPlugin,
         ));
         #[cfg(feature = "dev")]
         app.add_plugins(dev_tools::DevToolsPlugin);

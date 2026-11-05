@@ -48,6 +48,10 @@ pub enum SectorKind {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Cell {
     pub id: String,
+    /// Clé de langue du nom de la salle, selon son usage (`room.cockpit`, fichier
+    /// `lang/<code>/rooms.ron`), affiché dans le bandeau ; la validation exige qu'elle existe.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name_key: Option<String>,
     pub model: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lod: Option<String>,
@@ -396,6 +400,7 @@ mod tests {
     fn cell(id: &str, min: (f32, f32, f32), max: (f32, f32, f32)) -> Cell {
         Cell {
             id: id.into(),
+            name_key: None,
             model: format!("{id}.glb"),
             lod: None,
             min,

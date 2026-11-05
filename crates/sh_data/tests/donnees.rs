@@ -403,19 +403,109 @@ fn la_carte_ne_montre_aucun_secret() {
     );
 }
 
+/// Sur l'union des fichiers de chaque langue (fichier commun et fichiers de domaine).
 #[test]
 fn le_francais_et_l_anglais_ont_les_memes_cles() {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/data");
-    let lire = |rel: &str| -> sh_data::Lang {
-        sh_data::read_ron(&dir.join(rel)).unwrap_or_else(|e| panic!("{e}"))
+    let dir = racine().join("assets/data");
+    let lire = |code: &str| -> sh_data::Lang {
+        sh_data::load_lang(&dir, code).unwrap_or_else(|e| panic!("{e}"))
     };
-    let fr = lire(sh_data::paths::LANG);
-    let en = lire(sh_data::paths::LANG_EN);
+    let fr = lire(sh_data::paths::LANG_CODE);
+    let en = lire(sh_data::paths::LANG_EN_CODE);
     let manquantes: Vec<&String> = fr.strings.keys().filter(|k| !en.has(k)).collect();
     let en_trop: Vec<&String> = en.strings.keys().filter(|k| !fr.has(k)).collect();
     assert!(
         manquantes.is_empty() && en_trop.is_empty(),
-        "en.ron : clés manquantes {manquantes:?}, clés en trop {en_trop:?}"
+        "en : clés manquantes {manquantes:?}, clés en trop {en_trop:?}"
     );
     assert_eq!(fr.code, "fr");
+    assert_eq!(en.code, "en");
+    for lang in [&fr, &en] {
+        assert!(
+            lang.duplicates.is_empty(),
+            "{} : clés en double {:?}",
+            lang.code,
+            lang.duplicates
+        );
+    }
+    // Des fichiers de domaine sont bien lus (la langue n'est pas réduite au fichier commun).
+    assert!(
+        fr.origins.values().any(|f| f.starts_with("lang/fr/")),
+        "aucun fichier de domaine lu"
+    );
+}
+
+#[test]
+fn detecte_une_cle_de_texte_en_double() {
+    let mut data = donnees();
+    data.lang.duplicates.push(sh_data::DuplicateKey {
+        key: "menu.quit".into(),
+        first: "lang/fr.ron".into(),
+        second: "lang/fr/hud.ron".into(),
+    });
+    let m = messages(&data);
+    assert!(
+        m.contains("lang/fr.ron et lang/fr/hud.ron") && m.contains("en double : menu.quit"),
+        "{m}"
+    );
+}
+
+#[test]
+fn detecte_un_nom_de_salle_absent() {
+    let mut data = donnees();
+    data.sectors[0].cells[0].name_key = Some("room.salle_fantome".into());
+    assert!(messages(&data).contains("nom de salle absent de la langue : room.salle_fantome"));
+}
+
+#[test]
+fn detecte_un_objet_incoherent() {
+    let mut data = donnees();
+    data.items.items[0].name_key = "item.objet_fantome".into();
+    assert!(messages(&data).contains("texte absent : item.objet_fantome"));
+    let mut data = donnees();
+    data.items
+        .containers
+        .entry("casier_test".into())
+        .or_default()
+        .insert("objet_fantome".into(), 1);
+    assert!(messages(&data).contains("objet inconnu objet_fantome"));
+    let mut data = donnees();
+    data.graphics.low.decor_detail = 3;
+    assert!(messages(&data).contains("decor_detail hors de"));
+}
+
+/// Les casiers de départ et l'équipement porté désignent des objets du catalogue, et l'arme
+/// portée est celle du combattant joueur.
+#[test]
+fn le_catalogue_d_objets_de_depart() {
+    let data = donnees();
+    for id in [
+        "datapad",
+        "spare_parts",
+        "mag_pistol",
+        "flight_suit",
+        "toolkit",
+        "medkit",
+        "ration",
+        "data_chip",
+        "cargo_manifest",
+    ] {
+        assert!(data.item(id).is_some(), "objet absent : {id}");
+    }
+    let equipment = data.items.starting_equipment();
+    assert_eq!(
+        equipment
+            .get(&sh_data::EquipSlot::Weapon)
+            .map(String::as_str),
+        Some("mag_pistol")
+    );
+    let player_weapon = data
+        .combat
+        .fighters
+        .get("player")
+        .map(|f| f.weapon.as_str());
+    assert_eq!(
+        data.item("mag_pistol").and_then(|i| i.firearm.as_deref()),
+        player_weapon
+    );
 }

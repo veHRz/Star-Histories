@@ -7,9 +7,11 @@ use bevy::ui::IsDefaultUiCamera;
 
 use crate::data::assets_dir;
 
+pub mod character;
 pub mod combat_hud;
 pub mod flight_hud;
 pub mod hud;
+pub mod keys_panel;
 pub mod menu;
 pub mod options;
 pub mod pause;
@@ -28,6 +30,9 @@ impl Plugin for UiPlugin {
             terminal::TerminalPlugin,
             pause::PausePlugin,
             options::OptionsUiPlugin,
+            // M9 : encart des touches (L2), écran du personnage (L5).
+            keys_panel::KeysPanelPlugin,
+            character::CharacterScreenPlugin,
         ))
         .add_systems(Startup, (setup_fonts, spawn_ui_camera))
         .add_systems(PreUpdate, learn_key_labels);

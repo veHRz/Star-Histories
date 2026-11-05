@@ -27,11 +27,11 @@ pub struct Data(pub Arc<GameData>);
 pub struct Texts(pub Lang);
 
 impl Texts {
-    /// Charge la langue d'interface. Un échec n'empêche pas de démarrer : les clés s'affichent
-    /// entre crochets, et la validation des données signale le problème au chargement.
+    /// Charge la langue d'interface (fichier commun et fichiers de domaine, `sh_data::load_lang`).
+    /// Un échec n'empêche pas de démarrer : les clés s'affichent entre crochets, et la
+    /// validation des données signale le problème au chargement.
     pub fn load() -> Self {
-        let path = data_dir().join(sh_data::paths::LANG);
-        let mut lang = match sh_data::read_ron::<Lang>(&path) {
+        let mut lang = match sh_data::load_lang(&data_dir(), sh_data::paths::LANG_CODE) {
             Ok(lang) => lang,
             Err(err) => {
                 error!("textes d'interface illisibles : {err}");

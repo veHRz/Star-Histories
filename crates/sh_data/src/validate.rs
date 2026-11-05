@@ -501,6 +501,14 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
             &ctx,
             "anisotropy hors de [1 ; 16]",
         );
+        c.check(
+            p.decor_detail <= crate::GraphicsPreset::MAX_DECOR_DETAIL,
+            &ctx,
+            format!(
+                "decor_detail hors de [0 ; {}]",
+                crate::GraphicsPreset::MAX_DECOR_DETAIL
+            ),
+        );
     }
     c.check(
         data.clock.time_scale > 0.0,
@@ -555,6 +563,18 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
         );
         for problem in s.problems() {
             c.fail(&ctx, problem);
+        }
+        for cell in &s.cells {
+            if let Some(key) = &cell.name_key {
+                c.check(
+                    data.lang.has(key),
+                    &ctx,
+                    format!(
+                        "cellule {} : nom de salle absent de la langue : {key}",
+                        cell.id
+                    ),
+                );
+            }
         }
     }
     for id in duplicates(data.sectors.iter().map(|s| s.id.as_str())) {
@@ -938,6 +958,42 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
         );
     }
 
+    // --- Objets -----------------------------------------------------------------------------
+    let items_ctx = crate::paths::ITEMS;
+    for problem in data.items.problems() {
+        c.fail(items_ctx, problem);
+    }
+    for item in &data.items.items {
+        for key in [&item.name_key, &item.description_key] {
+            c.check(
+                data.lang.has(key),
+                items_ctx,
+                format!("{} : texte absent : {key}", item.id),
+            );
+        }
+        let category = format!("item.category.{}", item.category.key());
+        c.check(
+            data.lang.has(&category),
+            items_ctx,
+            format!("{} : libellé de catégorie absent : {category}", item.id),
+        );
+        if let Some(slot) = item.slot {
+            let slot = format!("item.slot.{}", slot.key());
+            c.check(
+                data.lang.has(&slot),
+                items_ctx,
+                format!("{} : libellé d'emplacement absent : {slot}", item.id),
+            );
+        }
+        if let Some(firearm) = &item.firearm {
+            c.check(
+                data.combat.firearms.contains_key(firearm),
+                items_ctx,
+                format!("{} : arme inconnue de combat.ron : {firearm}", item.id),
+            );
+        }
+    }
+
     // --- Dialogues ---------------------------------------------------------------------------
     for id in duplicates(data.dialogues.iter().map(|d| d.id.as_str())) {
         c.fail("dialogues", format!("identifiant en double : {id}"));
@@ -1005,9 +1061,22 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
         // Les séparateurs de nombres sont des espaces par nature (« 12 500 »).
         c.check(
             !text.trim().is_empty() || key.starts_with("number."),
-            crate::paths::LANG,
+            data.lang
+                .origins
+                .get(key)
+                .map_or(crate::paths::LANG, String::as_str),
             format!("texte vide pour {key}"),
         );
+    }
+    for dup in &data.lang.duplicates {
+        if dup.first == dup.second {
+            c.fail(&dup.first, format!("clé de texte en double : {}", dup.key));
+        } else {
+            c.fail(
+                format!("{} et {}", dup.first, dup.second),
+                format!("clé de texte en double : {}", dup.key),
+            );
+        }
     }
 
     // --- Secrets ------------------------------------------------------------------------------
@@ -1016,7 +1085,13 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
     leaks(&mut c, "ship_classes.ron", &data.ship_classes);
     leaks(&mut c, "formations.ron", &data.formations);
     leaks(&mut c, "currencies.ron", &data.currencies);
-    leaks(&mut c, crate::paths::LANG, &data.lang);
+    leaks(&mut c, crate::paths::ITEMS, &data.items);
+    // La langue fusionne plusieurs fichiers (`lang/<code>.ron` et `lang/<code>/*.ron`).
+    leaks(
+        &mut c,
+        &format!("{}/{} (fusionnée)", crate::paths::LANG_DIR, data.lang.code),
+        &data.lang,
+    );
 
     if c.report.issues.is_empty() {
         Ok(())

@@ -6,7 +6,8 @@
 //! - `canon/` : données transcrites du canon, chaque entrée cite sa section (`source: "§3.3"`) ;
 //! - `propositions/` : données inventées (`status: Proposition("P12")`) ;
 //! - `gameplay/` : réglages et contenu générique ;
-//! - `lang/` : textes visibles du joueur.
+//! - `lang/` : textes visibles du joueur, par langue (fichier commun et fichiers de domaine,
+//!   [`load_lang`]).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -23,6 +24,7 @@ pub mod currencies;
 pub mod dialogue;
 pub mod factions;
 pub mod galaxy;
+pub mod items;
 pub mod lang;
 pub mod layout;
 pub mod map;
@@ -45,7 +47,8 @@ pub use galaxy::{
     Body, BodyKind, Fleet, Galaxy, MapFrame, OrbitOrder, Phenomenon, PortalHub, StarSystem,
     Station, Zone,
 };
-pub use lang::{Keyboard, Lang};
+pub use items::{EquipSlot, ItemCategory, ItemDef, ItemsFile};
+pub use lang::{DuplicateKey, Keyboard, Lang, load_lang};
 pub use layout::{Placed, PlacedKind, system_layout};
 pub use map::{MapEntry, MapKind, entry_at, public_map};
 pub use scene::{Arrival, DockPort, Structure, StructureKind, SystemScene, Traffic};
@@ -80,9 +83,19 @@ pub mod paths {
     pub const RANKS: &str = "propositions/ranks.ron";
     pub const RAILS: &str = "canon/rails.ron";
     pub const PORTAL_LINKS: &str = "propositions/portal_links.ron";
+    /// Catalogue des objets, contenu de départ des casiers, équipement de départ (M9).
+    pub const ITEMS: &str = "gameplay/items.ron";
+    /// Dossier des langues : `<code>.ron` (textes communs) et `<code>/*.ron` (un fichier par
+    /// domaine), fusionnés par [`crate::load_lang`].
+    pub const LANG_DIR: &str = "lang";
     /// La langue du jeu (Q11 : le français).
-    pub const LANG: &str = "lang/fr.ron";
+    pub const LANG_CODE: &str = "fr";
     /// Traduction anglaise, tenue avec les mêmes clés.
+    pub const LANG_EN_CODE: &str = "en";
+    /// Fichier commun de la langue du jeu (seulement une partie de ses textes : les autres sont
+    /// dans les fichiers de domaine, lire la langue par [`crate::load_lang`]).
+    pub const LANG: &str = "lang/fr.ron";
+    /// Fichier commun de la traduction anglaise.
     pub const LANG_EN: &str = "lang/en.ron";
     pub const KEYBOARD: &str = "gameplay/keyboard.ron";
     /// Dossiers scannés pour les descripteurs de secteurs (`*.ron`).
@@ -114,6 +127,7 @@ pub struct GameData {
     pub ranks: Ranks,
     pub rails: Rails,
     pub portal_links: PortalLinks,
+    pub items: ItemsFile,
     pub lang: Lang,
     pub keyboard: Keyboard,
     pub sectors: Vec<Sector>,
@@ -214,7 +228,8 @@ impl GameData {
             ranks: read_ron(&file(paths::RANKS))?,
             rails: read_ron(&file(paths::RAILS))?,
             portal_links: read_ron(&file(paths::PORTAL_LINKS))?,
-            lang: read_ron(&file(paths::LANG))?,
+            items: read_ron(&file(paths::ITEMS))?,
+            lang: load_lang(data_dir, paths::LANG_CODE)?,
             keyboard: read_ron(&file(paths::KEYBOARD))?,
             sectors: read_dir_ron(data_dir, &paths::SECTOR_DIRS)?,
             scenes: read_dir_ron(data_dir, &paths::SCENE_DIRS)?,
@@ -240,6 +255,11 @@ impl GameData {
 
     pub fn faction(&self, id: &sh_core::Id<Faction>) -> Option<&Faction> {
         self.factions.factions.iter().find(|f| &f.id == id)
+    }
+
+    /// Un objet du catalogue.
+    pub fn item(&self, id: &str) -> Option<&ItemDef> {
+        self.items.get(id)
     }
 }
 

@@ -1,0 +1,6 @@
+// Écran du personnage (M9, lot L5) : inventaire, équipement, compétences.
+{
+    "character.title": "Personnage",
+    "character.tab.inventory": "Inventaire",
+    "character.tab.skills": "Compétences",
+}

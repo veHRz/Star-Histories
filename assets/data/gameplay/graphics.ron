@@ -5,6 +5,8 @@
 // soleil légère (1 cascade de 1024, 40 m, Hardware2x2), pas de lumières dynamiques dans les cellules
 // cuites, vitrages teintés sans reflets ; ≈ 16 ms dans le cockpit en vol (docs/JOURNAL.md).
 // Filtrage anisotrope des textures de matériaux (M8) : 1 en Bas, 4 en Moyen, 8 en Haut.
+// Décor par niveau (M9, docs/m9-retours.md §3.2) : un objet de décor dont l'extra glTF `detail`
+// dépasse `decor_detail` est caché (0 en Bas : le décor de base seul ; 1 en Moyen ; 2 en Haut : tout).
 (
     low: (
         render_scale: 0.75,
@@ -21,6 +23,7 @@
         anti_aliasing: Fxaa,
         anisotropy: 1,
         detail_distance: 60.0,
+        decor_detail: 0,
     ),
     medium: (
         render_scale: 0.8,
@@ -37,6 +40,7 @@
         anti_aliasing: Fxaa,
         anisotropy: 4,
         detail_distance: 120.0,
+        decor_detail: 1,
     ),
     high: (
         render_scale: 1.0,
@@ -53,5 +57,6 @@
         anti_aliasing: Smaa,
         anisotropy: 8,
         detail_distance: 250.0,
+        decor_detail: 2,
     ),
 )

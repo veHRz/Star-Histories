@@ -1,20 +1,44 @@
-//! Textes visibles du joueur, par langue (`assets/data/lang/<code>.ron`).
+//! Textes visibles du joueur, par langue (`assets/data/lang/`).
 //!
 //! Décision de l'auteur (`docs/QUESTIONS.md` Q8 puis Q11) : le jeu est en français, la langue
-//! de ses noms propres ; tous ses textes vivent ici pour pouvoir être traduits (`en.ron` est
+//! de ses noms propres ; tous ses textes vivent ici pour pouvoir être traduits (`en` est
 //! tenu à jour en parallèle). Le code n'écrit jamais de phrase : il demande une clé
 //! (`menu.new_game`) et remplit les paramètres nommés (`{name}`). Les nombres suivent la
 //! langue ([`Lang::number`]).
+//!
+//! **Fichiers d'une langue** ([`load_lang`], M9) : la langue `<code>` est la fusion de
+//! - son fichier commun `lang/<code>.ron`, au format complet `(code: "fr", strings: { "clé":
+//!   "texte", … })` : menus, nombres, noms tirés des données, tout ce qui n'a pas de domaine ;
+//! - ses fichiers de domaine `lang/<code>/*.ron`, lus par ordre de nom, au format allégé : un
+//!   simple dictionnaire `{ "clé": "texte", … }` (options, HUD, terminal, carte, monde, salles…).
+//!
+//! Un domaine a son fichier pour que deux lots de travail n'écrivent jamais dans le même ; par
+//! convention, `fr` et `en` rangent une clé dans le fichier de même nom. Une clé définie deux
+//! fois, dans deux fichiers ou dans le même, est gardée à sa première définition et notée
+//! ([`Lang::duplicates`]) : la validation refuse alors les données en citant les deux fichiers.
+//! `en` a exactement les mêmes clés que `fr`, tous fichiers confondus (test de `sh_data`).
 
 use std::collections::BTreeMap;
+use std::fmt;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+
+use crate::{DataError, read_ron};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Lang {
     /// Code de la langue (« fr »).
     pub code: String,
     pub strings: BTreeMap<String, String>,
+    /// Fichier d'origine de chaque clé, relatif au dossier de données (`lang/fr/hud.ron`) :
+    /// pour situer un problème. Rempli par [`load_lang`].
+    #[serde(skip)]
+    pub origins: BTreeMap<String, String>,
+    /// Clés définies plus d'une fois : la première définition l'emporte, la validation refuse.
+    #[serde(skip)]
+    pub duplicates: Vec<DuplicateKey>,
     /// Étiquettes des touches physiques selon la disposition du clavier (`KeyQ` → « A » en
     /// AZERTY). Remplies par le jeu ([`Lang::set_key`]), jamais lues dans le fichier.
     #[serde(skip)]
@@ -25,6 +49,15 @@ pub struct Lang {
     pub remaps: BTreeMap<String, String>,
 }
 
+/// Une clé de texte définie deux fois (fichiers relatifs au dossier de données ; les deux sont
+/// égaux si le doublon est dans un même fichier).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DuplicateKey {
+    pub key: String,
+    pub first: String,
+    pub second: String,
+}
+
 /// Les dispositions de clavier connues (`gameplay/keyboard.ron`).
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Keyboard {
@@ -32,7 +65,97 @@ pub struct Keyboard {
     pub layouts: BTreeMap<String, BTreeMap<String, String>>,
 }
 
+/// Les entrées d'un dictionnaire de textes, dans l'ordre du fichier et doublons compris : un
+/// `BTreeMap` garderait la dernière définition sans rien dire.
+struct Entries(Vec<(String, String)>);
+
+impl<'de> Deserialize<'de> for Entries {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct EntriesVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for EntriesVisitor {
+            type Value = Entries;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("un dictionnaire { \"clé\": \"texte\" }")
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Entries, A::Error> {
+                let mut entries = Vec::new();
+                while let Some(entry) = map.next_entry::<String, String>()? {
+                    entries.push(entry);
+                }
+                Ok(Entries(entries))
+            }
+        }
+
+        deserializer.deserialize_map(EntriesVisitor)
+    }
+}
+
+/// Le fichier commun d'une langue (`lang/<code>.ron`).
+#[derive(Deserialize)]
+struct LangFile {
+    code: String,
+    strings: Entries,
+}
+
+/// Charge la langue `code` : son fichier commun puis ses fichiers de domaine (voir l'en-tête
+/// du module). Un dossier de domaine absent n'est pas une erreur.
+pub fn load_lang(data_dir: &Path, code: &str) -> Result<Lang, DataError> {
+    let common = format!("{}/{code}.ron", crate::paths::LANG_DIR);
+    let file: LangFile = read_ron(&data_dir.join(&common))?;
+    let mut lang = Lang {
+        code: file.code,
+        ..Lang::default()
+    };
+    lang.absorb(&common, file.strings.0);
+    let dir = format!("{}/{code}", crate::paths::LANG_DIR);
+    for (rel, path) in domain_files(&data_dir.join(&dir), &dir) {
+        let entries: Entries = read_ron(&path)?;
+        lang.absorb(&rel, entries.0);
+    }
+    Ok(lang)
+}
+
+/// Les `*.ron` d'un dossier de domaine, triés par nom, avec leur chemin relatif `rel/nom.ron`.
+fn domain_files(dir: &Path, rel: &str) -> Vec<(String, PathBuf)> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut files: Vec<(String, PathBuf)> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|e| e == "ron"))
+        .filter_map(|path| {
+            let name = path.file_name()?.to_str()?.to_owned();
+            Some((format!("{rel}/{name}"), path))
+        })
+        .collect();
+    files.sort();
+    files
+}
+
 impl Lang {
+    /// Ajoute les entrées d'un fichier ; une clé déjà connue est notée en double, pas remplacée.
+    fn absorb(&mut self, file: &str, entries: Vec<(String, String)>) {
+        for (key, text) in entries {
+            if let Some(first) = self.origins.get(&key) {
+                self.duplicates.push(DuplicateKey {
+                    first: first.clone(),
+                    second: file.to_owned(),
+                    key,
+                });
+                continue;
+            }
+            self.origins.insert(key.clone(), file.to_owned());
+            self.strings.insert(key, text);
+        }
+    }
+
     /// Le texte d'une clé. Une clé absente renvoie la clé elle-même entre crochets, pour
     /// qu'un oubli se voie à l'écran au lieu de planter (le test de cohérence l'attrape avant).
     /// Les jetons de touche (`[KeyE]`) y sont remplacés par l'étiquette de la touche
@@ -181,6 +304,57 @@ mod tests {
         // Remappée par le joueur : le jeton d'origine affiche la touche choisie.
         lang.remaps.insert("KeyW".into(), "KeyA".into());
         assert_eq!(lang.get("aide"), "QQSD, Espace : bouger [sic]");
+    }
+
+    /// Le fichier commun et les fichiers de domaine se fusionnent ; un doublon est noté avec
+    /// ses deux fichiers, et la première définition reste.
+    #[test]
+    fn fusion_des_fichiers_de_domaine() {
+        let dir = std::env::temp_dir().join(format!("sh_lang_{}", std::process::id()));
+        let write = |rel: &str, text: &str| {
+            let path = dir.join(rel);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).unwrap_or_else(|e| panic!("{e}"));
+            }
+            fs::write(&path, text).unwrap_or_else(|e| panic!("{e}"));
+        };
+        write(
+            "lang/xx.ron",
+            r#"(code: "xx", strings: { "menu.a": "A", "menu.b": "B" })"#,
+        );
+        write("lang/xx/hud.ron", r#"{ "hud.c": "C", "menu.a": "autre", }"#);
+        write(
+            "lang/xx/world.ron",
+            r#"{ "world.d": "D", "world.d": "encore" }"#,
+        );
+        write("lang/xx/notes.txt", "pas une langue");
+        let lang = load_lang(&dir, "xx").unwrap_or_else(|e| panic!("{e}"));
+        let _ = fs::remove_dir_all(&dir);
+
+        assert_eq!(lang.code, "xx");
+        assert_eq!(lang.strings.len(), 4);
+        assert_eq!(lang.get("menu.a"), "A");
+        assert_eq!(lang.get("hud.c"), "C");
+        assert_eq!(lang.get("world.d"), "D");
+        assert_eq!(
+            lang.origins.get("hud.c").map(String::as_str),
+            Some("lang/xx/hud.ron")
+        );
+        assert_eq!(
+            lang.duplicates,
+            vec![
+                DuplicateKey {
+                    key: "menu.a".into(),
+                    first: "lang/xx.ron".into(),
+                    second: "lang/xx/hud.ron".into(),
+                },
+                DuplicateKey {
+                    key: "world.d".into(),
+                    first: "lang/xx/world.ron".into(),
+                    second: "lang/xx/world.ron".into(),
+                },
+            ]
+        );
     }
 
     #[test]

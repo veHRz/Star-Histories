@@ -185,6 +185,23 @@ pub struct OpenJournal;
 #[action_output(bool)]
 pub struct OpenCodex;
 
+// --- Écran du personnage et aide aux touches (M9, à pied et aux commandes) ---------------------
+
+/// L'écran du personnage, onglet Inventaire (`items::OpenCharacterScreen`).
+#[derive(InputAction)]
+#[action_output(bool)]
+pub struct OpenInventory;
+
+/// L'écran du personnage, onglet Compétences.
+#[derive(InputAction)]
+#[action_output(bool)]
+pub struct OpenSkills;
+
+/// Afficher ou replier l'encart des touches (`ui::keys_panel`) ; aussi sur la carte.
+#[derive(InputAction)]
+#[action_output(bool)]
+pub struct ToggleKeyHelp;
+
 // --- Carte ---------------------------------------------------------------------------------
 
 /// Panoramique : x = est, y = nord.
@@ -272,6 +289,18 @@ fn spawn_contexts(mut commands: Commands) {
             ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::KeyK) ]
             --
+            Action::<OpenInventory>::new()
+            ActionSettings { require_reset: true }
+            Bindings [ Binding(KeyCode::KeyI) ]
+            --
+            Action::<OpenSkills>::new()
+            ActionSettings { require_reset: true }
+            Bindings [ Binding(KeyCode::KeyO) ]
+            --
+            Action::<ToggleKeyHelp>::new()
+            ActionSettings { require_reset: true }
+            Bindings [ Binding(KeyCode::F1) ]
+            --
             Action::<Pause>::new()
             ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::Escape) -- Binding(GamepadButton::Start) ]
@@ -355,6 +384,18 @@ fn spawn_contexts(mut commands: Commands) {
             ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::KeyK) ]
             --
+            Action::<OpenInventory>::new()
+            ActionSettings { require_reset: true }
+            Bindings [ Binding(KeyCode::KeyI) ]
+            --
+            Action::<OpenSkills>::new()
+            ActionSettings { require_reset: true }
+            Bindings [ Binding(KeyCode::KeyO) ]
+            --
+            Action::<ToggleKeyHelp>::new()
+            ActionSettings { require_reset: true }
+            Bindings [ Binding(KeyCode::F1) ]
+            --
             Action::<Pause>::new()
             ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::Escape) -- Binding(GamepadButton::Start) ]
@@ -416,6 +457,10 @@ fn spawn_contexts(mut commands: Commands) {
             Action::<SkipTutorial>::new()
             ActionSettings { require_reset: true }
             Bindings [ Binding(KeyCode::KeyH) ]
+            --
+            Action::<ToggleKeyHelp>::new()
+            ActionSettings { require_reset: true }
+            Bindings [ Binding(KeyCode::F1) ]
             --
             Action::<Pause>::new()
             ActionSettings { require_reset: true }

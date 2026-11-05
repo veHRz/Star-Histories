@@ -16,6 +16,9 @@
 //! - `SH_TUTORIAL=1` : le tutoriel guidé tourne (coupé sinon, comme les conseils) ;
 //!   `SH_TUTORIAL_STEP=<n>` le fait commencer à l'étape n (captures du panneau). Le scénario
 //!   `SH_SCENARIO=tutorial` le joue en entier.
+//! - `SH_SCREEN=inventory|skills` : ouvre l'écran du personnage sur cet onglet, 3 s après
+//!   l'entrée en partie (comme `SH_TERMINAL` pour le terminal ; captures).
+//! - `SH_KEYHELP=0|1` : force l'encart des touches replié (0) ou déplié (1).
 //!
 //! À la sortie, le temps de frame moyen et maximal est toujours journalisé (hors démarrage).
 
@@ -62,6 +65,22 @@ impl Plugin for AutopilotPlugin {
                 Update,
                 terminal_shot.run_if(resource_exists::<crate::career::Career>),
             );
+        }
+        // `SH_SCREEN=inventory|skills` : l'écran du personnage sur cet onglet (captures).
+        if let Ok(value) = std::env::var("SH_SCREEN") {
+            match crate::items::CharacterTab::from_key(value.trim()) {
+                Some(tab) => {
+                    app.insert_resource(CharacterShot(tab)).add_systems(
+                        Update,
+                        character_shot.run_if(resource_exists::<crate::career::Career>),
+                    );
+                }
+                None => warn!("SH_SCREEN inconnu : « {value} » (inventory, skills)"),
+            }
+        }
+        // `SH_KEYHELP=0|1` : l'encart des touches replié ou déplié, quoi qu'en dise le défaut.
+        if let Ok(value) = std::env::var("SH_KEYHELP") {
+            app.insert_resource(crate::ui::keys_panel::KeyHelpVisible(value.trim() != "0"));
         }
         // `SH_OPTIONS=1|keys` : l'écran des options (ou sa page des touches) au menu principal.
         if let Ok(value) = std::env::var("SH_OPTIONS") {
@@ -285,6 +304,23 @@ fn terminal_shot(
     *since += time.delta_secs();
     if before <= 3.0 && *since > 3.0 {
         open.write(crate::ui::terminal::OpenTerminal(shot.0.clone()));
+    }
+}
+
+/// `SH_SCREEN=inventory|skills` : ouvre l'écran du personnage sur cet onglet (captures).
+#[derive(Resource)]
+struct CharacterShot(crate::items::CharacterTab);
+
+fn character_shot(
+    time: Res<Time<Real>>,
+    shot: Res<CharacterShot>,
+    mut open: MessageWriter<crate::items::OpenCharacterScreen>,
+    mut since: Local<f32>,
+) {
+    let before = *since;
+    *since += time.delta_secs();
+    if before <= 3.0 && *since > 3.0 {
+        open.write(crate::items::OpenCharacterScreen(shot.0));
     }
 }
 
