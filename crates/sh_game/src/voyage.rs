@@ -2,8 +2,9 @@
 //!
 //! - Aux commandes en vol, `M` ouvre la carte galactique ; `M` la referme et le vaisseau reprend
 //!   sa route là où il était ([`ResumeFlight`]).
-//! - Sur la carte, un clic choisit un système : les itinéraires par Portail et par hyperespace
-//!   sont chiffrés ([`RoutePlan`], `sh_sim::travel`) ; `1` ou `2` part.
+//! - Sur la carte, un clic choisit une destination : un système, ou depuis M9 un monde isolé
+//!   (Q18 : par l'hyperespace, arrivée en orbite). Les itinéraires par Portail et par
+//!   hyperespace sont chiffrés ([`RoutePlan`], `sh_sim::travel`) ; `1` ou `2` part.
 //! - Le départ est une transition ([`crate::transition::Sequence::Travel`]) : la date avance de
 //!   la durée du voyage, le carburant baisse, et l'on arrive en vue Globale à destination.
 
@@ -11,7 +12,8 @@ use bevy::prelude::*;
 use bevy_enhanced_input::prelude::*;
 use sh_core::{Id, SpacePos};
 use sh_data::Place;
-use sh_sim::travel::{TravelPlan, hyperspace_plan, portal_plan};
+use sh_data::travel::{Endpoint, endpoint};
+use sh_sim::travel::{TravelPlan, hyperspace_blocked, hyperspace_plan, portal_plan};
 
 use crate::data::Data;
 use crate::input::{Select, ToggleMap, TravelHyperspace, TravelPortal};
@@ -33,10 +35,20 @@ impl Plugin for VoyagePlugin {
     }
 }
 
-/// Le système où se trouve le vaisseau du joueur.
+/// Le lieu où se trouve le vaisseau du joueur : un système, ou depuis M9 un **monde isolé**
+/// (astre hors système, en orbite). Le champ garde son nom historique : c'est l'identifiant
+/// d'une extrémité de voyage (`sh_data::travel::endpoint`), que lisent la carte, les voyages et
+/// la sauvegarde ; [`Location::endpoint`] le résout.
 #[derive(Resource, Clone, Debug)]
 pub struct Location {
     pub system: Id<Place>,
+}
+
+impl Location {
+    /// Le système ou le monde isolé où l'on est (`None` : lieu inconnu ou devenu secret).
+    pub fn endpoint<'a>(&self, data: &'a Data) -> Option<Endpoint<'a>> {
+        endpoint(&data.galaxy, &self.system)
+    }
 }
 
 /// Le carburant lourd du vaisseau du joueur.
@@ -64,6 +76,8 @@ pub struct RoutePlan {
     pub dest: Id<Place>,
     pub portal: Option<TravelPlan>,
     pub hyperspace: Option<TravelPlan>,
+    /// La destination est au cœur d'une nébuleuse qui bloque l'hyperespace (Rade-Noire).
+    pub hyperspace_blocked: bool,
 }
 
 fn init_voyage(
@@ -157,13 +171,17 @@ fn on_select(
     let (Some(entry), Some(location)) = (&hovered.0, location) else {
         return;
     };
-    if entry.kind != sh_data::MapKind::System || entry.id == location.system {
+    // Un système ou un monde isolé public ; ni station, ni phénomène, ni le lieu où l'on est.
+    if !entry.destination
+        || endpoint(&data.galaxy, &entry.id).is_none()
+        || entry.id == location.system
+    {
         return;
     }
     commands.insert_resource(plan_route(&data, &location.system, &entry.id));
 }
 
-/// Les itinéraires d'un système à un autre, pour le vaisseau du joueur.
+/// Les itinéraires d'un lieu à un autre (systèmes ou mondes isolés), pour le vaisseau du joueur.
 pub fn plan_route(data: &Data, from: &Id<Place>, to: &Id<Place>) -> RoutePlan {
     let ship = data
         .start()
@@ -184,6 +202,7 @@ pub fn plan_route(data: &Data, from: &Id<Place>, to: &Id<Place>) -> RoutePlan {
             to,
         ),
         hyperspace: hyperspace_plan(&data.galaxy, &data.travel, &ship, from, to),
+        hyperspace_blocked: hyperspace_blocked(&data.galaxy, &data.travel, to),
     }
 }
 

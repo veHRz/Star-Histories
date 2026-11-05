@@ -11,6 +11,10 @@
 //! - **direction** de chaque astre reprise de la carte, pour que le système reste reconnaissable.
 //!
 //! Plan du système = plan XZ du jeu ; X = est de la carte, Z = sud de la carte (y croissant).
+//!
+//! Un **monde isolé** (M9, Q18) n'a pas de système : [`isolated_layout`] le pose au centre, ses
+//! lunes publiques autour par la même règle que les satellites, et aucune étoile (le canon n'en
+//! nomme pas ; la lumière vient de loin, voir la vue Globale).
 
 use std::collections::BTreeSet;
 use std::f64::consts::TAU;
@@ -20,6 +24,7 @@ use sh_core::{Id, MapPos, SpacePos};
 use crate::common::Place;
 use crate::galaxy::{Body, BodyKind, Galaxy, OrbitOrder, StarSystem};
 use crate::settings::SystemScale;
+use crate::travel::isolated_root;
 
 /// Genre d'un objet disposé (détermine sa taille et son rendu).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -190,40 +195,7 @@ pub fn system_layout(galaxy: &Galaxy, system: &StarSystem, scale: &SystemScale) 
     }
 
     // Satellites, parent par parent (un parent est placé avant ses satellites).
-    let mut placed_ids: Vec<usize> = (0..out.len()).collect();
-    while let Some(index) = placed_ids.pop() {
-        let parent = out[index].clone();
-        // Les planètes d'une étoile sont déjà placées sur leurs rangs.
-        let Some(parent_id) = parent
-            .id
-            .clone()
-            .filter(|_| parent.kind != PlacedKind::Star)
-        else {
-            continue;
-        };
-        let parent_map = galaxy
-            .body(&parent_id)
-            .and_then(|b| b.pos)
-            .unwrap_or(center);
-        let children: Vec<&Body> = members
-            .iter()
-            .copied()
-            .filter(|b| b.parent.as_ref() == Some(&parent_id) && b.kind != BodyKind::Belt)
-            .collect();
-        for (i, (body, rank)) in ranks(&children, parent_map).into_iter().enumerate() {
-            let (kind, radius) = radius_of(body, scale);
-            let base = scale.moon_orbit_radii * parent.radius.max(radius);
-            let distance = base * (1.0 + 0.6 * f64::from(rank - 1));
-            out.push(Placed {
-                id: Some(body.id.clone()),
-                kind,
-                pos: on_plane(parent.pos, distance, direction(parent_map, body.pos, i)),
-                radius,
-                around: Some(parent_id.clone()),
-            });
-            placed_ids.push(out.len() - 1);
-        }
-    }
+    place_satellites(galaxy, &members, scale, center, &mut out);
 
     // Stations : en orbite de stationnement autour de l'astre le plus proche sur la carte.
     let orbitable: Vec<(Id<Place>, MapPos, f64, SpacePos)> = out
@@ -275,4 +247,114 @@ pub fn system_layout(galaxy: &Galaxy, system: &StarSystem, scale: &SystemScale) 
         });
     }
     out
+}
+
+/// Place les satellites (parmi `members`) autour des astres déjà placés dans `out`, parent par
+/// parent : un parent est placé avant ses satellites. Les planètes d'une étoile, déjà sur leurs
+/// rangs, ne sont pas reprises.
+fn place_satellites(
+    galaxy: &Galaxy,
+    members: &[&Body],
+    scale: &SystemScale,
+    center: MapPos,
+    out: &mut Vec<Placed>,
+) {
+    let mut placed_ids: Vec<usize> = (0..out.len()).collect();
+    while let Some(index) = placed_ids.pop() {
+        let parent = out[index].clone();
+        let Some(parent_id) = parent
+            .id
+            .clone()
+            .filter(|_| parent.kind != PlacedKind::Star)
+        else {
+            continue;
+        };
+        let parent_map = galaxy
+            .body(&parent_id)
+            .and_then(|b| b.pos)
+            .unwrap_or(center);
+        let children: Vec<&Body> = members
+            .iter()
+            .copied()
+            .filter(|b| b.parent.as_ref() == Some(&parent_id) && b.kind != BodyKind::Belt)
+            .collect();
+        for (i, (body, rank)) in ranks(&children, parent_map).into_iter().enumerate() {
+            let (kind, radius) = radius_of(body, scale);
+            let base = scale.moon_orbit_radii * parent.radius.max(radius);
+            let distance = base * (1.0 + 0.6 * f64::from(rank - 1));
+            out.push(Placed {
+                id: Some(body.id.clone()),
+                kind,
+                pos: on_plane(parent.pos, distance, direction(parent_map, body.pos, i)),
+                radius,
+                around: Some(parent_id.clone()),
+            });
+            placed_ids.push(out.len() - 1);
+        }
+    }
+}
+
+/// Disposition de jeu autour d'un monde isolé public (M9, Q18) : le monde au centre (pour une
+/// lune, sa planète : on arrive au même endroit), ses lunes publiques autour, sans étoile. Vide
+/// pour un astre secret ou d'un système (il n'a pas de scène isolée).
+pub fn isolated_layout(galaxy: &Galaxy, body: &Body, scale: &SystemScale) -> Vec<Placed> {
+    if body.secret || body.system.is_some() {
+        return Vec::new();
+    }
+    let root = isolated_root(galaxy, body);
+    let center = root.pos.unwrap_or(MapPos::new(0.0, 0.0));
+    let (kind, radius) = radius_of(root, scale);
+    let mut out = vec![Placed {
+        id: Some(root.id.clone()),
+        kind,
+        pos: SpacePos::ZERO,
+        radius,
+        around: None,
+    }];
+    let members: Vec<&Body> = galaxy
+        .bodies
+        .iter()
+        .filter(|b| !b.secret && b.system.is_none() && b.kind != BodyKind::Star)
+        .collect();
+    place_satellites(galaxy, &members, scale, center, &mut out);
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    #[test]
+    fn un_monde_isole_est_seul_au_centre_avec_ses_lunes() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/data");
+        let data = crate::GameData::load(&dir).unwrap_or_else(|e| panic!("{e}"));
+        let g = &data.galaxy;
+        let scale = &data.space.scale;
+        let id = |s: &str| Id::<Place>::new(s).unwrap_or_else(|e| panic!("{e}"));
+        let body = |s: &str| g.body(&id(s)).unwrap_or_else(|| panic!("{s} absent"));
+
+        // Calderis, planète errante : seule, au centre, sans étoile.
+        let calderis = isolated_layout(g, body("calderis"), scale);
+        assert_eq!(calderis.len(), 1);
+        assert_eq!(calderis[0].id, Some(id("calderis")));
+        assert_eq!(calderis[0].pos, SpacePos::ZERO);
+        assert!(calderis.iter().all(|p| p.kind != PlacedKind::Star));
+
+        // Viser Maïa, c'est arriver à Alcyone : la planète au centre, ses deux lunes autour,
+        // sur des orbites distinctes, hors de la planète.
+        let alcyone = isolated_layout(g, body("maia"), scale);
+        assert_eq!(alcyone[0].id, Some(id("alcyone")));
+        assert_eq!(alcyone.len(), 3, "{alcyone:?}");
+        let planet = alcyone[0].radius;
+        for moon in &alcyone[1..] {
+            assert_eq!(moon.around, Some(id("alcyone")));
+            assert!(moon.pos.length() > 2.0 * planet, "{moon:?}");
+        }
+        assert!(alcyone[1].pos.distance(alcyone[2].pos) > 2.0 * alcyone[1].radius);
+
+        // Un astre d'un système n'a pas de scène isolée.
+        assert!(isolated_layout(g, body("hexis"), scale).is_empty());
+    }
 }

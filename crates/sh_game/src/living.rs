@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 
 use bevy::prelude::*;
 use sh_core::{Id, StellarDate};
+use sh_data::travel::Endpoint;
 use sh_data::{Fleet, Place};
 use sh_sim::{EventKind, SimEvent, SimWorld};
 
@@ -150,7 +151,8 @@ pub fn absorb(knowledge: &mut PlayerKnowledge, sim: &SimWorld, events: &[SimEven
     knowledge.news.drain(..excess);
 }
 
-/// Sur place, on voit les flottes présentes (vue Globale d'un système).
+/// Sur place, on voit les flottes présentes (vue Globale d'un système, ou en orbite d'un monde
+/// isolé depuis M9 : la 3ème Flotte à Karza).
 fn observe_location(
     view: Res<State<ViewLevel>>,
     location: Option<Res<Location>>,
@@ -161,14 +163,30 @@ fn observe_location(
     let (ViewLevel::Global, Some(location)) = (view.get(), location) else {
         return;
     };
-    let Some(system) = data.galaxy.system(&location.system) else {
-        return;
+    // Les lieux visibles d'ici : le système, ses astres et ses stations ; ou le monde isolé, sa
+    // planète (pour une lune) et les lunes de celle-ci, tous dans la même scène.
+    let visible: Vec<&Id<Place>> = match location.endpoint(&data) {
+        Some(Endpoint::System(system)) => std::iter::once(&system.id)
+            .chain(&system.bodies)
+            .chain(&system.stations)
+            .collect(),
+        Some(Endpoint::Isolated(body)) => {
+            let root = sh_data::travel::isolated_root(&data.galaxy, body);
+            std::iter::once(&root.id)
+                .chain(
+                    data.galaxy
+                        .bodies
+                        .iter()
+                        .filter(|b| !b.secret && b.parent.as_ref() == Some(&root.id))
+                        .map(|b| &b.id),
+                )
+                .collect()
+        }
+        None => return,
     };
     let date = world.sim.date();
     for (id, fleet) in &world.sim.fleets {
-        let here = fleet.location == system.id
-            || system.bodies.contains(&fleet.location)
-            || system.stations.contains(&fleet.location);
+        let here = visible.contains(&&fleet.location);
         if fleet.secret || fleet.transit.is_some() || !here {
             continue;
         }

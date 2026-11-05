@@ -10,12 +10,19 @@
 //! Le joueur est **à bord de son vaisseau** (départ de partie) : le secteur du vaisseau est
 //! chargé ([`crate::sector`]), sa racine reçoit la pose d'arrivée et devient le référentiel de
 //! l'origine flottante ; le pilotage est dans [`crate::ship`].
+//!
+//! **Monde isolé** (M9, Q18) : on arrive en orbite d'un astre hors système. La scène est
+//! générique (`sh_data::layout::isolated_layout`) : l'astre, ses lunes, aucune structure ni
+//! spatioport. Aucune étoile n'est nommée par le canon : un monde « solitaire » reçoit la
+//! lumière d'une étoile lointaine (un point brillant du ciel, direction tirée de son nom) ; une
+//! planète errante, celle du bulbe galactique, plus faible.
 
 use bevy::light::Skybox;
 use bevy::prelude::*;
 use bevy::world_serialization::WorldAssetRoot;
-use sh_core::{SimRng, SpacePos};
-use sh_data::{Galaxy, Place, PlacedKind, StructureKind, system_layout};
+use sh_core::{MapPos, SimRng, SpacePos};
+use sh_data::travel::{Endpoint, endpoint};
+use sh_data::{Body, BodyKind, Galaxy, Place, PlacedKind, StructureKind, system_layout};
 
 use crate::career::CargoPoint;
 use crate::data::{Data, Texts};
@@ -26,7 +33,8 @@ use crate::space::{FloatingOrigin, PositionDriver, SpacePosition, SpaceRotation}
 use crate::state::{CurrentPlace, ViewLevel};
 use crate::transition::{ArrivalRequest, DockBeacon};
 use crate::ui::theme::{self, UiFonts};
-use crate::views::procedural::{Procedural, make_planet, make_sky, planet_key, sky_key};
+use crate::views::procedural::{Procedural, SKY_SIZE, make_planet, make_sky, planet_key, sky_key};
+use crate::views::sky::{SkyNebula, SkySpec, cube_image, render_sky};
 use crate::views::{WorldLabel, view_banner};
 use crate::voyage::{Location, ResumeFlight};
 
@@ -51,6 +59,14 @@ const SCOPE: DespawnOnExit<ViewLevel> = DespawnOnExit(ViewLevel::Global);
 const SKY_BRIGHTNESS: f32 = 140.0;
 /// Éclairement de l'étoile, avec l'exposition par défaut de la caméra (réglage visuel).
 const SUNLIGHT_LUX: f32 = 400.0;
+/// Monde isolé : part de l'éclairement d'une étoile proche que reçoit un monde solitaire (une
+/// étoile lointaine), et une planète errante (la lueur du bulbe). Réglages visuels : assez pour
+/// voir l'astre, assez peu pour sentir l'isolement.
+const LONELY_LIGHT: f32 = 0.8;
+const ROGUE_LIGHT: f32 = 0.45;
+/// L'étoile lointaine d'un monde solitaire : distance (m) et rayon apparent (≈ 0,3°).
+const DISTANT_STAR_DISTANCE: f64 = 4.0e8;
+const DISTANT_STAR_RADIUS: f32 = 2.0e6;
 
 /// Le ciel du système, posé sur la caméra du joueur dès qu'elle existe.
 #[derive(Resource)]
@@ -85,6 +101,68 @@ fn system_of<'a>(galaxy: &'a Galaxy, place: &str) -> Option<&'a sh_data::StarSys
             .or_else(|| galaxy.station(&id).and_then(|s| s.system.clone()))?;
         galaxy.system(&system)
     })
+}
+
+/// Le monde isolé public à afficher pour un lieu (M9) : le lieu lui-même s'il en est un.
+fn isolated_of<'a>(galaxy: &'a Galaxy, place: &str) -> Option<&'a Body> {
+    let id = sh_core::Id::<Place>::new(place).ok()?;
+    match endpoint(galaxy, &id)? {
+        Endpoint::Isolated(body) => Some(body),
+        Endpoint::System(_) => None,
+    }
+}
+
+/// Direction absolue (unitaire) d'où vient la lumière d'un monde isolé. Plan du système = plan
+/// galactique (X = est de la carte, Z = sud). Planète errante : le bulbe galactique, un peu
+/// au-dessus du plan. Monde solitaire : une étoile lointaine, direction tirée de son nom
+/// (stable d'une visite à l'autre, sans rien affirmer de plus).
+fn isolated_light(galaxy: &Galaxy, root: &Body) -> SpacePos {
+    let (x, z, y) = if root.kind == BodyKind::RoguePlanet {
+        let pos = root
+            .pos
+            .unwrap_or(MapPos::new(galaxy.frame.center.0, galaxy.frame.center.1));
+        let (dx, dz) = (galaxy.frame.center.0 - pos.x, galaxy.frame.center.1 - pos.y);
+        let length = dx.hypot(dz).max(1e-6);
+        (dx / length, dz / length, 0.12)
+    } else {
+        let hash = sh_core::rng::fnv1a(root.id.as_str().as_bytes());
+        let angle = ((hash % 3600) as f64 / 10.0).to_radians();
+        let elevation = 8f64.to_radians();
+        (
+            elevation.cos() * angle.cos(),
+            elevation.cos() * angle.sin(),
+            elevation.sin(),
+        )
+    };
+    let v = SpacePos::new(x, y, z);
+    v * (1.0 / v.length().max(1e-9))
+}
+
+/// Le ciel vu d'un monde isolé (même génération que celui d'un système, autre point de vue).
+fn make_isolated_sky(galaxy: &Galaxy, root: &Body) -> Image {
+    let frame = &galaxy.frame;
+    let observer = root
+        .pos
+        .map_or([frame.center.0, frame.center.1], |p| [p.x, p.y]);
+    let nebulae = galaxy
+        .phenomena
+        .iter()
+        .filter(|p| !p.secret && p.kind_note.to_lowercase().contains("nébuleuse"))
+        .filter_map(|p| {
+            Some(SkyNebula {
+                center: [p.pos?.x, p.pos?.y],
+                radius: p.radius?,
+            })
+        })
+        .collect();
+    let spec = SkySpec {
+        observer,
+        galaxy_center: [frame.center.0, frame.center.1],
+        galaxy_radii: [frame.radius_x, frame.radius_y],
+        nebulae,
+        seed: sh_core::rng::fnv1a(root.id.as_str().as_bytes()),
+    };
+    cube_image(&render_sky(&spec, SKY_SIZE))
 }
 
 /// Un point à `radius` mètres de `center`, dans la direction `angle_deg` du plan du système.
@@ -123,18 +201,34 @@ fn spawn_global(
     let scale = &data.space.scale;
     let place_id = place.0.clone().unwrap_or_else(|| "test".into());
     let system = system_of(g, &place_id).filter(|s| !s.secret);
+    // Pas de système : peut-être un monde isolé (M9), et le monde au centre de sa scène.
+    let isolated = system
+        .is_none()
+        .then(|| isolated_of(g, &place_id))
+        .flatten();
+    let root = isolated.map(|b| sh_data::travel::isolated_root(g, b));
     let scene = system.and_then(|s| data.scene(&s.id));
-    if let Some(system) = system {
+    let location = system
+        .map(|s| s.id.clone())
+        .or_else(|| isolated.map(|b| b.id.clone()));
+    if let Some(location) = &location {
         commands.insert_resource(Location {
-            system: system.id.clone(),
+            system: location.clone(),
         });
     }
-    // Retour de la carte : le vaisseau reprend sa pose dans le même système.
+    // Retour de la carte : le vaisseau reprend sa pose au même endroit.
     let resume = resume
-        .filter(|r| system.is_some_and(|s| s.id == r.system))
+        .filter(|r| location.as_ref() == Some(&r.system))
         .map(|r| (r.pos, r.rot));
     commands.remove_resource::<ResumeFlight>();
-    let sky = cache.get(&sky_key(system), &mut images, || make_sky(g, system));
+    let sky = match root {
+        Some(root) => cache.get(&format!("sky:{}", root.id), &mut images, || {
+            make_isolated_sky(g, root)
+        }),
+        None => cache.get(&sky_key(system), &mut images, || make_sky(g, system)),
+    };
+    // D'où vient la lumière d'un monde isolé (pour un système : de son étoile).
+    let light_dir = root.map(|r| isolated_light(g, r));
     commands.insert_resource(GlobalAmbientLight {
         color: Color::srgb(0.6, 0.7, 0.9),
         brightness: 2.5,
@@ -148,14 +242,19 @@ fn spawn_global(
     let mut ports: Vec<SpacePos> = Vec::new();
     let mut title_place = place_id.clone();
 
-    let placed = system
-        .map(|s| system_layout(g, s, scale))
-        .unwrap_or_default();
-    if system.is_none() && place_id != "test" {
-        warn!("vue Globale : aucun système public pour « {place_id} »");
+    let placed = match (system, isolated) {
+        (Some(s), _) => system_layout(g, s, scale),
+        (None, Some(body)) => sh_data::layout::isolated_layout(g, body, scale),
+        (None, None) => Vec::new(),
+    };
+    if system.is_none() && isolated.is_none() && place_id != "test" {
+        warn!("vue Globale : aucun système ni monde isolé public pour « {place_id} »");
     }
-    if let Some(system) = system {
-        title_place = system.name.clone();
+    if let Some(name) = system
+        .map(|s| s.name.clone())
+        .or_else(|| isolated.map(|b| b.name.clone()))
+    {
+        title_place = name;
     }
     for p in &placed {
         let id = p.id.as_ref().map(|i| i.as_str().to_owned());
@@ -360,12 +459,39 @@ fn spawn_global(
         }
     }
 
+    // Monde isolé : l'étoile lointaine (un point brillant du ciel) ou, pour une planète errante,
+    // un repère invisible vers le bulbe. `aim_sunlight` oriente la lumière depuis elle.
+    if let (Some(root), Some(light)) = (root, light_dir) {
+        let mut star = commands.spawn((
+            Name::new("Étoile lointaine"),
+            SCOPE,
+            Star,
+            SpacePosition(light * DISTANT_STAR_DISTANCE),
+        ));
+        if root.kind != BodyKind::RoguePlanet {
+            star.insert((
+                Mesh3d(sphere.clone()),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: Color::BLACK,
+                    emissive: LinearRgba::rgb(2.4e3, 2.2e3, 1.9e3),
+                    ..default()
+                })),
+                Transform::from_scale(Vec3::splat(DISTANT_STAR_RADIUS)),
+            ));
+        }
+    }
+
     // La lumière de l'étoile (orientée par `aim_sunlight`).
+    let illuminance = match root {
+        Some(r) if r.kind == BodyKind::RoguePlanet => SUNLIGHT_LUX * ROGUE_LIGHT,
+        Some(_) => SUNLIGHT_LUX * LONELY_LIGHT,
+        None => SUNLIGHT_LUX,
+    };
     commands.spawn((
         SCOPE,
         Sunlight,
         DirectionalLight {
-            illuminance: SUNLIGHT_LUX,
+            illuminance,
             ..default()
         },
         Transform::default(),
@@ -379,10 +505,23 @@ fn spawn_global(
         .map(|r| (r.near.clone(), r.distance))
         .or_else(arrival_from_env);
     commands.remove_resource::<ArrivalRequest>();
+    // Monde isolé : en orbite de l'astre visé (la lune elle-même si c'est une lune).
+    let orbit = isolated.and_then(|body| {
+        placed
+            .iter()
+            .find(|p| p.id.as_ref() == Some(&body.id))
+            .map(|p| {
+                (
+                    body.id.as_str(),
+                    p.radius * data.travel.isolated_arrival_radii,
+                )
+            })
+    });
     let near = forced
         .as_ref()
         .map(|f| f.0.as_str())
-        .or(arrival.map(|a| a.near.as_str()));
+        .or(arrival.map(|a| a.near.as_str()))
+        .or(orbit.map(|o| o.0));
     let target = near
         .and_then(|n| anchors.iter().find(|(id, _)| id == n))
         .map_or(
@@ -392,10 +531,20 @@ fn spawn_global(
     let distance = forced
         .map(|f| f.1)
         .or(arrival.map(|a| a.distance))
+        .or(orbit.map(|o| o.1))
         .unwrap_or(scale.star_radius);
-    let elevation = arrival.map_or(15.0, |a| a.elevation_deg).to_radians();
-    let azimuth = arrival.map_or(0.0, |a| a.azimuth_deg).to_radians() as f32;
-    let to_star = dir(SpacePos::ZERO - target);
+    // Sans mise en scène, un monde isolé s'aborde de trois quarts, comme Hexis.
+    let (elevation, azimuth) = match (arrival, isolated) {
+        (Some(a), _) => (a.elevation_deg, a.azimuth_deg),
+        (None, Some(_)) => (12.0, -50.0),
+        (None, None) => (15.0, 0.0),
+    };
+    let elevation = elevation.to_radians();
+    let azimuth = azimuth.to_radians() as f32;
+    let to_star = match light_dir {
+        Some(light) => dir(light),
+        None => dir(SpacePos::ZERO - target),
+    };
     let horizontal =
         Quat::from_rotation_y(azimuth) * Vec3::new(to_star.x, 0.0, to_star.z).normalize_or(Vec3::Z);
     let offset = horizontal * elevation.cos() as f32 + Vec3::Y * elevation.sin() as f32;

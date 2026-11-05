@@ -10,6 +10,10 @@
     // Un passage de Portail : file d'attente et contrôles de la faction du système.
     portal_transit_hours: 4.0,
     portal_toll_credits: 150,
+    // Mondes isolés (M9, Q18) : on s'y rend par l'hyperespace (et par Portail s'ils portent un hub
+    // canon relié au réseau : Karza), et l'on arrive en orbite, à trois rayons du centre de l'astre
+    // (aucun n'a de spatioport).
+    isolated_arrival_radii: 3.0,
     ships: {
         // Le vaisseau du joueur (P12) : deux mois d'autonomie en carburant lourd.
         "player_ship": (

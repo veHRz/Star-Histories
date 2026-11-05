@@ -446,7 +446,8 @@ pub fn start_travel(world: &mut World, dest: Id<Place>, plan: TravelPlan) {
     let data = world.resource::<Data>().clone();
     let texts = world.resource::<Texts>().clone();
     let fonts = world.resource::<UiFonts>().clone();
-    let Some(system) = data.galaxy.system(&dest).filter(|s| !s.secret) else {
+    // Un système ou, depuis M9, un monde isolé public (Q18) ; jamais un secret.
+    let Some(place) = sh_data::travel::endpoint(&data.galaxy, &dest) else {
         return;
     };
     let mut arrival = world.resource::<GameClock>().clone();
@@ -465,17 +466,14 @@ pub fn start_travel(world: &mut World, dest: Id<Place>, plan: TravelPlan) {
             &[("days", &format!("{:.0}", plan.days().ceil()))],
         ),
     };
-    let controller = system
-        .controller
-        .as_ref()
+    let controller = place
+        .controller()
         .and_then(|f| data.faction(f))
         .map_or_else(|| texts.get("map.tip.no_controller"), |f| f.name.clone());
+    let cell = place.cell().map_or_else(String::new, |c| c.to_string());
     let info = texts.format(
         "travel.card.info",
-        &[
-            ("cell", &system.cell.to_string()),
-            ("controller", &controller),
-        ],
+        &[("cell", &cell), ("controller", &controller)],
     );
     let tip = texts.get(&format!(
         "travel.tip.{}",
@@ -509,7 +507,7 @@ pub fn start_travel(world: &mut World, dest: Id<Place>, plan: TravelPlan) {
         ));
         card.with_children(|screen| {
             theme::spawn_corner_marks(screen, 28.0, 44.0, theme::SCREEN_DIM);
-            screen.spawn(theme::heading(&fonts, &system.name, 44.0, theme::TEXT));
+            screen.spawn(theme::heading(&fonts, place.name(), 44.0, theme::TEXT));
             screen.spawn(theme::rule(
                 px(CARD_TRACK_WIDTH + 80.0),
                 UiRect::new(px(0), px(0), px(14), px(22)),
