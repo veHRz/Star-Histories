@@ -2,6 +2,12 @@
 
 > Une entrée courte par session (2 à 5 lignes) : ce qui a été fait, ce qui reste en suspens, les décisions prises. Le plus récent en haut.
 
+## 05/11/2026 — Poste Windows : mode orchestrateur
+
+- **`/orchestrateur <jalon | fichier | tâches>`** (`.claude/skills/orchestrateur/SKILL.md`, à lancer dans une nouvelle session) : l'orchestrateur ne produit rien lui-même, découpe en lots à propriétaire unique, briefe `artiste-blender` et `dev-jeu`, exporte et recuit lui-même les cartes que plusieurs lots touchent, fait le contrôle complet une fois par vague, et ne dérange l'auteur que pour valider le visuel, une installation, un téléchargement ou une dépense. Sous-agents valables pour tout jalon ; AGENTS.md §2, §3.3, §12.5.
+- `tools/check.ps1` / `check.sh` notent l'arbre vérifié dans `target/check-ok.txt` : l'orchestrateur ne relance pas le contrôle sur un état déjà vert sur ce poste.
+- `tools/check.ps1` **vert sous Windows**, le premier passage complet ici depuis les vagues de M8 (build de développement). Restent les mesures de M8 en release, Bas, plein écran (`tools/perf.ps1`).
+
 ## 04/11/2026 — Poste Linux : M8 validé, carte qui se refermait
 
 - L'auteur valide le visuel de M8 sur les captures avant / après ; commits poussés.
