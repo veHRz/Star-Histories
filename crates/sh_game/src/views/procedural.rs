@@ -4,6 +4,9 @@
 //! figeraient l'écran. Elles sont donc gardées d'une vue à l'autre et **préparées en tâche de
 //! fond** quand le vaisseau est à quai (le système du port est celui où l'on repartira) : au
 //! départ, tout est prêt. À défaut, la vue Globale les calcule sur place (premier démarrage).
+//!
+//! Un astre à apparence peinte (M9, [`crate::views::planet`]) n'a rien à calculer : sa carte de
+//! couleur, chargée dès l'écran de chargement, est fournie d'avance au cache ([`Procedural::provide`]).
 
 use std::collections::BTreeMap;
 
@@ -13,7 +16,7 @@ use sh_data::{Galaxy, PlacedKind, StarSystem, system_layout};
 
 use crate::data::Data;
 use crate::sector::Docked;
-use crate::views::planet::{Look, planet_texture};
+use crate::views::planet::{Look, PlanetLookPlugin, planet_texture};
 use crate::views::sky::{SkyNebula, SkySpec, cube_image, render_sky};
 use crate::voyage::RoutePlan;
 
@@ -21,6 +24,8 @@ pub struct ProceduralPlugin;
 
 impl Plugin for ProceduralPlugin {
     fn build(&self, app: &mut App) {
+        // Les astres peints passent par ce cache : leur greffon vit avec lui.
+        app.add_plugins(PlanetLookPlugin);
         app.init_resource::<Procedural>().add_systems(
             Update,
             (
@@ -73,6 +78,18 @@ impl Procedural {
         handle
     }
 
+    /// Fournit d'avance l'image d'une clé (texture peinte d'un astre) : la vue Globale la
+    /// prendra telle quelle, sans rien calculer.
+    pub fn provide(&mut self, key: String, handle: Handle<Image>) {
+        self.pending.remove(&key);
+        self.ready.insert(key, handle);
+    }
+
+    /// Oublie l'image d'une clé : elle sera recalculée à la prochaine demande.
+    pub fn forget(&mut self, key: &str) {
+        self.ready.remove(key);
+    }
+
     /// Lance le calcul en tâche de fond, s'il n'est ni prêt ni en cours.
     pub fn prewarm(&mut self, key: String, make: impl FnOnce() -> Image + Send + 'static) {
         if self.ready.contains_key(&key) || self.pending.contains_key(&key) {
@@ -118,7 +135,7 @@ pub fn make_sky(galaxy: &Galaxy, system: Option<&StarSystem>) -> Image {
     cube_image(&render_sky(&spec, SKY_SIZE))
 }
 
-/// Apparence d'un astre (Hexis : monde industriel).
+/// Apparence procédurale d'un astre (Hexis : monde industriel, si son apparence peinte manque).
 pub fn look_of(kind: PlacedKind, id: &str) -> Look {
     match (kind, id) {
         (_, "hexis") => Look::Industrial,

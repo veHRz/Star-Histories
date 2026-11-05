@@ -28,6 +28,7 @@ pub mod items;
 pub mod lang;
 pub mod layout;
 pub mod map;
+pub mod planets;
 pub mod scene;
 pub mod sector;
 pub mod settings;
@@ -51,6 +52,7 @@ pub use items::{EquipSlot, ItemCategory, ItemDef, ItemsFile};
 pub use lang::{DuplicateKey, Keyboard, Lang, load_lang};
 pub use layout::{Placed, PlacedKind, system_layout};
 pub use map::{MapEntry, MapKind, entry_at, public_map};
+pub use planets::{PlanetLook, PlanetLooks};
 pub use scene::{Arrival, DockPort, Structure, StructureKind, SystemScene, Traffic};
 pub use sector::{
     Cell, DockError, Placement, Portal, PortalKind, Sector, SectorKind, Spawn, dock, is_external,
@@ -85,6 +87,8 @@ pub mod paths {
     pub const PORTAL_LINKS: &str = "propositions/portal_links.ron";
     /// Catalogue des objets, contenu de départ des casiers, équipement de départ (M9).
     pub const ITEMS: &str = "gameplay/items.ron";
+    /// Apparence peinte des astres en vue Globale (M9).
+    pub const PLANETS: &str = "gameplay/planets.ron";
     /// Dossier des langues : `<code>.ron` (textes communs) et `<code>/*.ron` (un fichier par
     /// domaine), fusionnés par [`crate::load_lang`].
     pub const LANG_DIR: &str = "lang";
@@ -128,6 +132,7 @@ pub struct GameData {
     pub rails: Rails,
     pub portal_links: PortalLinks,
     pub items: ItemsFile,
+    pub planets: PlanetLooks,
     pub lang: Lang,
     pub keyboard: Keyboard,
     pub sectors: Vec<Sector>,
@@ -229,6 +234,7 @@ impl GameData {
             rails: read_ron(&file(paths::RAILS))?,
             portal_links: read_ron(&file(paths::PORTAL_LINKS))?,
             items: read_ron(&file(paths::ITEMS))?,
+            planets: read_ron(&file(paths::PLANETS))?,
             lang: load_lang(data_dir, paths::LANG_CODE)?,
             keyboard: read_ron(&file(paths::KEYBOARD))?,
             sectors: read_dir_ron(data_dir, &paths::SECTOR_DIRS)?,

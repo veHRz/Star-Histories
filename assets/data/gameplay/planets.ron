@@ -1,0 +1,45 @@
+// Apparence peinte des astres en vue Globale (M9, lot L6 ; schéma : crates/sh_data/src/planets.rs).
+// Réglages visuels, pas des faits d'univers. Les textures sont produites par tools/planets/hexis.py
+// (à relancer après un changement ; ses aperçus reprennent ces réglages, table LOOK). Un astre
+// absent de ce fichier garde sa texture procédurale (crates/sh_game/src/views/planet.rs).
+// La résolution choisie est celle du préréglage graphique au lancement du jeu.
+(
+    bodies: {
+        // Hexis, monde-usine très urbanisé (Q17, hypothèse validée par l'auteur le 05/11/2026) :
+        // nappes de villes et d'usines de jour, lumières des villes côté nuit, zones ravagées.
+        "hexis": (
+            color: (
+                low: "textures/planets/hexis_color_2k.png",
+                medium: "textures/planets/hexis_color_2k.png",
+                high: "textures/planets/hexis_color_4k.png",
+            ),
+            surface: "textures/planets/hexis_surface_2k.png",
+            detail: "textures/planets/urban_detail.png",
+            // Quartiers (carreau de 160 km) et îlots (25 km) : en orbite basse (≈ 50 km
+            // d'altitude au spatioport), la carte seule (1 à 2 km par texel) serait floue.
+            detail_layers: (
+                coarse: (tile_km: 160.0, weight: 0.45, blur: 1.0),
+                fine: (tile_km: 25.0, weight: 0.5, blur: 0.0),
+            ),
+            detail_strength: (urban: 1.2, industry: 1.0, rough: 0.7, lights: 1.6),
+            // Lumières au sodium, centres plus blancs ; elles s'allument juste avant le
+            // terminateur. Émission avant tonemapping, non atténuée par l'exposition.
+            night: (
+                color: (1.0, 0.56, 0.24),
+                core_color: (1.0, 0.86, 0.62),
+                intensity: 1.4,
+                on: (-0.04, 0.16),
+            ),
+            // Brume industrielle jaunâtre, surtout au limbe ; le crépuscule déborde un peu.
+            haze: (
+                color: (0.78, 0.70, 0.52),
+                strength: 0.6,
+                power: 5.0,
+                floor: 0.03,
+                lit: (-0.25, 0.35),
+            ),
+            roughness: 0.95,
+            water_roughness: 0.35,
+        ),
+    },
+)
