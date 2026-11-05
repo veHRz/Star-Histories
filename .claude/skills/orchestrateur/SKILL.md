@@ -152,8 +152,12 @@ réponse et dans le journal) ; c'est aussi ton état de reprise si la session s'
   quand tous ses lots sont livrés, dans l'ordre des dépendances (kit → assemblage → lightmaps →
   descripteur), en arrière-plan. Une carte d'un seul lot : son artiste fait le bake final si ton
   brief le demande.
-- **Vagues** : un lot part quand ce dont il dépend est livré (rapport lu, aperçus regardés). Au plus
-  six sous-agents à la fois, au plus deux bakes Cycles sur la machine.
+- **Vagues** : un lot part quand ce dont il dépend est livré (rapport lu, aperçus regardés). Six
+  sous-agents à la fois d'ordinaire, **jusqu'à dix quand cela fait gagner du temps** (décision de
+  l'auteur, 05/11/2026) : des lots indépendants prêts à partir, plutôt que de les faire attendre.
+  Au-delà de six, surveille la machine : au plus deux bakes Cycles, et les `dev-jeu` qui partagent
+  le `target/` du dépôt s'attendent au verrou de compilation (plus il y en a, plus chaque
+  `cargo lint` attend). Au-delà de dix, jamais.
 - **Taille d'un lot** : un résultat vérifiable, qui vaut un sous-agent (pas une ligne) et tient dans
   un rapport lisible.
 
