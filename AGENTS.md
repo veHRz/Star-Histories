@@ -155,6 +155,9 @@ Le jeu lit des variables d'environnement (`crates/sh_game/src/dev.rs`) :
 | `SH_MAP_HEIGHT=<h>`, `SH_MAP_CENTER=x,y` | Cadrage de la carte galactique (1100 : tout ; 150 : plan rapproché) |
 | `SH_SCENARIO=pickup_persist` | Avec `SH_USER_DIR` et `SH_START=sector:hexis_spaceport` : ramasser la tablette des quartiers, sauvegarder, recharger : elle n'y est plus et reste dans l'inventaire |
 | `SH_SCENARIO=terminal_tour` | Avec `SH_START=sector:hexis_spaceport SH_RAID=0` : chaque PNJ, le service qu'il ouvre, retour à la conversation, onglets de la tablette ; captures `target/shots/m9-borne-*.png` |
+| `SH_SCENARIO=voyage_isolated` | Avec `SH_START=global:hexis SH_RAID=0` : Hexis → Calderis (monde isolé, hyperespace, arrivée en orbite) et retour, durées vérifiées ; capture `m9-isole-orbite.png` |
+| `SH_SCENARIO=key_help` | Avec `SH_START=sector:hexis_spaceport SH_SPAWN=hall` : F1 tenue 150 ms replie puis redéplie l'encart des touches |
+| `SH_SCENARIO=character` | Avec `SH_START=sector:player_ship SH_SPAWN=soute` : I ouvre l'inventaire, O les compétences, Échap ferme sans ouvrir la pause ; au casier, Entrée prend un objet, E referme |
 | `SH_TUTORIAL=1`, `SH_TUTORIAL_STEP=N` | Le tutoriel guidé (coupé par défaut quand l'autopilote pilote, comme les conseils) ; démarrer à l'étape N (captures du panneau) |
 | `SH_SCENARIO=tutorial` | Avec `SH_START=new SH_TUTORIAL=1 SH_RAID=0 SH_USER_DIR=…` : joue tout le tutoriel (commandes, amarrage, bureau, contrat, écrans, départ, carte, Portail, livraison, sauvegarde), captures `target/shots/m8-tuto-*.png` (critère de M8) |
 
