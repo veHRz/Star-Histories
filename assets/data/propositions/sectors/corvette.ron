@@ -15,7 +15,7 @@
             lod: "models/ships/corvette/machines_lod.gltf",
             min: (-5.200, -0.200, 14.200),
             max: (5.200, 3.600, 26.200),
-            lightmap: (image: "textures/lightmaps/corvette/machines.png", exposure: 2959.044),
+            lightmap: (image: "textures/lightmaps/corvette/machines.png", exposure: 2928.473),
         ),
         (
             id: "couloir_arriere",
@@ -24,7 +24,7 @@
             lod: "models/ships/corvette/couloir_arriere_lod.gltf",
             min: (-1.400, -0.200, -0.200),
             max: (1.400, 2.800, 14.200),
-            lightmap: (image: "textures/lightmaps/corvette/couloir_arriere.png", exposure: 1086.493),
+            lightmap: (image: "textures/lightmaps/corvette/couloir_arriere.png", exposure: 1008.214),
         ),
         (
             id: "sas",
@@ -33,7 +33,7 @@
             lod: "models/ships/corvette/sas_lod.gltf",
             min: (-7.800, -0.200, 1.000),
             max: (-1.400, 2.800, 5.000),
-            lightmap: (image: "textures/lightmaps/corvette/sas.png", exposure: 1029.954),
+            lightmap: (image: "textures/lightmaps/corvette/sas.png", exposure: 1021.760),
         ),
         (
             id: "soute",
@@ -42,7 +42,7 @@
             lod: "models/ships/corvette/soute_lod.gltf",
             min: (1.400, -0.200, 1.400),
             max: (7.800, 3.600, 13.600),
-            lightmap: (image: "textures/lightmaps/corvette/soute.png", exposure: 1461.675),
+            lightmap: (image: "textures/lightmaps/corvette/soute.png", exposure: 1535.716),
         ),
         (
             id: "couloir_avant",
@@ -51,7 +51,7 @@
             lod: "models/ships/corvette/couloir_avant_lod.gltf",
             min: (-1.400, -0.200, -14.200),
             max: (1.400, 2.800, 0.200),
-            lightmap: (image: "textures/lightmaps/corvette/couloir_avant.png", exposure: 982.875),
+            lightmap: (image: "textures/lightmaps/corvette/couloir_avant.png", exposure: 914.341),
         ),
         (
             id: "quartiers",
@@ -60,7 +60,7 @@
             lod: "models/ships/corvette/quartiers_lod.gltf",
             min: (-7.800, -0.200, -7.800),
             max: (-1.400, 3.000, -1.400),
-            lightmap: (image: "textures/lightmaps/corvette/quartiers.png", exposure: 941.333),
+            lightmap: (image: "textures/lightmaps/corvette/quartiers.png", exposure: 952.632),
         ),
         (
             id: "chambre",
@@ -69,7 +69,7 @@
             lod: "models/ships/corvette/chambre_lod.gltf",
             min: (-7.800, -0.200, -14.200),
             max: (-1.400, 3.000, -7.800),
-            lightmap: (image: "textures/lightmaps/corvette/chambre.png", exposure: 884.486),
+            lightmap: (image: "textures/lightmaps/corvette/chambre.png", exposure: 916.930),
         ),
         (
             id: "carre",
@@ -78,7 +78,7 @@
             lod: "models/ships/corvette/carre_lod.gltf",
             min: (1.400, -0.200, -9.800),
             max: (7.800, 3.000, -1.400),
-            lightmap: (image: "textures/lightmaps/corvette/carre.png", exposure: 1004.364),
+            lightmap: (image: "textures/lightmaps/corvette/carre.png", exposure: 1013.740),
         ),
         (
             id: "cockpit",
@@ -87,7 +87,7 @@
             lod: "models/ships/corvette/cockpit_lod.gltf",
             min: (-4.200, -0.200, -20.600),
             max: (4.200, 3.200, -14.200),
-            lightmap: (image: "textures/lightmaps/corvette/cockpit.png", exposure: 894.298),
+            lightmap: (image: "textures/lightmaps/corvette/cockpit.png", exposure: 935.765),
         ),
     ],
     portals: [
