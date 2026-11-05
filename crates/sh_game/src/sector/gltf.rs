@@ -7,12 +7,16 @@
 //! - `LIGHT_*` : lumière ponctuelle réglée par les extras (`lumens`, `range`, `color`,
 //!   `shadow_candidate`) ;
 //! - `INTERACT_*` : zone d'interaction, de genre `interact` avec ses paramètres : `console`
-//!   (`label`), `seat` (`role`), `pickup` (`item`), `locker` (`container`), `npc` (`role`,
-//!   `variant`), `ladder`. Son capteur est un pavé si le nœud porte `half_extents: [x, y, z]`
+//!   (`label`), `seat` (`role`), `pickup` (`item`), `locker` (`container`, absent pour un casier
+//!   décoratif), `locker_label` (`container` : la plaque de nom d'un casier, M10), `npc` (`role`,
+//!   `variant`), `ladder`. Les casiers et plaques d'une salle du vaisseau du joueur lui
+//!   appartiennent (`items::owner_of_cell`) ; ailleurs, ils restent verrouillés. Son capteur est
+//!   un pavé si le nœud porte `half_extents: [x, y, z]`
 //!   (demi-tailles en mètres, repère local du nœud, Y-haut : il tourne avec l'objet), sinon une
 //!   sphère de [`INTERACT_RADIUS`] ;
 //! - `SOCKET_*` : point d'attache (`usage`), par exemple l'œil d'un siège (`seat_eye`) ou la place
-//!   d'un PNJ de comptoir (`npc`, avec `role` et `variant` : [`crate::npc::CounterNpc`]) ;
+//!   d'un PNJ de comptoir (`npc`, avec `role` et `variant` : [`crate::npc::CounterNpc`]) ou
+//!   l'ancre du nom d'un casier sur sa plaque (`label`, avec `container` : [`ContainerLabel`]) ;
 //! - extra `detail` (0, 1, 2) sur n'importe quel nœud de décor (sauf `*_col`) : caché avec ses
 //!   enfants si le préréglage ne montre pas ce niveau (`GraphicsPreset::shows_detail`) ; un
 //!   changement de préréglage s'applique en direct (`graphics::apply_decor_detail`).
@@ -41,7 +45,7 @@ use serde_json::Value;
 
 use crate::data::{Data, assets_dir};
 use crate::graphics::GraphicsSettings;
-use crate::items::{ItemCatalog, PickedUp};
+use crate::items::{ItemCatalog, PickedUp, owner_of_cell};
 use crate::npc::CounterNpc;
 use crate::sector::streaming::{CellInstance, CellReady, Quality};
 use crate::sector::{ActiveSector, Docked, Layer};
@@ -83,9 +87,18 @@ pub enum Interactable {
     Pickup {
         item: String,
     },
-    /// Un casier : ouvre le conteneur de cet identifiant (`items::OpenContainer`).
+    /// Un casier (ou le frigo) : ouvre le conteneur de cet identifiant (`items::OpenContainer`).
+    /// Sans `container`, un casier décoratif ; sans propriétaire (`owner`, voir
+    /// `items::owner_of_cell`), un casier qui n'est pas au joueur : les deux restent verrouillés.
     Locker {
         container: String,
+        owner: Option<String>,
+    },
+    /// La plaque de nom d'un casier (`locker_label`, M10) : la nommer ouvre la saisie du nom
+    /// (`items::NameContainer`).
+    LockerLabel {
+        container: String,
+        owner: Option<String>,
     },
     /// Un PNJ de comptoir : la conversation de son rôle (`items::TalkTo`).
     Npc {
@@ -113,6 +126,16 @@ pub struct DecorDetail(pub u8);
 pub struct Socket {
     pub name: String,
     pub usage: String,
+}
+
+/// L'ancre du nom d'un casier sur sa plaque (`SOCKET_<n>_label`, `usage: "label"`, M10) : le
+/// centre de la plaque, son axe +Y Blender (−Z du nœud dans Bevy, `Transform::forward`) vers
+/// l'extérieur. Le nom à y écrire : `items::container_name(containers, owner, container)` ;
+/// sans propriétaire, la plaque d'un casier qui n'est pas au joueur reste muette.
+#[derive(Component, Clone, Debug, PartialEq, Eq)]
+pub struct ContainerLabel {
+    pub container: String,
+    pub owner: Option<String>,
 }
 
 /// L'identifiant d'un point de ramassage : le secteur d'origine de la cellule, la cellule et le
@@ -278,6 +301,12 @@ impl CellAssets<'_> {
         Some(home_sector(active.sector.id.as_str(), ship, &cell.cell).to_owned())
     }
 
+    /// Le propriétaire des conteneurs de la cellule (`items::owner_of_cell`) : le vaisseau du
+    /// joueur pour ses salles, personne ailleurs.
+    fn owner_of(&self, cell: &CellInstance) -> Option<String> {
+        owner_of_cell(&self.sector.as_ref()?.ship_cells, &cell.cell)
+    }
+
     /// Le modèle de l'objet du catalogue, s'il est produit (les modèles arrivent au fil de
     /// l'eau : sans fichier, le nœud garde l'apparence du kit).
     fn item_model(&self, item: &str) -> Option<String> {
@@ -318,6 +347,7 @@ fn on_instance_ready(
     // Objets déjà pris : leur nœud est retiré, et aucune commande ne vise plus ses descendants
     // (une commande sur une entité détruite est une erreur).
     let home = cell.and_then(|c| assets.home_of(c));
+    let owner = cell.and_then(|c| assets.owner_of(c));
     let mut dropped = Vec::new();
     let mut skip = BTreeSet::new();
     if let (Some(cell), Some(home), Some(picked)) = (cell, &home, &assets.picked) {
@@ -483,7 +513,19 @@ fn on_instance_ready(
                 },
                 "locker" => Interactable::Locker {
                     container: text(&v, "container"),
+                    owner: owner.clone(),
                 },
+                "locker_label" => {
+                    let container = text(&v, "container");
+                    if container.is_empty() {
+                        warn!("{rest} : plaque de casier sans container, ignorée");
+                        continue;
+                    }
+                    Interactable::LockerLabel {
+                        container,
+                        owner: owner.clone(),
+                    }
+                }
                 "npc" => Interactable::Npc {
                     role: text(&v, "role"),
                     variant: text(&v, "variant"),
@@ -536,6 +578,17 @@ fn on_instance_ready(
                     role: text(&v, "role"),
                     variant: text(&v, "variant"),
                 });
+            }
+            if usage == "label" {
+                let container = text(&v, "container");
+                if container.is_empty() {
+                    warn!("SOCKET_{rest} : ancre de nom sans container");
+                } else {
+                    entity.insert(ContainerLabel {
+                        container,
+                        owner: owner.clone(),
+                    });
+                }
             }
             entity.insert(Socket {
                 name: rest.to_owned(),

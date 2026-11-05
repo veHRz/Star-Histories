@@ -17,13 +17,16 @@
 //! telle quelle puis se migre au chargement ([`migrate_place`], [`migrate_items`]) : depuis M9, le
 //! vaisseau du joueur est l'intérieur type `corvette` (avant : `player_ship`), Hexis le
 //! spatioport par défaut `spaceport` (avant : `hexis_spaceport`), et la tablette des quartiers
-//! est dans la chambre. La sauvegarde ne note pas la position à pied : à quai, on reprend au quai
+//! est dans la chambre ; depuis M10, les casiers (contenus et noms) sont rangés par vaisseau :
+//! ceux d'une sauvegarde plus ancienne deviennent ceux du vaisseau du joueur, et un rangement
+//! ajouté depuis (le frigo) reçoit son contenu de départ. La sauvegarde ne note pas la position à pied : à quai, on reprend au quai
 //! (première apparition du quartier), en vol aux commandes ; un quartier disparu des données
 //! retombe sur le spatioport par défaut.
 //!
 //! Homme de fer : une seule sauvegarde, écrite automatiquement (à quai, à l'arrivée, en quittant)
 //! et effacée à la mort.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -55,8 +58,10 @@ use crate::voyage::{Location, ResumeFlight, ShipFuel};
 /// Version du format : une sauvegarde d'une autre version est refusée, jamais devinée.
 pub const FORMAT_VERSION: u32 = 1;
 
-/// Version du contenu (identifiants cités) : 0 avant M9, 1 depuis les intérieurs types.
-pub const CONTENT_VERSION: u32 = 1;
+/// Version du contenu (identifiants cités) : 0 avant M9, 1 depuis les intérieurs types, 2 depuis
+/// les rangements par vaisseau (M10 : les casiers étaient indexés par une clé globale, ils sont
+/// à leur vaisseau).
+pub const CONTENT_VERSION: u32 = 2;
 
 /// Secteurs renommés au contenu 1 (M9) : le vaisseau du joueur devient l'intérieur type des
 /// corvettes, le spatioport d'Hexis le spatioport par défaut.
@@ -92,22 +97,32 @@ pub fn migrate_place(place: SavedPlace, content: u32) -> SavedPlace {
     }
 }
 
-/// Les objets d'une sauvegarde de ce contenu, au contenu courant : identifiants des points de
-/// ramassage (`<secteur>/<cellule>/<nœud>`) déplacés ou dont le secteur a changé de nom.
+/// Les objets d'une sauvegarde de ce contenu, au contenu courant :
+/// - contenu 0 → 1 (M9) : identifiants des points de ramassage (`<secteur>/<cellule>/<nœud>`)
+///   déplacés ou dont le secteur a changé de nom ;
+/// - contenu ≤ 1 → 2 (M10) : les casiers indexés par une clé globale (champ `containers`)
+///   deviennent ceux du vaisseau du joueur (`storage`), sans nom.
 pub fn migrate_items(mut items: SavedItems, content: u32) -> SavedItems {
-    if content >= 1 {
-        return items;
+    if content < 1 {
+        let moved = |id: &str| -> String {
+            if let Some((_, new)) = MOVED_PICKUPS_1.iter().find(|(old, _)| *old == id) {
+                return (*new).to_owned();
+            }
+            match id.split_once('/') {
+                Some((sector, rest)) => format!("{}/{rest}", renamed_sector(sector, content)),
+                None => id.to_owned(),
+            }
+        };
+        items.picked_up = PickedUp(items.picked_up.0.iter().map(|id| moved(id)).collect());
     }
-    let moved = |id: &str| -> String {
-        if let Some((_, new)) = MOVED_PICKUPS_1.iter().find(|(old, _)| *old == id) {
-            return (*new).to_owned();
-        }
-        match id.split_once('/') {
-            Some((sector, rest)) => format!("{}/{rest}", renamed_sector(sector, content)),
-            None => id.to_owned(),
-        }
-    };
-    items.picked_up = PickedUp(items.picked_up.0.iter().map(|id| moved(id)).collect());
+    // Le champ ancien ne vit plus après la migration : une sauvegarde réécrite ne le porte pas.
+    let legacy = items.containers.take();
+    if content < 2
+        && items.storage.is_none()
+        && let Some(LegacyContainers(contents)) = legacy
+    {
+        items.storage = Some(Containers::from_player_contents(contents));
+    }
     items
 }
 
@@ -232,18 +247,29 @@ pub struct SaveFile {
 /// vides.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavedItems {
+    /// Contenu ≤ 1 (M9) : les casiers par clé globale. Seulement relu, puis migré vers
+    /// [`SavedItems::storage`] ([`migrate_items`]) ; jamais écrit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub containers: Option<LegacyContainers>,
+    /// Contenu 2 (M10) : contenus et noms des conteneurs, par vaisseau.
     #[serde(default)]
-    pub containers: Option<Containers>,
+    pub storage: Option<Containers>,
     #[serde(default)]
     pub picked_up: PickedUp,
     #[serde(default)]
     pub equipment: Option<Equipment>,
 }
 
+/// Les casiers d'une sauvegarde de M9 : identifiant global → (objet → quantité), tels que les
+/// écrivait l'ancien `items::Containers` (structure tuple : `({ … })` en RON).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LegacyContainers(pub BTreeMap<String, BTreeMap<String, u32>>);
+
 impl SavedItems {
     fn capture(world: &World) -> Self {
         SavedItems {
-            containers: world.get_resource::<Containers>().cloned(),
+            containers: None,
+            storage: world.get_resource::<Containers>().cloned(),
             picked_up: world
                 .get_resource::<PickedUp>()
                 .cloned()
@@ -253,9 +279,9 @@ impl SavedItems {
     }
 
     /// Installe les objets avant l'entrée en jeu : `items::start_items` ne crée que ce qui
-    /// manque.
+    /// manque (et donne leur contenu de départ aux rangements que la sauvegarde ne connaît pas).
     fn install(self, world: &mut World) {
-        if let Some(containers) = self.containers {
+        if let Some(containers) = self.storage {
             world.insert_resource(containers);
         }
         world.insert_resource(self.picked_up);
@@ -687,11 +713,17 @@ fn install(world: &mut World, save: SaveFile) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::items::PLAYER_SHIP;
 
     #[test]
     fn les_objets_se_sauvegardent_et_les_anciennes_sauvegardes_se_relisent() {
         let mut containers = Containers::default();
-        containers.add("corvette_chambre_casier_1", "ration", 2);
+        containers.add(PLAYER_SHIP, "corvette_chambre_casier_1", "ration", 2);
+        containers.set_name(
+            PLAYER_SHIP,
+            "corvette_chambre_casier_1",
+            "Vivres « secours »",
+        );
         let mut picked_up = PickedUp::default();
         picked_up.insert("corvette/chambre/chambre_pickup_datapad");
         let mut equipment = Equipment::default();
@@ -699,7 +731,8 @@ mod tests {
             .0
             .insert(sh_data::EquipSlot::Weapon, "mag_pistol".to_owned());
         let items = SavedItems {
-            containers: Some(containers),
+            containers: None,
+            storage: Some(containers),
             picked_up,
             equipment: Some(equipment),
         };
@@ -715,7 +748,61 @@ mod tests {
             .from_str("()")
             .expect("ancien format");
         assert_eq!(old, SavedItems::default());
-        assert!(old.containers.is_none() && old.equipment.is_none());
+        assert!(old.storage.is_none() && old.equipment.is_none());
+        // Le champ des anciens casiers n'est jamais réécrit.
+        assert!(!text.contains("containers"), "{text}");
+    }
+
+    /// Une sauvegarde de M9 (contenu 1) : les casiers sous une clé globale, écrits par l'ancien
+    /// `Containers` (structure tuple). Ils deviennent ceux du vaisseau du joueur, sans nom.
+    #[test]
+    fn les_casiers_d_avant_m10_vont_au_vaisseau_du_joueur() {
+        /// Les objets tels que M9 les écrivait.
+        #[derive(Serialize)]
+        struct OldContainers(BTreeMap<String, BTreeMap<String, u32>>);
+        #[derive(Serialize)]
+        struct OldItems {
+            containers: Option<OldContainers>,
+            picked_up: PickedUp,
+            equipment: Option<Equipment>,
+        }
+        let old_contents = BTreeMap::from([(
+            "corvette_chambre_casier_1".to_owned(),
+            BTreeMap::from([("medkit".to_owned(), 1), ("ration".to_owned(), 4)]),
+        )]);
+        let old = OldItems {
+            containers: Some(OldContainers(old_contents.clone())),
+            picked_up: PickedUp::default(),
+            equipment: None,
+        };
+        // Écrit comme M9 écrivait ses sauvegardes.
+        let path = std::env::temp_dir().join(format!("sh-casiers-m9-{}.ron", std::process::id()));
+        sh_data::write_ron(&path, &old).expect("écriture de l'ancien format");
+        let text = std::fs::read_to_string(&path).expect("lecture");
+        let _ = std::fs::remove_file(&path);
+        let read: SavedItems = sh_data::ron_options()
+            .from_str(&text)
+            .expect("relecture de l'ancien format");
+        assert_eq!(
+            read.containers,
+            Some(LegacyContainers(old_contents.clone()))
+        );
+        assert!(read.storage.is_none());
+
+        let migrated = migrate_items(read.clone(), 1);
+        assert!(migrated.containers.is_none());
+        let storage = migrated.storage.expect("casiers migrés");
+        assert_eq!(
+            storage.contents("corvette_chambre_casier_1"),
+            old_contents.get("corvette_chambre_casier_1")
+        );
+        assert_eq!(storage.name(PLAYER_SHIP, "corvette_chambre_casier_1"), None);
+        assert_eq!(storage.ships.len(), 1);
+        // Depuis le contenu 0 aussi (avant M9, avec les points de ramassage).
+        assert!(migrate_items(read.clone(), 0).storage.is_some());
+        // Au contenu courant, un champ ancien égaré ne remplace rien.
+        let current = migrate_items(read, CONTENT_VERSION);
+        assert!(current.containers.is_none() && current.storage.is_none());
     }
 
     /// Une sauvegarde d'avant M9 (contenu 0) : le vaisseau `player_ship`, le spatioport

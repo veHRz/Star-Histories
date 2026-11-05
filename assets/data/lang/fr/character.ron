@@ -37,10 +37,24 @@
     "character.skills.points": "{xp} / {next} pts",
     "character.skills.next": "niveau {level} dans {left} pts",
     "character.traits.none": "Aucun trait pour l'instant.",
-    "character.container.title": "Casier",
-    "character.container.stash": "Casier",
+    // Rangement d'un casier (M10) : le titre de l'écran est le nom du casier, ou son genre
+    // (`container.*`, world.ron) ; la grille porte alors « Contenu ».
+    "character.container.stash": "Contenu",
     "character.container.pack": "Sur vous",
-    "character.hint.inventory": "Clic : examiner   ·   Clic droit ou [Enter] : équiper / retirer   ·   [KeyO] : compétences   ·   [KeyI] ou [Escape] : fermer",
-    "character.hint.skills": "[KeyI] : inventaire   ·   [KeyO] ou [Escape] : fermer",
-    "character.hint.container": "Clic : déplacer la case   ·   Clic droit : un seul   ·   Flèches et [Enter] : au clavier   ·   [KeyE] ou [Escape] : fermer",
+    "character.container.refused": "Ce rangement n'accepte pas : {item}.",
+    // Encart des touches de l'écran (M10, à la place de la consigne écrite en bas).
+    "character.keys.examine": "Examiner",
+    "character.keys.equip": "Équiper · retirer",
+    "character.keys.select": "Choisir une case",
+    "character.keys.skills": "Compétences",
+    "character.keys.inventory": "Inventaire",
+    "character.keys.close": "Fermer",
+    "character.keys.move_stack": "Déplacer une case",
+    "character.keys.move_one": "Déplacer un seul",
+    "character.keys.keyboard": "Au clavier",
+    "character.keys.confirm_name": "Valider le nom",
+    "character.keys.cancel": "Annuler",
+    // Saisie du nom d'un casier (M10).
+    "character.naming.title": "Nommer le casier",
+    "character.naming.note": "{max} caractères au plus. Laissé vide, il reprend son nom : {default}.",
 }

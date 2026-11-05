@@ -37,10 +37,24 @@
     "character.skills.points": "{xp} / {next} pts",
     "character.skills.next": "level {level} in {left} pts",
     "character.traits.none": "No traits yet.",
-    "character.container.title": "Locker",
-    "character.container.stash": "Locker",
+    // Rangement d'un casier (M10) : le titre de l'écran est le nom du casier, ou son genre
+    // (`container.*`, world.ron) ; la grille porte alors « Contents ».
+    "character.container.stash": "Contents",
     "character.container.pack": "On you",
-    "character.hint.inventory": "Click: inspect   ·   Right-click or [Enter]: equip / unequip   ·   [KeyO]: skills   ·   [KeyI] or [Escape]: close",
-    "character.hint.skills": "[KeyI]: inventory   ·   [KeyO] or [Escape]: close",
-    "character.hint.container": "Click: move the stack   ·   Right-click: just one   ·   Arrows and [Enter]: keyboard   ·   [KeyE] or [Escape]: close",
+    "character.container.refused": "This storage does not take: {item}.",
+    // Encart des touches de l'écran (M10, à la place de la consigne écrite en bas).
+    "character.keys.examine": "Inspect",
+    "character.keys.equip": "Equip · unequip",
+    "character.keys.select": "Select a slot",
+    "character.keys.skills": "Skills",
+    "character.keys.inventory": "Inventory",
+    "character.keys.close": "Close",
+    "character.keys.move_stack": "Move a stack",
+    "character.keys.move_one": "Move just one",
+    "character.keys.keyboard": "With the keyboard",
+    "character.keys.confirm_name": "Confirm name",
+    "character.keys.cancel": "Cancel",
+    // Saisie du nom d'un casier (M10).
+    "character.naming.title": "Name the locker",
+    "character.naming.note": "{max} characters at most. Left empty, it goes back to its name: {default}.",
 }

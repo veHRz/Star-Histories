@@ -3,24 +3,36 @@
 // (`item.<id>`, `item.<id>.description` : lang/<code>/world.ron). Modèle `models/items/<id>.gltf`
 // (origine au centre de la base, posé sur une surface) et icône `ui/icons/items/<id>.png`
 // (256 × 256, fond transparent) se déduisent de l'identifiant.
+//
+// `subcategory` (M10) : classement fin, jamais affiché au joueur, que lisent les rangements
+// spécialisés (`storage`) : Food, Medical, Weapon, Clothing, Tools, Parts, Data.
 (
     items: [
-        (id: "datapad", name_key: "item.datapad", description_key: "item.datapad.description", category: Tool),
-        (id: "spare_parts", name_key: "item.spare_parts", description_key: "item.spare_parts.description", category: Material, max_stack: 20),
+        (id: "datapad", name_key: "item.datapad", description_key: "item.datapad.description", category: Tool, subcategory: Data),
+        (id: "spare_parts", name_key: "item.spare_parts", description_key: "item.spare_parts.description", category: Material, subcategory: Parts, max_stack: 20),
         // L'arme portative du joueur (combat.ron, `firearms.pistol`).
-        (id: "mag_pistol", name_key: "item.mag_pistol", description_key: "item.mag_pistol.description", category: Equipment, slot: Weapon, firearm: "pistol"),
-        (id: "flight_suit", name_key: "item.flight_suit", description_key: "item.flight_suit.description", category: Equipment, slot: Outfit),
-        (id: "toolkit", name_key: "item.toolkit", description_key: "item.toolkit.description", category: Tool, slot: Tool),
-        (id: "medkit", name_key: "item.medkit", description_key: "item.medkit.description", category: Consumable, max_stack: 5),
-        (id: "ration", name_key: "item.ration", description_key: "item.ration.description", category: Consumable, max_stack: 10),
-        (id: "data_chip", name_key: "item.data_chip", description_key: "item.data_chip.description", category: Document, max_stack: 10),
-        (id: "cargo_manifest", name_key: "item.cargo_manifest", description_key: "item.cargo_manifest.description", category: Document, max_stack: 5),
+        (id: "mag_pistol", name_key: "item.mag_pistol", description_key: "item.mag_pistol.description", category: Equipment, subcategory: Weapon, slot: Weapon, firearm: "pistol"),
+        (id: "flight_suit", name_key: "item.flight_suit", description_key: "item.flight_suit.description", category: Equipment, subcategory: Clothing, slot: Outfit),
+        (id: "toolkit", name_key: "item.toolkit", description_key: "item.toolkit.description", category: Tool, subcategory: Tools, slot: Tool),
+        (id: "medkit", name_key: "item.medkit", description_key: "item.medkit.description", category: Consumable, subcategory: Medical, max_stack: 5),
+        (id: "ration", name_key: "item.ration", description_key: "item.ration.description", category: Consumable, subcategory: Food, max_stack: 10),
+        (id: "data_chip", name_key: "item.data_chip", description_key: "item.data_chip.description", category: Document, subcategory: Data, max_stack: 10),
+        (id: "cargo_manifest", name_key: "item.cargo_manifest", description_key: "item.cargo_manifest.description", category: Document, subcategory: Data, max_stack: 5),
     ],
     // Contenu de départ des conteneurs, par identifiant (paramètre `container` d'un
-    // `INTERACT_*` de genre `locker`) : les casiers de la chambre de l'intérieur type `corvette`.
+    // `INTERACT_*` de genre `locker`) : les casiers de la chambre et le frigo de la cuisine de
+    // l'intérieur type `corvette`. Il se range dans le vaisseau du joueur (`items::Containers`).
     containers: {
         "corvette_chambre_casier_1": { "flight_suit": 1, "medkit": 1 },
         "corvette_chambre_casier_2": { "ration": 3, "toolkit": 1 },
+        // Les vivres du vaisseau : le stock de rations, c'est ce que contient le frigo (M10).
+        "corvette_carre_frigo": { "ration": 12 },
+    },
+    // Rangements spécialisés (M10) : ce qu'ils acceptent et le genre de leurs textes
+    // (`<kind_key>`, `.open`, `.refused`, `.stock` : lang/<code>/world.ron). Les autres
+    // conteneurs sont des casiers qui prennent tout.
+    storage: {
+        "corvette_carre_frigo": (accepts: Food, kind_key: "container.fridge"),
     },
     // Porté au début d'une partie (chaque objet dans son emplacement).
     equipped: ["mag_pistol"],

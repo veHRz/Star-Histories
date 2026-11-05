@@ -7,6 +7,11 @@
 //! ([`ItemDef::model_path`], [`ItemDef::icon_path`]). Le fichier donne aussi le contenu de départ
 //! des conteneurs (paramètre `container` d'un `INTERACT_*` de genre `locker`) et l'équipement
 //! porté au début d'une partie.
+//!
+//! **Sous-catégories** (M10, [`ItemSubcategory`]) : un classement plus fin que la catégorie,
+//! **jamais montré au joueur** (pas de clé de langue), qui sert aux rangements spécialisés : un
+//! rangement des données ([`StorageDef`], table `storage`) peut n'accepter qu'une sous-catégorie
+//! (`accepts`), comme le frigo de la cuisine qui ne prend que la nourriture.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -22,7 +27,28 @@ pub struct ItemsFile {
     /// Objets portés au début d'une partie : chacun va dans son emplacement ([`ItemDef::slot`]).
     #[serde(default)]
     pub equipped: Vec<String>,
+    /// Règles des rangements spécialisés, par identifiant de conteneur (M10). Un conteneur absent
+    /// est un casier ordinaire : il accepte tout.
+    #[serde(default)]
+    pub storage: BTreeMap<String, StorageDef>,
 }
+
+/// Les règles d'un rangement spécialisé (frigo, armoire…).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StorageDef {
+    /// La seule sous-catégorie acceptée ; aucune : tout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accepts: Option<ItemSubcategory>,
+    /// Le genre du rangement, préfixe de ses textes dans la langue (`lang/<code>/world.ron`) :
+    /// `<kind_key>` son titre (« Frigo »), `<kind_key>.open` l'invite, `<kind_key>.refused` le
+    /// refus d'un objet (`{item}`), `<kind_key>.stock` le compteur de l'écran (`{count}` : les
+    /// objets acceptés qu'il contient). Aucun : [`LOCKER_KIND_KEY`], le casier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind_key: Option<String>,
+}
+
+/// Le genre par défaut d'un conteneur : le casier (textes `container.locker*`).
+pub const LOCKER_KIND_KEY: &str = "container.locker";
 
 /// Un objet du catalogue.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -34,6 +60,9 @@ pub struct ItemDef {
     pub name_key: String,
     pub description_key: String,
     pub category: ItemCategory,
+    /// Classement fin, jamais affiché : ce que les rangements spécialisés acceptent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subcategory: Option<ItemSubcategory>,
     /// Emplacement d'équipement, si l'objet se porte.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slot: Option<EquipSlot>,
@@ -83,6 +112,53 @@ impl ItemCategory {
     }
 }
 
+/// Les sous-catégories d'objets (M10), invisibles pour le joueur : chacune répond à un
+/// rangement qu'on peut trouver à bord d'un vaisseau. Liste courte, à n'allonger que pour un
+/// rangement qui en a besoin.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum ItemSubcategory {
+    /// Ce qui se mange ou se boit : le frigo de la cuisine.
+    Food,
+    /// Soins : l'armoire de l'infirmerie.
+    Medical,
+    /// Armes portatives et munitions : le râtelier.
+    Weapon,
+    /// Tenues : la penderie, le vestiaire du sas.
+    Clothing,
+    /// Outils : l'établi.
+    Tools,
+    /// Pièces et matières : les bacs de l'atelier.
+    Parts,
+    /// Tablettes, puces, papiers : le coffre de bord.
+    Data,
+}
+
+impl ItemSubcategory {
+    pub const ALL: [ItemSubcategory; 7] = [
+        ItemSubcategory::Food,
+        ItemSubcategory::Medical,
+        ItemSubcategory::Weapon,
+        ItemSubcategory::Clothing,
+        ItemSubcategory::Tools,
+        ItemSubcategory::Parts,
+        ItemSubcategory::Data,
+    ];
+
+    /// Identifiant stable (journaux, messages de validation), jamais une clé de langue : une
+    /// sous-catégorie ne s'affiche pas.
+    pub fn key(self) -> &'static str {
+        match self {
+            ItemSubcategory::Food => "food",
+            ItemSubcategory::Medical => "medical",
+            ItemSubcategory::Weapon => "weapon",
+            ItemSubcategory::Clothing => "clothing",
+            ItemSubcategory::Tools => "tools",
+            ItemSubcategory::Parts => "parts",
+            ItemSubcategory::Data => "data",
+        }
+    }
+}
+
 /// Les emplacements d'équipement du joueur.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum EquipSlot {
@@ -119,6 +195,34 @@ impl ItemDef {
 impl ItemsFile {
     pub fn get(&self, id: &str) -> Option<&ItemDef> {
         self.items.iter().find(|item| item.id == id)
+    }
+
+    /// Les règles d'un conteneur (aucune : casier ordinaire).
+    pub fn storage_of(&self, container: &str) -> Option<&StorageDef> {
+        self.storage.get(container)
+    }
+
+    /// Le genre d'un conteneur, préfixe de ses textes ([`StorageDef::kind_key`]).
+    pub fn kind_key(&self, container: &str) -> &str {
+        self.storage_of(container)
+            .and_then(|s| s.kind_key.as_deref())
+            .unwrap_or(LOCKER_KIND_KEY)
+    }
+
+    /// La sous-catégorie qu'un conteneur exige, s'il en exige une.
+    pub fn accepted(&self, container: &str) -> Option<ItemSubcategory> {
+        self.storage_of(container).and_then(|s| s.accepts)
+    }
+
+    /// Ce conteneur accepte-t-il cet objet ? Un casier ordinaire prend tout ; un rangement
+    /// spécialisé, seulement les objets de sa sous-catégorie (un objet inconnu du catalogue, non).
+    pub fn accepts(&self, container: &str, item: &str) -> bool {
+        match self.accepted(container) {
+            None => true,
+            Some(wanted) => self
+                .get(item)
+                .is_some_and(|def| def.subcategory == Some(wanted)),
+        }
     }
 
     /// L'équipement de départ, par emplacement (un objet sans emplacement est ignoré : la
@@ -165,6 +269,35 @@ impl ItemsFile {
                 }
             }
         }
+        for (container, rules) in &self.storage {
+            if !sh_core::id::is_valid_id(container) {
+                out.push(format!("identifiant de rangement invalide : {container}"));
+            }
+            let Some(wanted) = rules.accepts else {
+                continue;
+            };
+            // Un rangement qui n'accepte qu'une sous-catégorie sans aucun objet resterait vide.
+            if !self.items.iter().any(|i| i.subcategory == Some(wanted)) {
+                out.push(format!(
+                    "rangement {container} : aucun objet de la sous-catégorie {}",
+                    wanted.key()
+                ));
+            }
+            // Son contenu de départ respecte sa règle (un objet inconnu est déjà signalé).
+            for item in self
+                .containers
+                .get(container)
+                .into_iter()
+                .flat_map(|c| c.keys())
+            {
+                if self.get(item).is_some() && !self.accepts(container, item) {
+                    out.push(format!(
+                        "rangement {container} : {item} n'est pas de la sous-catégorie {}",
+                        wanted.key()
+                    ));
+                }
+            }
+        }
         let mut slots = BTreeSet::new();
         for id in &self.equipped {
             match self.get(id).map(|item| item.slot) {
@@ -193,6 +326,7 @@ mod tests {
             name_key: format!("item.{id}"),
             description_key: format!("item.{id}.description"),
             category,
+            subcategory: None,
             slot,
             max_stack: 1,
             firearm: None,
@@ -240,12 +374,93 @@ mod tests {
                 BTreeMap::from([("fantome".to_owned(), 1), ("ration".to_owned(), 0)]),
             )]),
             equipped: vec!["ration".into()],
+            ..ItemsFile::default()
         };
         let problems = file.problems().join("\n");
         assert!(problems.contains("objet en double : toolkit"), "{problems}");
         assert!(problems.contains("objet inconnu fantome"), "{problems}");
         assert!(problems.contains("quantité nulle de ration"), "{problems}");
         assert!(problems.contains("sans emplacement : ration"), "{problems}");
+    }
+
+    /// Le frigo ne prend que la nourriture ; un casier ordinaire prend tout.
+    #[test]
+    fn rangement_specialise() {
+        let text = r#"(
+            items: [
+                (id: "ration", name_key: "item.ration", description_key: "d",
+                 category: Consumable, subcategory: Food, max_stack: 10),
+                (id: "medkit", name_key: "item.medkit", description_key: "d",
+                 category: Consumable, subcategory: Medical),
+                (id: "relique", name_key: "item.relique", description_key: "d",
+                 category: Material),
+            ],
+            containers: { "frigo": { "ration": 4 } },
+            storage: { "frigo": (accepts: Food, kind_key: "container.fridge") },
+        )"#;
+        let file: ItemsFile = crate::ron_options()
+            .from_str(text)
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(file.problems().is_empty(), "{:?}", file.problems());
+        assert_eq!(file.accepted("frigo"), Some(ItemSubcategory::Food));
+        assert!(file.accepts("frigo", "ration"));
+        assert!(!file.accepts("frigo", "medkit"));
+        // Sans sous-catégorie, ou inconnu du catalogue : refusé par un rangement spécialisé.
+        assert!(!file.accepts("frigo", "relique"));
+        assert!(!file.accepts("frigo", "fantome"));
+        // Un casier ordinaire prend tout.
+        assert_eq!(file.accepted("casier"), None);
+        assert!(file.accepts("casier", "medkit"));
+        assert!(file.accepts("casier", "relique"));
+        assert_eq!(file.kind_key("frigo"), "container.fridge");
+        assert_eq!(file.kind_key("casier"), LOCKER_KIND_KEY);
+    }
+
+    #[test]
+    fn rangement_incoherent() {
+        let mut file = ItemsFile {
+            items: vec![item("medkit", ItemCategory::Consumable, None)],
+            containers: BTreeMap::from([(
+                "frigo".to_owned(),
+                BTreeMap::from([("medkit".to_owned(), 1)]),
+            )]),
+            storage: BTreeMap::from([
+                (
+                    "frigo".to_owned(),
+                    StorageDef {
+                        accepts: Some(ItemSubcategory::Food),
+                        kind_key: None,
+                    },
+                ),
+                ("Mauvais Id".to_owned(), StorageDef::default()),
+            ]),
+            ..ItemsFile::default()
+        };
+        let problems = file.problems().join("\n");
+        assert!(
+            problems.contains("aucun objet de la sous-catégorie food"),
+            "{problems}"
+        );
+        assert!(
+            problems.contains("medkit n'est pas de la sous-catégorie food"),
+            "{problems}"
+        );
+        assert!(
+            problems.contains("identifiant de rangement invalide"),
+            "{problems}"
+        );
+        // Une sous-catégorie inconnue ne se lit pas : le fichier est refusé au chargement.
+        let unknown = crate::ron_options().from_str::<ItemsFile>(
+            r#"(items: [(id: "x", name_key: "k", description_key: "d", category: Tool,
+                subcategory: Boissons)])"#,
+        );
+        assert!(unknown.is_err());
+        // La trousse devenue nourriture (pour le test) et l'identifiant retiré : plus rien.
+        if let Some(medkit) = file.items.first_mut() {
+            medkit.subcategory = Some(ItemSubcategory::Food);
+        }
+        file.storage.remove("Mauvais Id");
+        assert!(file.problems().is_empty(), "{:?}", file.problems());
     }
 
     /// L'équipement se sauvegarde en dictionnaire à clés d'énumération : l'aller-retour RON tient.

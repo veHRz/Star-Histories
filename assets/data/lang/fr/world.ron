@@ -18,11 +18,28 @@
     "interact.seat.leave_helm": "[KeyF] : se lever",
     "interact.pickup": "[KeyE] : ramasser — {item}",
     "interact.ladder": "[KeyE] : grimper",
-    "interact.locker": "[KeyE] : ouvrir le casier",
+    // Porte du sas d'un vaisseau en vol (M10) : elle ne s'ouvre pas sur le vide.
+    "interact.door.void": "Sas extérieur : vide spatial",
+    // Casiers (M10) : un casier décoratif ou qui n'est pas à vous est verrouillé ; un casier
+    // nommé (sa plaque) donne son nom. L'invite sans nom vient de son genre (`container.*`).
+    "interact.locker.locked": "Casier verrouillé",
+    "interact.locker.named": "[KeyE] : ouvrir « {name} »",
+    "interact.locker_label": "[KeyE] : nommer le casier",
+    "interact.locker_label.named": "[KeyE] : renommer « {name} »",
+    // Genres des rangements (`kind_key` de gameplay/items.ron ; aucun : le casier) : le titre,
+    // `.open` l'invite, `.refused` le refus d'un objet, `.stock` le compteur de son écran.
+    "container.locker": "Casier",
+    "container.locker.open": "[KeyE] : ouvrir le casier",
+    "container.fridge": "Frigo",
+    "container.fridge.open": "[KeyE] : ouvrir le frigo",
+    "container.fridge.refused": "Le frigo ne garde que la nourriture : {item} reste avec vous.",
+    "container.fridge.stock": "Rations : {count}",
+    // PNJ de comptoir (M10) : le rôle d'abord, avec sa majuscule, l'action sur une seconde ligne.
     "interact.npc": "[KeyE] : parler",
-    "interact.npc.with": "[KeyE] : parler — {role}",
+    "interact.npc.with": "{role}\n[KeyE] : parler",
     // PNJ de comptoir (paramètre `role` d'un `INTERACT_*` de genre `npc`) : anonymes et
-    // génériques, en minuscules (ils se glissent dans l'invite).
+    // génériques, en minuscules (ils se glissent dans une phrase ; l'invite et le terminal leur
+    // mettent une majuscule).
     "npc.role.contracts": "guichetier des contrats",
     "npc.role.bank": "employé de la Banque",
     "npc.role.market": "marchand",

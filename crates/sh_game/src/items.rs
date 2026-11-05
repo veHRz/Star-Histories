@@ -8,6 +8,11 @@
 //! chargée les apporte avant, comme la carrière : `save::install`) et disparaissent en quittant
 //! la partie ([`forget_items`]) : on les lit par `Option<Res<…>>` ou derrière
 //! `resource_exists`. Le catalogue ([`ItemCatalog`]) vient des données et reste.
+//!
+//! Depuis M10, les conteneurs sont rangés **par vaisseau propriétaire** ([`Containers`],
+//! [`PLAYER_SHIP`]) avec les noms que le joueur leur donne (plaque d'un casier,
+//! [`NameContainer`]) ; un rangement spécialisé n'accepte qu'une sous-catégorie d'objets
+//! (`sh_data::items::StorageDef`).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -30,6 +35,7 @@ pub struct ItemsPlugin;
 impl Plugin for ItemsPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<OpenContainer>()
+            .add_message::<NameContainer>()
             .add_message::<TalkTo>()
             .add_message::<OpenCharacterScreen>()
             .add_observer(on_open_inventory)
@@ -49,40 +55,152 @@ impl Plugin for ItemsPlugin {
 #[derive(Resource, Clone, Debug, Default, Deref)]
 pub struct ItemCatalog(pub ItemsFile);
 
-/// Le contenu des conteneurs (casiers…) d'une partie, par identifiant de conteneur (paramètre
-/// `container` d'un `INTERACT_*` de genre `locker`) : objet → quantité. Initialisé depuis le
-/// catalogue au début d'une partie.
+/// Le vaisseau propriétaire des conteneurs du vaisseau du joueur ([`Containers`]). Le jeu n'a
+/// encore qu'un vaisseau du joueur : quand il en aura plusieurs, chacun aura sa clé.
+pub const PLAYER_SHIP: &str = "player";
+
+/// Nom d'un conteneur donné par le joueur : au plus tant de caractères (la plaque est petite).
+pub const MAX_NAME_CHARS: usize = 24;
+
+/// Le propriétaire des conteneurs d'une cellule : le vaisseau du joueur si la cellule en est une
+/// salle (`ActiveSector::ship_cells`), sinon personne, et ses casiers restent verrouillés (un
+/// autre vaisseau, une station : M10 ne donne accès qu'aux siens).
+pub fn owner_of_cell(ship_cells: &[String], cell: &str) -> Option<String> {
+    ship_cells
+        .iter()
+        .any(|c| c == cell)
+        .then(|| PLAYER_SHIP.to_owned())
+}
+
+/// Le nom d'un conteneur tel que le joueur l'a tapé, nettoyé : espaces de bord retirés,
+/// caractères de contrôle et accolades ou crochets (syntaxe des textes de langue) écartés,
+/// [`MAX_NAME_CHARS`] caractères au plus. Vide : aucun nom (le nom par défaut revient).
+pub fn clean_name(raw: &str) -> Option<String> {
+    let kept: String = raw
+        .chars()
+        .filter(|c| !c.is_control() && !matches!(c, '{' | '}' | '[' | ']'))
+        .collect();
+    let name: String = kept.trim().chars().take(MAX_NAME_CHARS).collect();
+    let name = name.trim_end().to_owned();
+    (!name.is_empty()).then_some(name)
+}
+
+/// Les rangements d'un vaisseau : contenu et noms, par identifiant de conteneur (paramètre
+/// `container` d'un `INTERACT_*` de genre `locker`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShipStorage {
+    /// Conteneur → (objet → quantité). Un conteneur présent mais vide a été vidé : son contenu
+    /// de départ ne revient pas.
+    #[serde(default)]
+    pub contents: BTreeMap<String, BTreeMap<String, u32>>,
+    /// Conteneur → nom donné par le joueur (plaque d'un casier). Absent : nom par défaut.
+    #[serde(default)]
+    pub names: BTreeMap<String, String>,
+}
+
+/// Les conteneurs (casiers, frigo…) d'une partie, **par vaisseau propriétaire** (M10 : deux
+/// vaisseaux du même modèle ont les mêmes identifiants de casiers, pas le même contenu).
+/// Aujourd'hui seul le vaisseau du joueur ([`PLAYER_SHIP`]) en a. Initialisé depuis le
+/// catalogue au début d'une partie ; sauvegardé (`save`).
 #[derive(Resource, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Containers(pub BTreeMap<String, BTreeMap<String, u32>>);
+pub struct Containers {
+    #[serde(default)]
+    pub ships: BTreeMap<String, ShipStorage>,
+}
 
 impl Containers {
-    /// Le contenu de départ de tous les conteneurs du catalogue.
+    /// Le contenu de départ de tous les conteneurs du catalogue, dans le vaisseau du joueur.
     pub fn from_catalog(items: &ItemsFile) -> Self {
-        Containers(items.containers.clone())
+        let mut containers = Containers::default();
+        containers.fill_missing(items);
+        containers
     }
 
-    /// Ce que contient un conteneur (aucun : vide).
+    /// Les conteneurs du vaisseau du joueur tels qu'une partie d'avant M10 les rangeait (clé
+    /// globale) : ils deviennent ceux du vaisseau du joueur.
+    pub fn from_player_contents(contents: BTreeMap<String, BTreeMap<String, u32>>) -> Self {
+        let mut containers = Containers::default();
+        containers.ships.insert(
+            PLAYER_SHIP.to_owned(),
+            ShipStorage {
+                contents,
+                names: BTreeMap::new(),
+            },
+        );
+        containers
+    }
+
+    /// Donne leur contenu de départ aux conteneurs du catalogue que le vaisseau du joueur ne
+    /// connaît pas encore (un rangement ajouté aux données après la sauvegarde : le frigo de
+    /// M10) ; un conteneur connu, même vidé, n'y gagne rien.
+    pub fn fill_missing(&mut self, items: &ItemsFile) {
+        let ship = self.ships.entry(PLAYER_SHIP.to_owned()).or_default();
+        for (container, start) in &items.containers {
+            ship.contents
+                .entry(container.clone())
+                .or_insert_with(|| start.clone());
+        }
+    }
+
+    pub fn ship(&self, ship: &str) -> Option<&ShipStorage> {
+        self.ships.get(ship)
+    }
+
+    /// Ce que contient un conteneur de ce vaisseau (aucun : vide).
+    pub fn contents_in(&self, ship: &str, container: &str) -> Option<&BTreeMap<String, u32>> {
+        self.ship(ship)?.contents.get(container)
+    }
+
+    /// Ce que contient un conteneur du vaisseau du joueur.
     pub fn contents(&self, container: &str) -> Option<&BTreeMap<String, u32>> {
-        self.0.get(container)
+        self.contents_in(PLAYER_SHIP, container)
     }
 
-    /// Range `count` exemplaires d'un objet dans un conteneur.
-    pub fn add(&mut self, container: &str, item: &str, count: u32) {
+    /// Le nom donné à un conteneur de ce vaisseau, s'il en a un.
+    pub fn name(&self, ship: &str, container: &str) -> Option<&str> {
+        self.ship(ship)?.names.get(container).map(String::as_str)
+    }
+
+    /// Nomme un conteneur (le nom est nettoyé, [`clean_name`]) ; vide : il reprend son nom par
+    /// défaut.
+    pub fn set_name(&mut self, ship: &str, container: &str, raw: &str) {
+        let names = &mut self.ships.entry(ship.to_owned()).or_default().names;
+        match clean_name(raw) {
+            Some(name) => {
+                names.insert(container.to_owned(), name);
+            }
+            None => {
+                names.remove(container);
+            }
+        }
+    }
+
+    /// Range `count` exemplaires d'un objet dans un conteneur de ce vaisseau (sans contrôle : ce
+    /// que le conteneur accepte se vérifie avant, `ItemsFile::accepts`).
+    pub fn add(&mut self, ship: &str, container: &str, item: &str, count: u32) {
         if count == 0 {
             return;
         }
-        *self
-            .0
+        let held = self
+            .ships
+            .entry(ship.to_owned())
+            .or_default()
+            .contents
             .entry(container.to_owned())
             .or_default()
             .entry(item.to_owned())
-            .or_default() += count;
+            .or_default();
+        *held = held.saturating_add(count);
     }
 
     /// Retire au plus `count` exemplaires d'un objet ; renvoie le nombre retiré. Un objet épuisé
     /// disparaît de la liste (le conteneur reste, vide : il a été vidé, pas oublié).
-    pub fn remove(&mut self, container: &str, item: &str, count: u32) -> u32 {
-        let Some(contents) = self.0.get_mut(container) else {
+    pub fn remove(&mut self, ship: &str, container: &str, item: &str, count: u32) -> u32 {
+        let Some(contents) = self
+            .ships
+            .get_mut(ship)
+            .and_then(|s| s.contents.get_mut(container))
+        else {
             return 0;
         };
         let Some(held) = contents.get_mut(item) else {
@@ -95,6 +213,26 @@ impl Containers {
         }
         taken
     }
+
+    /// Combien d'objets acceptés par ce conteneur il contient (tous, pour un casier ordinaire) :
+    /// le compteur de son écran. Le stock de rations du vaisseau, c'est ce que compte le frigo.
+    pub fn stock(&self, ship: &str, container: &str, items: &ItemsFile) -> u32 {
+        self.contents_in(ship, container)
+            .into_iter()
+            .flatten()
+            .filter(|(item, _)| items.accepts(container, item))
+            .fold(0u32, |sum, (_, count)| sum.saturating_add(*count))
+    }
+}
+
+/// Le nom d'un conteneur à montrer (invite, écran de rangement, plaque) : celui que le joueur
+/// lui a donné, s'il en a un. Pour la plaque d'un casier (`sector::gltf::ContainerLabel`).
+pub fn container_name<'a>(
+    containers: Option<&'a Containers>,
+    ship: &str,
+    container: &str,
+) -> Option<&'a str> {
+    containers?.name(ship, container)
 }
 
 /// Les objets posés dans le monde qu'on a déjà ramassés, par identifiant stable du point de
@@ -136,8 +274,16 @@ impl Equipment {
 /// de l'inventaire. Envoyé par `interaction` quand le joueur utilise un `INTERACT_*` de genre
 /// `locker` ; le contenu se lit et se modifie dans [`Containers`] (`contents`, `add`, `remove`),
 /// et l'inventaire dans [`Inventory`] : les deux sont sauvegardés.
+///
+/// Le conteneur est toujours un de ceux du vaisseau du joueur ([`PLAYER_SHIP`]) : on n'ouvre
+/// pas ceux des autres (`interaction` les montre verrouillés).
 #[derive(Message, Clone, Debug, PartialEq, Eq)]
 pub struct OpenContainer(pub String);
+
+/// Nommer un conteneur du vaisseau du joueur (sa plaque, `interact: "locker_label"`) : ouvre la
+/// saisie du nom (`ui::character`). Envoyé par `interaction` ; l'autopilote peut l'envoyer aussi.
+#[derive(Message, Clone, Debug, PartialEq, Eq)]
+pub struct NameContainer(pub String);
 
 /// Parler à un PNJ de comptoir (`interact: "npc"`, docs/m9-retours.md §3.4) : la conversation
 /// (L4) ouvre les services de son rôle (`contracts`, `bank`, `market`, `shipyard`, `bar`…) ;
@@ -196,15 +342,18 @@ fn sync_catalog(mut commands: Commands, data: Res<Data>) {
 fn start_items(
     mut commands: Commands,
     data: Option<Res<Data>>,
-    containers: Option<Res<Containers>>,
+    containers: Option<ResMut<Containers>>,
     picked: Option<Res<PickedUp>>,
     equipment: Option<Res<Equipment>>,
 ) {
     let Some(data) = data else {
         return;
     };
-    if containers.is_none() {
-        commands.insert_resource(Containers::from_catalog(&data.items));
+    match containers {
+        // Une sauvegarde peut précéder un rangement ajouté depuis : il reçoit son contenu de
+        // départ, les autres restent tels qu'ils ont été laissés.
+        Some(mut containers) => containers.fill_missing(&data.items),
+        None => commands.insert_resource(Containers::from_catalog(&data.items)),
     }
     if picked.is_none() {
         commands.insert_resource(PickedUp::default());
@@ -229,14 +378,111 @@ mod tests {
     #[test]
     fn ranger_et_retirer() {
         let mut containers = Containers::default();
-        containers.add("casier", "ration", 3);
-        containers.add("casier", "ration", 0);
-        assert_eq!(containers.remove("casier", "ration", 2), 2);
-        assert_eq!(containers.remove("casier", "ration", 5), 1);
-        assert_eq!(containers.remove("casier", "ration", 1), 0);
-        assert_eq!(containers.remove("ailleurs", "ration", 1), 0);
+        containers.add(PLAYER_SHIP, "casier", "ration", 3);
+        containers.add(PLAYER_SHIP, "casier", "ration", 0);
+        assert_eq!(containers.remove(PLAYER_SHIP, "casier", "ration", 2), 2);
+        assert_eq!(containers.remove(PLAYER_SHIP, "casier", "ration", 5), 1);
+        assert_eq!(containers.remove(PLAYER_SHIP, "casier", "ration", 1), 0);
+        assert_eq!(containers.remove(PLAYER_SHIP, "ailleurs", "ration", 1), 0);
         // Vidé, le casier reste connu : son contenu de départ ne revient pas.
         assert_eq!(containers.contents("casier"), Some(&BTreeMap::new()));
+    }
+
+    /// Deux vaisseaux du même modèle ont les mêmes identifiants de casiers, pas le même
+    /// contenu ni les mêmes noms.
+    #[test]
+    fn chaque_vaisseau_ses_casiers() {
+        let mut containers = Containers::default();
+        containers.add(PLAYER_SHIP, "corvette_chambre_casier_1", "ration", 2);
+        containers.add("autre", "corvette_chambre_casier_1", "medkit", 1);
+        containers.set_name(PLAYER_SHIP, "corvette_chambre_casier_1", "  Mes affaires ");
+        let mine = containers.contents("corvette_chambre_casier_1");
+        assert_eq!(mine.and_then(|c| c.get("ration")), Some(&2));
+        assert_eq!(mine.and_then(|c| c.get("medkit")), None);
+        assert_eq!(
+            containers
+                .contents_in("autre", "corvette_chambre_casier_1")
+                .and_then(|c| c.get("medkit")),
+            Some(&1)
+        );
+        assert_eq!(
+            containers.name(PLAYER_SHIP, "corvette_chambre_casier_1"),
+            Some("Mes affaires")
+        );
+        assert_eq!(containers.name("autre", "corvette_chambre_casier_1"), None);
+        assert_eq!(
+            container_name(Some(&containers), PLAYER_SHIP, "corvette_chambre_casier_1"),
+            Some("Mes affaires")
+        );
+        // Un nom vide rend le nom par défaut.
+        containers.set_name(PLAYER_SHIP, "corvette_chambre_casier_1", "   ");
+        assert_eq!(
+            containers.name(PLAYER_SHIP, "corvette_chambre_casier_1"),
+            None
+        );
+        // Seules les salles du vaisseau du joueur lui donnent ses casiers.
+        let cells = vec!["chambre".to_owned(), "soute".to_owned()];
+        assert_eq!(
+            owner_of_cell(&cells, "chambre").as_deref(),
+            Some(PLAYER_SHIP)
+        );
+        assert_eq!(owner_of_cell(&cells, "hall"), None);
+        assert_eq!(owner_of_cell(&[], "chambre"), None);
+    }
+
+    #[test]
+    fn noms_nettoyes() {
+        assert_eq!(clean_name("  Frigo  ").as_deref(), Some("Frigo"));
+        assert_eq!(clean_name("").as_deref(), None);
+        assert_eq!(clean_name(" \t\n ").as_deref(), None);
+        assert_eq!(clean_name("Ta{b}le[KeyE]").as_deref(), Some("TableKeyE"));
+        assert_eq!(clean_name("a\u{7}b").as_deref(), Some("ab"));
+        let long = "é".repeat(40);
+        assert_eq!(
+            clean_name(&long).map(|n| n.chars().count()),
+            Some(MAX_NAME_CHARS)
+        );
+        // Coupé à 24 caractères, sans espace qui traîne au bout.
+        let cut = clean_name("Rangement du second ma rgaux").unwrap_or_default();
+        assert_eq!(cut, "Rangement du second ma r");
+        assert_eq!(
+            clean_name("Rangement du second mat  xx").as_deref(),
+            Some("Rangement du second mat")
+        );
+    }
+
+    /// Un rangement ajouté aux données après une sauvegarde reçoit son contenu de départ ; un
+    /// casier vidé, non.
+    #[test]
+    fn contenu_de_depart_des_rangements_nouveaux() {
+        let items: ItemsFile = sh_data::ron_options()
+            .from_str(
+                r#"(items: [(id: "ration", name_key: "k", description_key: "d",
+                    category: Consumable, subcategory: Food, max_stack: 10),
+                   (id: "medkit", name_key: "k", description_key: "d", category: Consumable)],
+                   containers: { "casier": { "medkit": 1 }, "frigo": { "ration": 12 } },
+                   storage: { "frigo": (accepts: Food) })"#,
+            )
+            .unwrap_or_else(|e| panic!("{e}"));
+        let mut saved = Containers::from_player_contents(BTreeMap::from([(
+            "casier".to_owned(),
+            BTreeMap::new(),
+        )]));
+        saved.fill_missing(&items);
+        assert_eq!(saved.contents("casier"), Some(&BTreeMap::new()));
+        assert_eq!(
+            saved.contents("frigo").and_then(|c| c.get("ration")),
+            Some(&12)
+        );
+        // Le compteur du frigo : ses rations ; un casier compte tout.
+        saved.add(PLAYER_SHIP, "casier", "medkit", 2);
+        assert_eq!(saved.stock(PLAYER_SHIP, "frigo", &items), 12);
+        assert_eq!(saved.stock(PLAYER_SHIP, "casier", &items), 2);
+        assert_eq!(saved.stock("autre", "frigo", &items), 0);
+        assert_eq!(
+            Containers::from_catalog(&items).stock(PLAYER_SHIP, "frigo", &items),
+            12
+        );
     }
 
     #[test]

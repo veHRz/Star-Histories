@@ -6,7 +6,12 @@
 //! affiche une invite ; la touche d'interaction (ou l'autopilote, via [`InteractRequest`])
 //! déclenche l'action : porte, console, siège, ramassage (l'objet entre dans l'[`Inventory`] et
 //! son point de ramassage dans `items::PickedUp` : il ne revient plus), casier
-//! (`items::OpenContainer`), PNJ de comptoir (`items::TalkTo`), échelle.
+//! (`items::OpenContainer`) et sa plaque de nom (`items::NameContainer`), PNJ de comptoir
+//! (`items::TalkTo`), échelle.
+//!
+//! Refus sans effet (M10) : un casier décoratif ou qui n'est pas au joueur se dit verrouillé,
+//! la porte d'un sas qui donne sur le vide (vaisseau en vol) le dit aussi ; la touche n'y fait
+//! rien. L'invite d'un PNJ nomme d'abord son rôle, puis l'action sur une seconde ligne.
 
 use std::collections::BTreeMap;
 
@@ -16,12 +21,16 @@ use bevy_enhanced_input::prelude::*;
 
 use crate::data::Texts;
 use crate::input::Interact;
-use crate::items::{OpenContainer, PickedUp, TalkTo};
+use crate::items::{
+    Containers, ItemCatalog, NameContainer, OpenContainer, PLAYER_SHIP, PickedUp, TalkTo,
+    container_name,
+};
 use crate::player::{Player, PlayerCamera, PlayerController, PlayerMode};
 use crate::sector::doors::Door;
 use crate::sector::gltf::{Interactable, PickupId, Socket};
 use crate::sector::{ActiveSector, Docked, Layer};
 use crate::state::ControlMode;
+use crate::ui::character::logic::capitalize;
 use crate::ui::hud::{Notice, Prompt};
 use crate::ui::terminal::{OpenTerminal, Screen};
 
@@ -136,11 +145,56 @@ fn find_focus(
     }
 }
 
+/// Une porte dont un côté donne sur l'extérieur (`@dock` : le sas d'un vaisseau qui n'est pas
+/// amarré) n'ouvre que sur le vide : elle ne s'ouvre pas, l'invite le dit (M10). À quai,
+/// l'assemblage du vaisseau et du quartier a remplacé ce côté par une vraie cellule.
+pub fn opens_on_void(a: &str, b: &str) -> bool {
+    sh_data::is_external(a) || sh_data::is_external(b)
+}
+
+/// Un casier s'ouvre (ou se nomme) s'il a un contenu (pas un casier décoratif) et qu'il est au
+/// joueur (`items::owner_of_cell`) ; sinon il est verrouillé.
+pub fn usable_locker(container: &str, owner: Option<&str>) -> bool {
+    !container.is_empty() && owner == Some(PLAYER_SHIP)
+}
+
+/// L'invite d'un casier ou du frigo : son nom s'il en a un, sinon celle de son genre
+/// (`<kind_key>.open` : « ouvrir le frigo »), à défaut celle du casier.
+fn locker_prompt(
+    texts: &Texts,
+    catalog: Option<&ItemCatalog>,
+    containers: Option<&Containers>,
+    container: &str,
+    owner: Option<&str>,
+) -> String {
+    if !usable_locker(container, owner) {
+        return texts.get("interact.locker.locked");
+    }
+    if let Some(name) = container_name(containers, PLAYER_SHIP, container) {
+        return texts.format("interact.locker.named", &[("name", name)]);
+    }
+    let kind = catalog.map_or(sh_data::items::LOCKER_KIND_KEY, |c| c.kind_key(container));
+    let key = format!("{kind}.open");
+    texts.get(if texts.has(&key) {
+        &key
+    } else {
+        "container.locker.open"
+    })
+}
+
+/// Ce que l'invite lit des rangements (limite de paramètres d'un système).
+#[derive(bevy::ecs::system::SystemParam)]
+struct Stores<'w> {
+    catalog: Option<Res<'w, ItemCatalog>>,
+    containers: Option<Res<'w, Containers>>,
+}
+
 fn update_prompt(
     focus: Res<Focus>,
     texts: Res<Texts>,
     mode: Res<State<ControlMode>>,
     docked: Option<Res<Docked>>,
+    stores: Stores,
     player: Query<&PlayerController, With<Player>>,
     doors: Query<&Door>,
     mut prompt: ResMut<Prompt>,
@@ -149,15 +203,17 @@ fn update_prompt(
     let seated = player
         .single()
         .is_ok_and(|p| matches!(p.mode, PlayerMode::Seated { .. }));
+    let catalog = stores.catalog.as_deref();
+    let containers = stores.containers.as_deref();
     let text = focus.0.as_ref().map(|target| match &target.kind {
-        Interactable::Door => {
-            let open = doors.get(target.entity).is_ok_and(Door::is_open);
-            texts.get(if open {
+        Interactable::Door => match doors.get(target.entity) {
+            Ok(door) if opens_on_void(&door.a, &door.b) => texts.get("interact.door.void"),
+            door => texts.get(if door.is_ok_and(Door::is_open) {
                 "interact.door.close"
             } else {
                 "interact.door.open"
-            })
-        }
+            }),
+        },
         Interactable::Console { label } => texts.format(
             "interact.console",
             &[("console", &texts.get(&format!("console.{label}.name")))],
@@ -176,12 +232,27 @@ fn update_prompt(
             "interact.pickup",
             &[("item", &texts.get(&format!("item.{item}")))],
         ),
-        Interactable::Locker { .. } => texts.get("interact.locker"),
+        Interactable::Locker { container, owner } => {
+            locker_prompt(&texts, catalog, containers, container, owner.as_deref())
+        }
+        Interactable::LockerLabel { container, owner } => {
+            if !usable_locker(container, owner.as_deref()) {
+                texts.get("interact.locker.locked")
+            } else if let Some(name) = container_name(containers, PLAYER_SHIP, container) {
+                texts.format("interact.locker_label.named", &[("name", name)])
+            } else {
+                texts.get("interact.locker_label")
+            }
+        }
         Interactable::Npc { role, .. } => {
-            // Le libellé du rôle s'il est connu ; un rôle sans texte n'affiche pas sa clé.
+            // Qui l'on vise d'abord, avec sa majuscule, puis l'action sur une seconde ligne ;
+            // un rôle sans texte n'affiche pas sa clé.
             let role_key = format!("npc.role.{role}");
             if texts.has(&role_key) {
-                texts.format("interact.npc.with", &[("role", &texts.get(&role_key))])
+                texts.format(
+                    "interact.npc.with",
+                    &[("role", &capitalize(&texts.get(&role_key)))],
+                )
             } else {
                 texts.get("interact.npc")
             }
@@ -339,10 +410,11 @@ fn perform(
         Option<Res<Docked>>,
         MessageWriter<OpenTerminal>,
     ),
-    (mut picked, pickup_ids, mut containers, mut talks): (
+    (mut picked, pickup_ids, mut containers, mut namings, mut talks): (
         Option<ResMut<PickedUp>>,
         Query<&PickupId>,
         MessageWriter<OpenContainer>,
+        MessageWriter<NameContainer>,
         MessageWriter<TalkTo>,
     ),
 ) {
@@ -357,6 +429,10 @@ fn perform(
     match &target.kind {
         Interactable::Door => {
             if let Ok((door_transform, mut door)) = doors.get_mut(target.entity) {
+                // Le sas d'un vaisseau en vol : rien derrière, la porte n'est pas sollicitée.
+                if opens_on_void(&door.a, &door.b) {
+                    return;
+                }
                 let inside = player_transform
                     .translation()
                     .distance(door_transform.translation())
@@ -421,11 +497,16 @@ fn perform(
             )));
             commands.entity(target.entity).despawn();
         }
-        Interactable::Locker { container } => {
-            if container.is_empty() {
-                warn!("casier sans identifiant de conteneur (paramètre container)");
-            } else {
+        // Un casier verrouillé (décoratif, ou qui n'est pas au joueur) ne fait rien : l'invite
+        // l'a déjà dit.
+        Interactable::Locker { container, owner } => {
+            if usable_locker(container, owner.as_deref()) {
                 containers.write(OpenContainer(container.clone()));
+            }
+        }
+        Interactable::LockerLabel { container, owner } => {
+            if usable_locker(container, owner.as_deref()) {
+                namings.write(NameContainer(container.clone()));
             }
         }
         Interactable::Npc { role, variant } => {
@@ -437,5 +518,33 @@ fn perform(
         Interactable::Ladder => {
             notices.write(Notice(texts.get("notice.ladder")));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sas_sur_le_vide() {
+        // En vol, le sas donne sur le point d'attache « @dock » : pas de porte à ouvrir.
+        assert!(opens_on_void("sas", "@dock"));
+        assert!(opens_on_void("@dock", "sas"));
+        // À quai, le point d'attache est devenu le quai du hangar.
+        assert!(!opens_on_void("sas", "quai"));
+        assert!(!opens_on_void("chambre", "couloir"));
+    }
+
+    #[test]
+    fn casiers_verrouilles() {
+        assert!(usable_locker(
+            "corvette_chambre_casier_1",
+            Some(PLAYER_SHIP)
+        ));
+        // Décoratif : aucun contenu.
+        assert!(!usable_locker("", Some(PLAYER_SHIP)));
+        // Celui d'un autre vaisseau, ou d'un lieu qui n'est pas au joueur.
+        assert!(!usable_locker("corvette_chambre_casier_1", None));
+        assert!(!usable_locker("corvette_chambre_casier_1", Some("autre")));
     }
 }

@@ -23,8 +23,10 @@ use super::{CellRef, CharacterUi, DetailPane, GridCell, Icons, ScreenButton, Scr
 use crate::career::{faction_name, money, rank_name};
 use crate::clock::format_date;
 use crate::data::{Data, Texts};
-use crate::items::CharacterTab;
+use crate::input::{Interact, Navigate, OpenInventory, OpenSkills};
+use crate::items::{CharacterTab, PLAYER_SHIP};
 use crate::state::AppState;
+use crate::ui::keys_panel::{KeyHelp, KeyHint};
 use crate::ui::theme::{self, Frame, UiFonts};
 
 /// Côté d'une case, en pixels d'interface.
@@ -63,7 +65,6 @@ const BAR_TICK: Color = Color::srgba(0.0, 0.0, 0.0, 0.55);
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Content {
     pub title: String,
-    pub hint: String,
     /// L'onglet ouvert ; `None` : un casier (pas d'onglets).
     pub tabs: Option<CharacterTab>,
     pub body: Body,
@@ -133,34 +134,66 @@ struct SkillEntry {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct ContainerBody {
+    /// Le titre de la grille du rangement : son genre (« Casier », « Frigo ») s'il porte un nom
+    /// (le nom est le titre de l'écran), sinon « Contenu ».
+    section: String,
+    /// Le compteur d'un rangement spécialisé (« Rations : 12 »), si sa langue en a un.
+    stock: Option<String>,
+    /// Ce que le rangement vient de refuser.
+    refusal: Option<String>,
     stash: Vec<Stack>,
     stash_cells: usize,
     pack: Vec<Stack>,
     pack_cells: usize,
 }
 
-pub(super) fn content(src: &Sources, view: &ScreenView) -> Content {
+/// Le contenu de l'écran. `refused` : l'objet que le rangement ouvert vient de refuser.
+pub(super) fn content(src: &Sources, view: &ScreenView, refused: Option<&str>) -> Content {
     let t: &Texts = &src.texts;
     match view {
         ScreenView::Tab(tab) => Content {
             title: t.get("character.title"),
-            hint: t.get(match tab {
-                CharacterTab::Inventory => "character.hint.inventory",
-                CharacterTab::Skills => "character.hint.skills",
-            }),
             tabs: Some(*tab),
             body: match tab {
                 CharacterTab::Inventory => Body::Inventory(inventory_body(src)),
                 CharacterTab::Skills => Body::Skills(skills_body(src)),
             },
         },
-        ScreenView::Container(id) => Content {
-            title: t.get("character.container.title"),
-            hint: t.get("character.hint.container"),
-            tabs: None,
-            body: Body::Container(container_body(src, id)),
-        },
+        ScreenView::Container(id) => {
+            let (title, body) = container_body(src, id, refused);
+            Content {
+                title,
+                tabs: None,
+                body: Body::Container(body),
+            }
+        }
     }
+}
+
+/// L'encart des touches de l'écran, selon la vue : il remplace la consigne écrite en bas.
+pub(super) fn key_help(t: &Texts, content: &Content) -> KeyHelp {
+    let close = KeyHint::key(KeyCode::Escape, t.get("character.keys.close"));
+    KeyHelp::new(match &content.body {
+        Body::Skills(_) => vec![
+            KeyHint::action::<OpenInventory>(t.get("character.keys.inventory")),
+            close.and_action::<OpenSkills>(),
+        ],
+        Body::Container(_) => vec![
+            KeyHint::mouse(MouseButton::Left, t.get("character.keys.move_stack")),
+            KeyHint::mouse(MouseButton::Right, t.get("character.keys.move_one")),
+            KeyHint::action::<Navigate>(t.get("character.keys.keyboard")).and_key(KeyCode::Enter),
+            KeyHint::action::<OpenSkills>(t.get("character.keys.skills")),
+            close.and_action::<Interact>(),
+        ],
+        Body::Inventory(_) => vec![
+            KeyHint::mouse(MouseButton::Left, t.get("character.keys.examine")),
+            KeyHint::mouse(MouseButton::Right, t.get("character.keys.equip"))
+                .and_key(KeyCode::Enter),
+            KeyHint::action::<Navigate>(t.get("character.keys.select")),
+            KeyHint::action::<OpenSkills>(t.get("character.keys.skills")),
+            close.and_action::<OpenInventory>(),
+        ],
+    })
 }
 
 fn inventory_body(src: &Sources) -> InventoryBody {
@@ -314,26 +347,59 @@ fn skills_body(src: &Sources) -> SkillsBody {
     SkillsBody { skills, traits }
 }
 
-fn container_body(src: &Sources, id: &str) -> ContainerBody {
+/// Le titre de l'écran d'un rangement et son corps.
+fn container_body(src: &Sources, id: &str, refused: Option<&str>) -> (String, ContainerBody) {
+    let t: &Texts = &src.texts;
     let data: &Data = &src.data;
     let empty = BTreeMap::new();
-    let stash_items = src
-        .containers
-        .as_ref()
-        .and_then(|containers| containers.contents(id))
+    let containers = src.containers.as_deref();
+    let stash_items = containers
+        .and_then(|containers| containers.contents_in(PLAYER_SHIP, id))
         .unwrap_or(&empty);
+    let kind_key = data.items.kind_key(id);
+    let stock_key = format!("{kind_key}.stock");
+    let stock = t.has(&stock_key).then(|| {
+        let count = containers.map_or(0, |c| c.stock(PLAYER_SHIP, id, &data.items));
+        t.format(&stock_key, &[("count", &t.number(f64::from(count), 0))])
+    });
+    let refusal = refused.map(|item| {
+        let name = match data.items.get(item) {
+            Some(def) => t.get(&def.name_key),
+            None => t.get(&format!("item.{item}")),
+        };
+        let own = format!("{kind_key}.refused");
+        t.format(
+            if t.has(&own) {
+                &own
+            } else {
+                "character.container.refused"
+            },
+            &[("item", &name)],
+        )
+    });
     let items = src
         .inventory
         .as_ref()
         .map_or(&empty, |inventory| &inventory.items);
     let stash = logic::stacks(stash_items, &data.items);
     let pack = logic::stacks(items, &data.items);
-    ContainerBody {
+    // Le nom que le joueur lui a donné en titre, son genre au-dessus de sa grille ; sans nom,
+    // le genre en titre.
+    let kind = t.get(kind_key);
+    let (title, section) = match containers.and_then(|c| c.name(PLAYER_SHIP, id)) {
+        Some(name) => (name.to_owned(), kind),
+        None => (kind, t.get("character.container.stash")),
+    };
+    let body = ContainerBody {
+        section,
+        stock,
+        refusal,
         stash_cells: logic::grid_cells(stash.len(), BOX_COLUMNS, BOX_ROWS),
         pack_cells: logic::grid_cells(pack.len(), BOX_COLUMNS, BOX_ROWS),
         stash,
         pack,
-    }
+    };
+    (title, body)
 }
 
 impl Content {
@@ -518,6 +584,8 @@ pub(super) fn spawn_screen(commands: &mut Commands, kit: &Kit, content: &Content
             },
             // Plus sombre que le voile du terminal : l'écran est grand et dense.
             BackgroundColor(theme::OVERLAY.with_alpha(0.55)),
+            // Les touches de l'écran, dans l'encart des touches (M10) : plus de consigne écrite.
+            key_help(kit.t, content),
         ))
         .id();
     let width = if content.tabs.is_some() {
@@ -567,7 +635,7 @@ pub(super) fn spawn_screen(commands: &mut Commands, kit: &Kit, content: &Content
         Body::Skills(b) => spawn_skills(commands, body, kit, b),
         Body::Container(b) => spawn_container(commands, body, kit, b),
     }
-    spawn_footer(commands, panel, kit, content);
+    spawn_footer(commands, panel, kit);
 }
 
 fn spawn_header(commands: &mut Commands, panel: Entity, kit: &Kit, content: &Content) {
@@ -643,7 +711,8 @@ fn spawn_tab(commands: &mut Commands, parent: Entity, kit: &Kit, tab: CharacterT
     }
 }
 
-fn spawn_footer(commands: &mut Commands, panel: Entity, kit: &Kit, content: &Content) {
+/// Le pied de l'écran : le bouton Fermer, à droite (les touches sont dans l'encart).
+fn spawn_footer(commands: &mut Commands, panel: Entity, kit: &Kit) {
     commands.spawn((
         ChildOf(panel),
         Node {
@@ -661,25 +730,13 @@ fn spawn_footer(commands: &mut Commands, panel: Entity, kit: &Kit, content: &Con
             Node {
                 flex_direction: FlexDirection::Row,
                 align_items: AlignItems::Center,
+                justify_content: JustifyContent::FlexEnd,
                 column_gap: px(16),
                 flex_shrink: 0.0,
                 ..default()
             },
         ))
         .id();
-    commands.spawn((
-        ChildOf(row),
-        Text::new(content.hint.clone()),
-        kit.fonts.body(14.0),
-        TextColor(theme::TEXT_DIM),
-        // Base nulle : la consigne prend la place qui reste et passe à la ligne au besoin.
-        Node {
-            flex_grow: 1.0,
-            flex_basis: px(0),
-            min_width: px(0),
-            ..default()
-        },
-    ));
     spawn_button(
         commands,
         row,
@@ -1506,7 +1563,17 @@ fn spawn_container(commands: &mut Commands, body: Entity, kit: &Kit, b: &Contain
         ))
         .id();
     let stash = spawn_column(commands, main, Val::Auto);
-    spawn_section(commands, stash, kit, &t.get("character.container.stash"));
+    spawn_section(commands, stash, kit, &b.section);
+    // Le compteur d'un rangement spécialisé : le stock de rations du vaisseau, pour le frigo.
+    if let Some(stock) = &b.stock {
+        spawn_text(
+            commands,
+            stash,
+            stock.clone(),
+            kit.fonts.mono(15.0),
+            theme::ACCENT,
+        );
+    }
     spawn_grid(
         commands,
         stash,
@@ -1536,6 +1603,16 @@ fn spawn_container(commands: &mut Commands, body: Entity, kit: &Kit, b: &Contain
         &b.pack,
         CellRef::Pack,
     );
+    // Un objet refusé : le pourquoi, entre les grilles et le détail.
+    if let Some(refusal) = &b.refusal {
+        spawn_text(
+            commands,
+            body,
+            refusal.clone(),
+            kit.fonts.body(15.0),
+            theme::DANGER,
+        );
+    }
     let detail = spawn_column(commands, body, percent(100));
     spawn_section(commands, detail, kit, &t.get("character.section.detail"));
     commands.spawn((

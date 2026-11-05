@@ -11,7 +11,14 @@
 //!   (niveau n à `xp_per_level × n²` points, P23), traits gagnés.
 //! - **Casier** : deux grilles côte à côte (casier, inventaire) ; un clic déplace une case
 //!   entière (une pile, au plus `max_stack`), un clic droit un seul exemplaire ; au clavier,
-//!   flèches et Entrée. Le contenu vit dans `items::Containers` (sauvegardé par le lot L3).
+//!   flèches et Entrée. Le contenu vit dans `items::Containers`, rangé par vaisseau (ici
+//!   toujours celui du joueur, `items::PLAYER_SHIP`) et sauvegardé. Depuis M10, un rangement
+//!   spécialisé (le frigo) refuse ce qui n'est pas de sa sous-catégorie, l'écran dit pourquoi, et
+//!   montre son compteur (« Rations : 12 ») ; un casier nommé porte son nom en titre.
+//! - **Nom d'un casier** ([`naming`], M10) : la saisie ouverte par sa plaque.
+//!
+//! Les touches de chaque vue sont dans l'encart des touches (`ui::keys_panel::KeyHelp`, posé sur
+//! la racine de l'écran), plus en consigne écrite sous l'écran.
 //!
 //! Comme le terminal : le jeu passe en mode Menu (curseur libre), le temps du monde continue,
 //! et l'écran se ferme une fois les touches relâchées (Échap, la touche de l'onglet ouvert,
@@ -21,7 +28,9 @@
 //!
 //! Autopilote (captures) : `SH_CONTAINER=<id>` ouvre ce casier 3 s après l'entrée en partie,
 //! `SH_GIVE=<objet>:<n>,…` ajoute des objets à l'inventaire au début de la partie,
-//! `SH_XP=<compétence>:<points>,…` pose l'expérience de compétences (barres de l'onglet).
+//! `SH_XP=<compétence>:<points>,…` pose l'expérience de compétences (barres de l'onglet),
+//! `SH_LOCKER_NAME=<conteneur>:<nom>,…` nomme des casiers au début de la partie, et
+//! `SH_NAMING=<conteneur>` ouvre la saisie du nom de ce casier 3 s après l'entrée en partie.
 //!
 //! Textes dans `lang/<code>/character.ron` ; noms, descriptions, catégories et emplacements des
 //! objets dans `lang/<code>/world.ron`.
@@ -45,7 +54,8 @@ use crate::combat::Death;
 use crate::data::{Data, Texts};
 use crate::input::{Back, Confirm, Interact, Navigate, OpenInventory, OpenSkills};
 use crate::items::{
-    CharacterTab, Containers, Equipment, Inventory, ItemCatalog, OpenCharacterScreen, OpenContainer,
+    CharacterTab, Containers, Equipment, Inventory, ItemCatalog, OpenCharacterScreen,
+    OpenContainer, PLAYER_SHIP,
 };
 use crate::state::{AppState, ControlMode, ViewLevel};
 use crate::transition::Sequence;
@@ -55,8 +65,10 @@ use crate::ui::theme::{self, UiFonts};
 
 mod draw;
 pub mod logic;
+pub mod naming;
 
 use self::draw::{Body, Content};
+use self::naming::NamingScreen;
 
 pub struct CharacterScreenPlugin;
 
@@ -95,6 +107,7 @@ impl Plugin for CharacterScreenPlugin {
             .add_systems(OnExit(AppState::InGame), |mut commands: Commands| {
                 commands.remove_resource::<CharacterScreen>();
             });
+        naming::plugin(app);
         // Autopilote : un casier ouvert, des objets en poche, pour les captures.
         if let Ok(id) = std::env::var("SH_CONTAINER") {
             app.insert_resource(ContainerShot(id.trim().to_owned()))
@@ -107,6 +120,15 @@ impl Plugin for CharacterScreenPlugin {
         if let Ok(spec) = std::env::var("SH_XP") {
             app.insert_resource(XpShot(logic::parse_counts(&spec, 1_000_000)))
                 .add_systems(Update, give_xp.run_if(resource_exists::<Career>));
+        }
+        // M10 : des casiers déjà nommés (plaque, invite, titre du rangement), la saisie ouverte.
+        if let Ok(spec) = std::env::var("SH_LOCKER_NAME") {
+            app.insert_resource(NameShot(logic::parse_names(&spec)))
+                .add_systems(Update, give_names.run_if(resource_exists::<Career>));
+        }
+        if let Ok(id) = std::env::var("SH_NAMING") {
+            app.insert_resource(NamingShot(id.trim().to_owned()))
+                .add_systems(Update, naming_shot.run_if(resource_exists::<Career>));
         }
     }
 }
@@ -161,6 +183,8 @@ pub struct CharacterScreen {
     auto_select: bool,
     /// Au prochain dessin, choisir la case de cet objet dans l'inventaire (objet retiré).
     select_item: Option<String>,
+    /// Le dernier objet que le rangement a refusé (rangement spécialisé) : l'écran le dit.
+    refused: Option<String>,
     /// Le contenu dessiné ; `None` : à redessiner.
     drawn: Option<Content>,
     drawn_date: Option<sh_core::StellarDate>,
@@ -177,6 +201,7 @@ impl CharacterScreen {
             focus: Focus::default(),
             auto_select: true,
             select_item: None,
+            refused: None,
             drawn: None,
             drawn_date: None,
             drawn_focus: None,
@@ -189,6 +214,16 @@ impl CharacterScreen {
             self.view = view;
             self.focus = Focus::default();
             self.auto_select = true;
+            self.refused = None;
+            self.drawn = None;
+        }
+    }
+
+    /// L'objet que le rangement vient de refuser (aucun : le message s'efface). Le message fait
+    /// partie du contenu : un changement redessine l'écran.
+    fn refuse(&mut self, item: Option<String>) {
+        if self.refused != item {
+            self.refused = item;
             self.drawn = None;
         }
     }
@@ -248,13 +283,15 @@ struct Pending {
     age: f32,
 }
 
-/// Ce qui interdit d'ouvrir l'écran : un autre écran, la mort, une manœuvre.
+/// Ce qui interdit d'ouvrir l'écran (ou la saisie d'un nom) : un autre écran, la mort, une
+/// manœuvre.
 #[derive(SystemParam)]
 struct Blockers<'w> {
     terminal: Option<Res<'w, Terminal>>,
     paused: Option<Res<'w, Paused>>,
     death: Option<Res<'w, Death>>,
     sequence: Option<Res<'w, Sequence>>,
+    naming: Option<Res<'w, NamingScreen>>,
 }
 
 impl Blockers<'_> {
@@ -263,6 +300,7 @@ impl Blockers<'_> {
             || self.paused.is_some()
             || self.death.is_some()
             || self.sequence.is_some()
+            || self.naming.is_some()
     }
 }
 
@@ -527,7 +565,12 @@ fn perform(deed: Deed, screen: &mut CharacterScreen, stores: &mut Stores) {
             else {
                 return;
             };
-            logic::retrieve(&mut inventory.items, containers, id, &item, count);
+            let at = logic::Place {
+                ship: PLAYER_SHIP,
+                container: id,
+            };
+            logic::retrieve(&mut inventory.items, containers, at, &item, count);
+            screen.refuse(None);
         }
         Deed::Store { item, count } => {
             let (ScreenView::Container(id), Some(containers)) =
@@ -535,7 +578,13 @@ fn perform(deed: Deed, screen: &mut CharacterScreen, stores: &mut Stores) {
             else {
                 return;
             };
-            logic::store(&mut inventory.items, containers, id, &item, count);
+            let at = logic::Place {
+                ship: PLAYER_SHIP,
+                container: id,
+            };
+            let stored = logic::store(&mut inventory.items, containers, catalog, at, &item, count);
+            // Refusé (le frigo et ce qui ne se mange pas) : l'écran le dit, rien ne bouge.
+            screen.refuse(stored.is_none().then_some(item));
         }
     }
 }
@@ -765,7 +814,7 @@ fn render_content(
     if !fresh && !sources.changed() && screen.drawn_date == date {
         return;
     }
-    let content = draw::content(&sources, &screen.view);
+    let content = draw::content(&sources, &screen.view, screen.refused.as_deref());
     if !fresh && screen.drawn.as_ref() == Some(&content) {
         screen.drawn_date = date;
         return;
@@ -977,5 +1026,38 @@ fn give_xp(shot: Res<XpShot>, data: Res<Data>, mut career: ResMut<Career>, mut d
             continue;
         }
         career.captain.skills.insert(skill.clone(), f64::from(*xp));
+    }
+}
+
+/// `SH_LOCKER_NAME=<conteneur>:<nom>,…` : casiers du vaisseau du joueur nommés au début de la
+/// partie (captures de la plaque, de l'invite et du titre du rangement).
+#[derive(Resource)]
+struct NameShot(Vec<(String, String)>);
+
+fn give_names(shot: Res<NameShot>, containers: Option<ResMut<Containers>>, mut done: Local<bool>) {
+    let (false, Some(mut containers)) = (*done, containers) else {
+        return;
+    };
+    *done = true;
+    for (container, name) in &shot.0 {
+        containers.set_name(PLAYER_SHIP, container, name);
+    }
+}
+
+/// `SH_NAMING=<conteneur>` : la saisie du nom de ce casier, ouverte 3 s après l'entrée en
+/// partie (capture de la fenêtre).
+#[derive(Resource)]
+struct NamingShot(String);
+
+fn naming_shot(
+    time: Res<Time<Real>>,
+    shot: Res<NamingShot>,
+    mut open: MessageWriter<crate::items::NameContainer>,
+    mut since: Local<f32>,
+) {
+    let before = *since;
+    *since += time.delta_secs();
+    if before <= 3.0 && *since > 3.0 {
+        open.write(crate::items::NameContainer(shot.0.clone()));
     }
 }

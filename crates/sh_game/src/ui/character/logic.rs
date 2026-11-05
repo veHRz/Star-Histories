@@ -1,6 +1,7 @@
 //! Logique pure de l'écran du personnage, testée sans `World` : cases d'inventaire découpées
 //! selon la pile maximale de chaque objet, progression d'une compétence vers le niveau suivant,
-//! rangement entre un casier et soi, équipement porté, déplacement au clavier dans une grille.
+//! rangement entre un casier et soi (ce qu'un rangement spécialisé refuse ne bouge pas),
+//! équipement porté, déplacement au clavier dans une grille.
 
 use std::collections::BTreeMap;
 
@@ -140,28 +141,42 @@ pub fn put(items: &mut BTreeMap<String, u32>, item: &str, count: u32) {
     *held = held.saturating_add(count);
 }
 
-/// Range dans un conteneur au plus `count` exemplaires portés ; renvoie le nombre rangé.
+/// Un conteneur d'un vaisseau : le vaisseau propriétaire (`items::PLAYER_SHIP`) et
+/// l'identifiant du conteneur.
+#[derive(Clone, Copy, Debug)]
+pub struct Place<'a> {
+    pub ship: &'a str,
+    pub container: &'a str,
+}
+
+/// Range dans un conteneur au plus `count` exemplaires portés ; renvoie le nombre rangé, ou
+/// `None` si le conteneur refuse l'objet (un rangement spécialisé : le frigo ne prend que la
+/// nourriture, `ItemsFile::accepts`). Rien ne bouge alors.
 pub fn store(
     items: &mut BTreeMap<String, u32>,
     containers: &mut Containers,
-    container: &str,
+    catalog: &ItemsFile,
+    at: Place,
     item: &str,
     count: u32,
-) -> u32 {
+) -> Option<u32> {
+    if !catalog.accepts(at.container, item) {
+        return None;
+    }
     let moved = take(items, item, count);
-    containers.add(container, item, moved);
-    moved
+    containers.add(at.ship, at.container, item, moved);
+    Some(moved)
 }
 
 /// Prend dans un conteneur au plus `count` exemplaires ; renvoie le nombre pris.
 pub fn retrieve(
     items: &mut BTreeMap<String, u32>,
     containers: &mut Containers,
-    container: &str,
+    at: Place,
     item: &str,
     count: u32,
 ) -> u32 {
-    let moved = containers.remove(container, item, count);
+    let moved = containers.remove(at.ship, at.container, item, count);
     put(items, item, moved);
     moved
 }
@@ -262,10 +277,24 @@ pub fn parse_counts(spec: &str, max: u32) -> Vec<(String, u32)> {
         .collect()
 }
 
+/// Une liste `conteneur:nom` séparée par des virgules, pour l'autopilote (`SH_LOCKER_NAME`) :
+/// une entrée sans `:`, sans conteneur ou sans nom est ignorée.
+pub fn parse_names(spec: &str) -> Vec<(String, String)> {
+    spec.split(',')
+        .filter_map(|part| {
+            let (id, name) = part.split_once(':')?;
+            let (id, name) = (id.trim(), name.trim());
+            (!id.is_empty() && !name.is_empty()).then(|| (id.to_owned(), name.to_owned()))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::items::PLAYER_SHIP;
     use sh_data::ItemDef;
+    use sh_data::items::ItemSubcategory;
 
     fn def(id: &str, category: ItemCategory, slot: Option<EquipSlot>, max_stack: u32) -> ItemDef {
         ItemDef {
@@ -273,6 +302,10 @@ mod tests {
             name_key: format!("item.{id}"),
             description_key: format!("item.{id}.description"),
             category,
+            subcategory: match category {
+                ItemCategory::Consumable => Some(ItemSubcategory::Food),
+                _ => None,
+            },
             slot,
             max_stack,
             firearm: None,
@@ -400,15 +433,30 @@ mod tests {
         assert_eq!(items.get("ration"), Some(&u32::MAX));
     }
 
+    fn at(container: &str) -> Place<'_> {
+        Place {
+            ship: PLAYER_SHIP,
+            container,
+        }
+    }
+
     #[test]
     fn ranger_et_reprendre_dans_un_casier() {
+        let catalog = catalog();
         let mut items = map(&[("spare_parts", 25)]);
         let mut containers = Containers::default();
-        containers.add("casier", "ration", 3);
+        containers.add(PLAYER_SHIP, "casier", "ration", 3);
         // Une case de pièces (pile de 20) part au casier ; il en reste 5 sur soi.
         assert_eq!(
-            store(&mut items, &mut containers, "casier", "spare_parts", 20),
-            20
+            store(
+                &mut items,
+                &mut containers,
+                &catalog,
+                at("casier"),
+                "spare_parts",
+                20
+            ),
+            Some(20)
         );
         assert_eq!(items.get("spare_parts"), Some(&5));
         assert_eq!(
@@ -418,10 +466,20 @@ mod tests {
             Some(&20)
         );
         // On ne range pas ce qu'on n'a pas.
-        assert_eq!(store(&mut items, &mut containers, "casier", "medkit", 1), 0);
+        assert_eq!(
+            store(
+                &mut items,
+                &mut containers,
+                &catalog,
+                at("casier"),
+                "medkit",
+                1
+            ),
+            Some(0)
+        );
         // Reprendre : au plus ce que contient le casier.
         assert_eq!(
-            retrieve(&mut items, &mut containers, "casier", "ration", 10),
+            retrieve(&mut items, &mut containers, at("casier"), "ration", 10),
             3
         );
         assert_eq!(items.get("ration"), Some(&3));
@@ -430,9 +488,51 @@ mod tests {
             None
         );
         assert_eq!(
-            retrieve(&mut items, &mut containers, "ailleurs", "ration", 1),
+            retrieve(&mut items, &mut containers, at("ailleurs"), "ration", 1),
             0
         );
+    }
+
+    /// Le frigo ne prend que la nourriture : le reste ne bouge pas.
+    #[test]
+    fn le_frigo_refuse_ce_qui_ne_se_mange_pas() {
+        let mut catalog = catalog();
+        catalog.storage.insert(
+            "frigo".to_owned(),
+            sh_data::items::StorageDef {
+                accepts: Some(ItemSubcategory::Food),
+                kind_key: Some("container.fridge".to_owned()),
+            },
+        );
+        let mut items = map(&[("ration", 4), ("spare_parts", 5)]);
+        let mut containers = Containers::default();
+        assert_eq!(
+            store(
+                &mut items,
+                &mut containers,
+                &catalog,
+                at("frigo"),
+                "spare_parts",
+                5
+            ),
+            None
+        );
+        assert_eq!(items.get("spare_parts"), Some(&5));
+        assert_eq!(containers.contents("frigo"), None);
+        assert_eq!(
+            store(
+                &mut items,
+                &mut containers,
+                &catalog,
+                at("frigo"),
+                "ration",
+                4
+            ),
+            Some(4)
+        );
+        assert_eq!(containers.stock(PLAYER_SHIP, "frigo", &catalog), 4);
+        // Le frigo d'un autre vaisseau du même modèle n'en sait rien.
+        assert_eq!(containers.stock("autre", "frigo", &catalog), 0);
     }
 
     #[test]
@@ -485,6 +585,17 @@ mod tests {
         assert_eq!(capitalize("épave"), "Épave");
         assert_eq!(capitalize("tablette"), "Tablette");
         assert_eq!(capitalize(""), "");
+    }
+
+    #[test]
+    fn noms_donnes_par_l_autopilote() {
+        assert_eq!(
+            parse_names("corvette_chambre_casier_1: Mes affaires ,sans_nom:, :x,frigo"),
+            vec![(
+                "corvette_chambre_casier_1".to_owned(),
+                "Mes affaires".to_owned()
+            )]
+        );
     }
 
     #[test]
