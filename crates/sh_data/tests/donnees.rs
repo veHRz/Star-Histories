@@ -212,6 +212,8 @@ fn les_modeles_des_secteurs_existent() {
     assert!(!data.sectors.is_empty(), "aucun secteur chargé");
     for sector in &data.sectors {
         let mut chemins = vec![sector.door_model.clone()];
+        // Modèle de porte propre à un portail (porte blindée du sas, M10).
+        chemins.extend(sector.portals.iter().filter_map(|p| p.door_model.clone()));
         for cell in &sector.cells {
             chemins.push(cell.model.clone());
             chemins.extend(cell.lod.clone());
@@ -322,6 +324,29 @@ fn le_vaisseau_s_amarre_dans_le_hangar() {
         );
     }
     assert!(joint.normal.0 < -0.99, "{joint:?}");
+    // Les portes du vaisseau gardent leur modèle à quai, sas compris (M10 : elles prenaient
+    // celui du quartier, jaune) ; celles du quartier, le leur.
+    assert_eq!(docked.door_model_of(joint), ship.door_model_of(&hatch));
+    for p in &ship.portals {
+        if let Some(moved) = docked.portals.iter().find(|d| d.id == p.id) {
+            assert_eq!(
+                docked.door_model_of(moved),
+                ship.door_model_of(p),
+                "{}",
+                p.id
+            );
+        }
+    }
+    for p in &port.portals {
+        if let Some(kept) = docked.portals.iter().find(|d| d.id == p.id) {
+            assert_eq!(
+                docked.door_model_of(kept),
+                port.door_model_of(p),
+                "{}",
+                p.id
+            );
+        }
+    }
     // Le quai est du côté du hangar, devant la porte ; l'apparition du sas, à bord.
     let at = |id: &str| {
         let spawn = docked

@@ -3,7 +3,8 @@
 //! Un secteur est un graphe de cellules reliées par des portails. Autour du joueur, les cellules
 //! sont en qualité **Locale** (modèle complet, collisions, lumières, interactions) ; ailleurs en
 //! qualité **Sectorielle** (coque simplifiée, rien d'autre). Le passage de l'une à l'autre est un
-//! streaming invisible ([`streaming`]), les portes servent de portes de chargement ([`doors`]).
+//! streaming invisible ([`streaming`]), les portes servent de portes de chargement ([`doors`]) et
+//! portent le nom de la salle où elles mènent ([`door_signs`]).
 //!
 //! **Le vaisseau du joueur** (M9) est l'intérieur type de sa classe (`Start::interior`,
 //! `corvette`) : en vue Globale, c'est tout le secteur chargé ; à quai, ses cellules sont placées
@@ -30,6 +31,7 @@ use crate::sector::streaming::CellStates;
 use crate::state::{CurrentPlace, ViewLevel};
 use crate::voyage::Location;
 
+pub mod door_signs;
 pub mod doors;
 pub mod gltf;
 pub mod streaming;
@@ -41,6 +43,7 @@ impl Plugin for SectorPlugin {
         app.add_plugins((
             streaming::StreamingPlugin,
             doors::DoorsPlugin,
+            door_signs::DoorSignsPlugin,
             gltf::GltfSetupPlugin,
         ))
         .add_systems(OnEnter(ViewLevel::Sector), enter_sector.in_set(EnterSector))

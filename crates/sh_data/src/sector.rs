@@ -158,6 +158,11 @@ pub struct Portal {
     pub normal: (f32, f32, f32),
     pub width: f32,
     pub height: f32,
+    /// Modèle de la porte de ce portail (genre `Door`), s'il diffère de celui du secteur
+    /// (`Sector::door_model`) : la porte blindée du sas, ou les portes d'un vaisseau amarré dans
+    /// un quartier qui a les siennes ([`dock`]). `None` : le modèle du secteur.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub door_model: Option<String>,
 }
 
 impl Portal {
@@ -186,6 +191,11 @@ pub struct Spawn {
 impl Sector {
     pub fn cell(&self, id: &str) -> Option<&Cell> {
         self.cells.iter().find(|c| c.id == id)
+    }
+
+    /// Le modèle de la porte d'un portail : le sien s'il en a un, sinon celui du secteur.
+    pub fn door_model_of<'a>(&'a self, portal: &'a Portal) -> &'a str {
+        portal.door_model.as_deref().unwrap_or(&self.door_model)
     }
 
     /// La cellule qui contient ce point : la plus petite, quand des boîtes s'emboîtent (le
@@ -329,6 +339,11 @@ pub enum DockError {
 /// d'attache `district_port` du quartier (sa passerelle, vers le vaisseau) : le vaisseau est
 /// tourné d'un nombre entier de quarts de tour (ses boîtes restent alignées sur les axes) puis
 /// translaté. Les deux points d'attache deviennent un seul portail, la porte du sas.
+///
+/// Le secteur obtenu garde le modèle de porte du quartier : les portes du vaisseau, et celle du
+/// sas, reçoivent donc chacune le modèle qu'elles avaient dans le vaisseau (le leur, ou à défaut
+/// celui du vaisseau), sans quoi elles prendraient celui du quartier (M10 : portes du vaisseau
+/// jaunes au spatioport).
 pub fn dock(
     ship: &Sector,
     ship_port: &str,
@@ -389,9 +404,11 @@ pub fn dock(
         out.portals.push(Portal {
             center: placement.apply(p.center),
             normal: placement.rotate(p.normal),
+            door_model: Some(ship.door_model_of(p).to_owned()),
             ..p.clone()
         });
     }
+    // La porte du sas est celle du vaisseau (sa porte extérieure), pas celle de la passerelle.
     out.portals.push(Portal {
         id: format!("{}__{}", ps.a, pd.a),
         a: ps.a.clone(),
@@ -401,6 +418,7 @@ pub fn dock(
         normal: placement.rotate(ps.normal),
         width: ps.width,
         height: ps.height,
+        door_model: Some(ship.door_model_of(&ps).to_owned()),
     });
     for spawn in &ship.spawns {
         out.spawns.push(Spawn {
@@ -439,6 +457,7 @@ mod tests {
             normal,
             width: 1.4,
             height: 2.2,
+            door_model: None,
         }
     }
 
@@ -493,6 +512,62 @@ mod tests {
             .unwrap_or_else(|| panic!("porte du sas absente"));
         assert_eq!(door.normal, (0.0, 0.0, -1.0));
         assert_eq!(docked.within("passerelle", 1), vec!["passerelle", "sas"]);
+    }
+
+    #[test]
+    fn a_quai_les_portes_du_vaisseau_gardent_leur_modele() {
+        // Un vaisseau à deux salles (porte intérieure, sas blindé) et un quartier à deux salles,
+        // chacun avec son modèle de porte.
+        let mut hatch = portal("sas", "@dock", (0.0, 1.1, 0.0), (-1.0, 0.0, 0.0));
+        hatch.door_model = Some("airlock.glb".into());
+        let mut ship = sector(
+            "ship",
+            vec![
+                cell("sas", (0.0, 0.0, -1.0), (2.0, 2.5, 1.0)),
+                cell("couloir", (2.0, 0.0, -1.0), (6.0, 2.5, 1.0)),
+            ],
+            vec![
+                portal("sas", "couloir", (2.0, 1.1, 0.0), (1.0, 0.0, 0.0)),
+                hatch,
+            ],
+        );
+        ship.door_model = "ship_door.glb".into();
+        let mut district = sector(
+            "port",
+            vec![
+                cell("hall", (-1.0, 0.0, -20.0), (1.0, 2.5, -10.0)),
+                cell("passerelle", (-1.0, 0.0, -10.0), (1.0, 2.5, 0.0)),
+            ],
+            vec![
+                portal("hall", "passerelle", (0.0, 1.1, -10.0), (0.0, 0.0, 1.0)),
+                portal("passerelle", "@ship", (0.0, 1.1, 0.0), (0.0, 0.0, 1.0)),
+            ],
+        );
+        district.door_model = "station_door.glb".into();
+        let docked = dock(&ship, "@dock", &district, "@ship").unwrap_or_else(|e| panic!("{e}"));
+        let model = |id: &str| {
+            let p = docked
+                .portals
+                .iter()
+                .find(|p| p.id == id)
+                .unwrap_or_else(|| panic!("portail {id} absent"));
+            docked.door_model_of(p).to_owned()
+        };
+        assert_eq!(docked.door_model, "station_door.glb");
+        assert_eq!(model("hall__passerelle"), "station_door.glb");
+        assert_eq!(model("sas__couloir"), "ship_door.glb");
+        assert_eq!(model("sas__passerelle"), "airlock.glb");
+        // Un sas sans modèle propre prend celui du vaisseau, pas celui du quartier.
+        for p in &mut ship.portals {
+            p.door_model = None;
+        }
+        let docked = dock(&ship, "@dock", &district, "@ship").unwrap_or_else(|e| panic!("{e}"));
+        let sas = docked
+            .portals
+            .iter()
+            .find(|p| p.id == "sas__passerelle")
+            .unwrap_or_else(|| panic!("porte du sas absente"));
+        assert_eq!(docked.door_model_of(sas), "ship_door.glb");
     }
 
     #[test]

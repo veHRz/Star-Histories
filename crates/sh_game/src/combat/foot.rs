@@ -663,17 +663,17 @@ fn perceive(
     }
 }
 
-/// La cellule du secteur qui contient un point.
+/// Tolérance verticale sous le plancher d'une cellule (m) : les pieds d'un combattant posé sur
+/// le sol peuvent être un peu sous le bas de la boîte.
+const FLOOR_TOLERANCE: f32 = 0.5;
+
+/// La cellule du secteur qui contient les pieds d'un combattant : la plus petite, quand des
+/// cellules s'emboîtent (`Sector::cell_at`). À quai, le vaisseau est posé dans le hangar et les
+/// cellules du quartier viennent en premier : la première boîte trouvée était le hangar, même à
+/// bord (point ouvert de M9). Le point est relevé de la tolérance, comme le suivi de la cellule
+/// du joueur (`sector::streaming`).
 fn cell_at(sector: &sh_data::Sector, p: Vec3) -> Option<&sh_data::sector::Cell> {
-    sector.cells.iter().find(|c| {
-        let (min, max) = (Vec3::from(c.min), Vec3::from(c.max));
-        p.x >= min.x
-            && p.x <= max.x
-            && p.z >= min.z
-            && p.z <= max.z
-            && p.y >= min.y - 0.5
-            && p.y <= max.y
-    })
+    sector.cell_at((p.x, p.y + FLOOR_TOLERANCE, p.z))
 }
 
 /// Le chemin de `from` à `to` : les centres des portails à franchir (recherche en largeur sur
@@ -1177,5 +1177,31 @@ fn foot_hud(
         if text.0 != line {
             text.0.clone_from(&line);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_quai_un_combattant_a_bord_est_dans_le_vaisseau() {
+        // Le hangar d'abord (cellules du quartier), puis le sas du vaisseau posé dedans.
+        let sector: sh_data::Sector = sh_data::ron_options()
+            .from_str(
+                r#"(id: "port", kind: District, name_key: "n", door_model: "d",
+                    cells: [
+                        (id: "hangar", model: "h", min: (-10, 0, -10), max: (10, 8, 10)),
+                        (id: "sas", model: "s", min: (0, -0.2, -1), max: (2, 2.5, 1)),
+                    ],
+                    portals: [], spawns: [])"#,
+            )
+            .unwrap_or_else(|e| panic!("secteur de test illisible : {e}"));
+        let at = |p: Vec3| cell_at(&sector, p).map(|c| c.id.as_str());
+        assert_eq!(at(Vec3::new(1.0, 0.0, 0.0)), Some("sas"));
+        assert_eq!(at(Vec3::new(-5.0, 0.0, 0.0)), Some("hangar"));
+        // Pieds un peu sous le plancher : toujours dans la cellule.
+        assert_eq!(at(Vec3::new(-5.0, -0.3, 0.0)), Some("hangar"));
+        assert_eq!(at(Vec3::new(50.0, 0.0, 0.0)), None);
     }
 }

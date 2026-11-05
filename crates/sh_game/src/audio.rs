@@ -347,7 +347,9 @@ fn foot_effects(
     play(&mut commands, &settings, &sounds.impact, impact);
 }
 
-/// Une porte se met en mouvement.
+/// Une porte se met en mouvement. Seulement si elle bouge vraiment : une fermeture demandée
+/// sur une porte encore close (elle attendait sa cellule), ou une ouverture d'une porte déjà
+/// ouverte, ne fait aucun bruit (M10 : la porte du sas « fermée » en vol jouait le son).
 fn door_effects(
     mut commands: Commands,
     sounds: Res<Sounds>,
@@ -360,7 +362,11 @@ fn door_effects(
     let mut gain = 0f32;
     for (entity, door, at) in &doors {
         let previous = last.insert(entity, door.state);
-        let moving = matches!(door.state, DoorState::Opening | DoorState::Closing);
+        let moving = match door.state {
+            DoorState::Opening => door.openness < 1.0,
+            DoorState::Closing => door.openness > 0.0,
+            _ => false,
+        };
         if moving && previous != Some(door.state) {
             let d = ear.map_or(0.0, |e| e.distance(at.translation()));
             gain = gain.max(falloff(f64::from(d), 5.0));
