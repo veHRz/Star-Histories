@@ -34,7 +34,13 @@ pub(super) fn plugin(app: &mut App) {
         .add_systems(
             Update,
             (
-                open_naming,
+                // Bevy 0.20 panique sur un paramètre de ressource absent : la saisie ne s'ouvre
+                // qu'en partie, données, textes et polices chargés.
+                open_naming
+                    .run_if(in_state(AppState::InGame))
+                    .run_if(resource_exists::<Data>)
+                    .run_if(resource_exists::<Texts>)
+                    .run_if(resource_exists::<UiFonts>),
                 arm_naming.run_if(resource_exists::<NamingScreen>),
                 keep_focus.run_if(resource_exists::<NamingScreen>),
                 finish_naming.run_if(resource_exists::<NamingScreen>),
@@ -164,9 +170,12 @@ fn arm_naming(
 /// ferait perdre et la frappe n'irait nulle part.
 fn keep_focus(
     screen: Res<NamingScreen>,
-    mut focus: ResMut<InputFocus>,
+    focus: Option<ResMut<InputFocus>>,
     fields: Query<Entity, With<NameField>>,
 ) {
+    let Some(mut focus) = focus else {
+        return;
+    };
     if screen.closing.is_some() {
         return;
     }
@@ -203,7 +212,7 @@ fn finish_naming(
     containers: Option<ResMut<Containers>>,
     view: Option<Res<State<ViewLevel>>>,
     mut next_mode: ResMut<NextState<ControlMode>>,
-    mut focus: ResMut<InputFocus>,
+    focus: Option<ResMut<InputFocus>>,
     (fields, roots): (
         Query<&EditableText, With<NameField>>,
         Query<Entity, With<NamingUi>>,
@@ -224,7 +233,9 @@ fn finish_naming(
     }
     next_mode.set(screen.resume);
     commands.remove_resource::<NamingScreen>();
-    focus.clear();
+    if let Some(mut focus) = focus {
+        focus.clear();
+    }
     // La fenêtre part avec sa ressource : sans elle, plus rien ne l'effacerait.
     for root in &roots {
         commands.entity(root).despawn();
