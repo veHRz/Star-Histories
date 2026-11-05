@@ -116,7 +116,7 @@ Le jeu lit des variables d'environnement (`crates/sh_game/src/dev.rs`) :
 | `SH_EXIT_AFTER_FRAMES=N` | Quitte proprement après N frames (test de fumée : pas de panique) |
 | `SH_SCREENSHOT=target/shots/x.png` | Enregistre une capture puis quitte |
 | `SH_SCREENSHOT_FRAME=N` | Frame de la capture (défaut 90) |
-| `SH_START=<vue>[:<lieu>]` | Démarre directement dans une vue : `galaxy`, `global:<lieu>` (ex. `global:hexis`), `sector:<lieu>` (ex. `sector:test`, `sector:salle_temoin` : salle témoin des matériaux de M8) ; `new` = nouvelle partie, exactement comme le bouton du menu (aux commandes, système du départ) ; `menu` = menu principal. Lieu inconnu = arrêt en erreur |
+| `SH_START=<vue>[:<lieu>]` | Démarre directement dans une vue : `galaxy`, `global:<lieu>` (ex. `global:hexis`), `sector:<lieu>` (ex. `sector:corvette` : l'intérieur type du vaisseau du joueur ; `sector:spaceport` : le spatioport par défaut, vaisseau amarré dans le hangar ; `sector:salle_temoin` : salle témoin des matériaux de M8) ; `global:<lieu>` place le joueur aux commandes ; `new` = nouvelle partie, exactement comme le bouton du menu (debout dans la chambre du vaisseau, en vue Globale) ; `menu` = menu principal. Lieu inconnu = arrêt en erreur |
 | `SH_PRESET=<préréglage>` | Préréglage graphique : `low`, `medium` (défaut) ou `high` |
 | `SH_WINDOW=<L>x<H>` / `fullscreen` | Taille de la fenêtre (défaut 1600×900), ou plein écran sans bordure : les mesures de la machine de référence se font en `fullscreen` (1080p) |
 | `SH_GPU_TIMINGS=1` | Temps GPU moyen de chaque passe de rendu, journalisé à la sortie (à comparer entre deux réglages : sur l'UHD 770, certaines passes comptent aussi des attentes) |
@@ -130,21 +130,21 @@ Le jeu lit des variables d'environnement (`crates/sh_game/src/dev.rs`) :
 | `SH_SPAWN=<id>`, `SH_SPAWN_AT=x,y,z,cap,tangage` | Point d'apparition dans un secteur, ou position libre (degrés), pour les captures |
 | `SH_LOOK=x,y,z` | Direction initiale de la caméra en vue Globale (captures du ciel, des astres) |
 | `SH_ARRIVAL=<objet>,<distance>` | Vue Globale : arrivée près d'un autre objet (station, structure, astre), à cette distance en mètres |
-| `SH_SCENARIO=walk_ship` | Parcours scripté du vaisseau du joueur (sas → cockpit), avec mesure du temps de frame |
+| `SH_SCENARIO=walk_ship` | Avec `SH_START=sector:corvette` : sas, toutes les salles, cockpit, puis s'asseoir au poste de pilotage, avec mesure du temps de frame |
 | `SH_SCENARIO=menu_return` | Avec `SH_START=new` : Échap vers le menu principal, puis « Nouvelle partie », qui doit repartir de zéro (une partie quittée est effacée, `state::forget_game`) |
-| `SH_SCENARIO=save_load` | Avec `SH_USER_DIR` et `SH_START=new` (en vol) ou `sector:hexis_spaceport` (à quai) : sauvegarder, tout changer (argent, position du vaisseau), recharger, retrouver argent, date, vue et pose. `SH_START=load:<fichier>` démarre sur une sauvegarde |
+| `SH_SCENARIO=save_load` | Avec `SH_USER_DIR` et `SH_START=new` (en vol) ou `sector:spaceport` (à quai) : sauvegarder, tout changer (argent, position du vaisseau), recharger, retrouver argent, date, vue et pose. `SH_START=load:<fichier>` démarre sur une sauvegarde ; une sauvegarde d'avant M9 se migre (champ `content` : `player_ship` → `corvette`, `hexis_spaceport` → `spaceport`, objets pris renommés) |
 | `SH_SCENARIO=pause_escape` | Avec `SH_START=new` : Échap (vrais messages clavier), « Reprendre », Échap, options fermées par Échap puis par « Retour » : ni plantage, ni écran qui reste affiché |
-| `SH_SCENARIO=map_key` | Avec `SH_START=new` : M tenu 150 ms comme par un joueur ouvre la carte, qui doit rester ouverte, puis la referme |
+| `SH_SCENARIO=map_key` | Avec `SH_START=new` (la partie commence debout : le scénario prend d'abord les commandes) : M tenu 150 ms comme par un joueur ouvre la carte, qui doit rester ouverte, puis la referme |
 | `SH_DAYS=N` | La partie commence N jours après le jour 1 de 425at ; le monde vivant rattrape (captures des nouvelles, des flottes connues) |
 | `SH_ROUTE=<système>`, `SH_HOVER=<système>` | Vue Galaxie : itinéraire posé depuis la position du vaisseau, survol simulé (captures du panneau et de l'infobulle) |
 | `SH_SCENARIO=voyage` | Avec `SH_START=global:hexis` : Hexis → Cygnara par Portail, retour par hyperespace, durées vérifiées (critère de M3) |
-| `SH_SCENARIO=port_loop` | Avec `SH_START=sector:hexis_spaceport` : quai → cockpit → départ → vol → amarrage → quai (critère de M2) |
+| `SH_SCENARIO=port_loop` | Avec `SH_START=sector:spaceport` : quai du hangar → sas → cockpit → départ → vol → amarrage → hangar (critère de M2) |
 | `SH_SCENARIO=contract_loop` | Avec `SH_START=global:hexis` : contrat de transport Hexis → Cygnara, livraison, paiement, réputation, échéance de la Banque, trahison d'un second contrat et ses conséquences, captures `target/shots/m5-*.png` (critère de M5) |
 | `SH_RAID=1` / `alone` / `0` | Raid de la Ligue forcé à l'arrivée dans un système (`alone` : sans rescousse) ; `0` : aucun raid (scénarios hors combat) |
 | `SH_SCENARIO=raid_win` | Avec `SH_START=global:cygnara SH_RAID=1` : raid gagné aux côtés de la Flotte de défense, temps de frame pendant le combat (10 coques), puis retour à Hexis, dégâts toujours là, réparation au chantier (critère de M6) |
 | `SH_SCENARIO=raid_flee` / `raid_lose` | Avec `SH_RAID=1` / `SH_RAID=alone` : fuite (distancer, puis croisière) ; défaite (seul et passif) et écran de mort |
 | `SH_BOARDING=N` | N pirates abordent le vaisseau du joueur par le couloir arrière |
-| `SH_SCENARIO=firefight` / `firefight_lose` | Avec `SH_START=sector:player_ship SH_SPAWN=soute SH_BOARDING=2` (ou `3`) : abordage repoussé à pied ; défaite passive |
+| `SH_SCENARIO=firefight` / `firefight_lose` | Avec `SH_START=sector:corvette SH_SPAWN=soute SH_BOARDING=2` (ou `3`) : abordage repoussé à pied ; défaite passive |
 | `SH_SCENARIO=fly_ship` | Avec `SH_START=global:hexis` : vol aux commandes (assisté, croisière, lacet, découplé), puis marche du cockpit au couloir en plein vol |
 | `SH_SCREEN=inventory\|skills`, `SH_CONTAINER=<casier>` | Ouvre l'écran du personnage (onglet) ou le rangement d'un casier 3 s après l'arrivée (M9) |
 | `SH_GIVE=<objet>:<n>,…`, `SH_XP=<compétence>:<points>,…` | Objets dans l'inventaire, expérience posée au début de la partie (captures de l'écran du personnage) |
@@ -153,13 +153,13 @@ Le jeu lit des variables d'environnement (`crates/sh_game/src/dev.rs`) :
 | `SH_OPTIONS=<page>` | `general` (ou `1`), `display`, `gameplay`, `sound`, `controls`, `keys:interface` (ou `keys`), `keys:foot`, `keys:piloting`, `keys:map` |
 | `SH_KEYS=…` | Remappage imposé : `KeyE:KeyF` (toutes les actions de E), `foot_interact:KeyR`, `foot_jump:Space+KeyB` (deux touches), `foot_crouch:-` (case vide) |
 | `SH_MAP_HEIGHT=<h>`, `SH_MAP_CENTER=x,y` | Cadrage de la carte galactique (1100 : tout ; 150 : plan rapproché) |
-| `SH_SCENARIO=pickup_persist` | Avec `SH_USER_DIR` et `SH_START=sector:hexis_spaceport` : ramasser la tablette des quartiers, sauvegarder, recharger : elle n'y est plus et reste dans l'inventaire |
-| `SH_SCENARIO=terminal_tour` | Avec `SH_START=sector:hexis_spaceport SH_RAID=0` : chaque PNJ, le service qu'il ouvre, retour à la conversation, onglets de la tablette ; captures `target/shots/m9-borne-*.png` |
+| `SH_SCENARIO=pickup_persist` | Avec `SH_USER_DIR` et `SH_START=sector:spaceport` : ramasser la tablette de la chambre, sauvegarder, recharger : elle n'y est plus et reste dans l'inventaire |
+| `SH_SCENARIO=terminal_tour` | Avec `SH_START=sector:spaceport SH_RAID=0` : chaque PNJ, le service qu'il ouvre, retour à la conversation, onglets de la tablette ; captures `target/shots/m9-borne-*.png` |
 | `SH_SCENARIO=voyage_isolated` | Avec `SH_START=global:hexis SH_RAID=0` : Hexis → Calderis (monde isolé, hyperespace, arrivée en orbite) et retour, durées vérifiées ; capture `m9-isole-orbite.png` |
-| `SH_SCENARIO=key_help` | Avec `SH_START=sector:hexis_spaceport SH_SPAWN=hall` : F1 tenue 150 ms replie puis redéplie l'encart des touches |
-| `SH_SCENARIO=character` | Avec `SH_START=sector:player_ship SH_SPAWN=soute` : I ouvre l'inventaire, O les compétences, Échap ferme sans ouvrir la pause ; au casier, Entrée prend un objet, E referme |
-| `SH_TUTORIAL=1`, `SH_TUTORIAL_STEP=N` | Le tutoriel guidé (coupé par défaut quand l'autopilote pilote, comme les conseils) ; démarrer à l'étape N (captures du panneau) |
-| `SH_SCENARIO=tutorial` | Avec `SH_START=new SH_TUTORIAL=1 SH_RAID=0 SH_USER_DIR=…` : joue tout le tutoriel (commandes, amarrage, bureau, contrat, écrans, départ, carte, Portail, livraison, sauvegarde), captures `target/shots/m8-tuto-*.png` (critère de M8) |
+| `SH_SCENARIO=key_help` | Avec `SH_START=sector:spaceport SH_SPAWN=hall` : F1 tenue 150 ms replie puis redéplie l'encart des touches |
+| `SH_SCENARIO=character` | Avec `SH_START=sector:corvette SH_SPAWN=soute` : I ouvre l'inventaire, O les compétences, Échap ferme sans ouvrir la pause ; au casier, Entrée prend un objet, E referme |
+| `SH_TUTORIAL=1`, `SH_TUTORIAL_STEP=N` | Le tutoriel guidé (coupé par défaut quand l'autopilote pilote, comme les conseils) ; démarrer à l'étape N, de 1 (chambre) à 10 (sauvegarde) ; 11 = terminé (captures du panneau) |
+| `SH_SCENARIO=tutorial` | Avec `SH_START=new SH_TUTORIAL=1 SH_RAID=0 SH_USER_DIR=…` : joue tout le tutoriel : chambre (casier, tablette, inventaire), tour du vaisseau de porte en porte, commandes, amarrage, hangar, hall, bureau et guichetier, contrat, écrans, départ, carte, Portail, livraison, sauvegarde ; captures `target/shots/m9-tuto-chambre.png`, `m9-tuto-tour.png`, `m8-tuto-*.png` (critère de M8 et de M9). Une action propre d'un scénario se joue avec le `World` par `Step::Script` (`dev.rs`) |
 
 À la sortie, le jeu journalise toujours le **temps de frame moyen et maximal** et le nombre de frames au-dessus de 33 ms (hors chargement). `tools/check.ps1` (Windows) et `tools/check.sh` (Linux) lancent un test de fumée de chaque point d'entrée ; ces deux scripts font la même chose, modifie-les **ensemble**. Quand tout est vert, ils notent dans `target/check-ok.txt` (propre au poste) l'arbre vérifié (`tree=`, contenu du dossier de travail au départ du script) : s'il vaut `git rev-parse "HEAD^{tree}"`, l'état courant a déjà passé le contrôle sur ce poste. Les **mesures de performance** passent par `tools/perf.ps1` / `tools/perf.sh` (même règle) : build release, puis chaque scénario qui porte un critère de performance (`walk_ship` avec et sans lightmaps, `fly_ship`, `port_loop`, `raid_win`, `firefight`, `firefight_lose`), résumé dans `target/perf/` (exemple : `powershell -ExecutionPolicy Bypass -File tools/perf.ps1 -Preset low -Window fullscreen`, le préréglage de la cible ; `-Preset medium` pour comparer). Le jeu occupe l'écran pendant les mesures : préviens l'auteur.
 
