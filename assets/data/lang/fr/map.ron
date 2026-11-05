@@ -9,7 +9,7 @@
     "map.plan.portal": "[Digit1] : Portail — {hours} h, {jumps} saut(s), péage {toll} crédits",
     "map.plan.no_portal": "Aucune route par Portail",
     "map.plan.hyperspace": "[Digit2] : Hyperespace — {days} jours, {fuel} jours de carburant",
-    "map.plan.detour": " (en contournant une nébuleuse)",
+    "map.plan.detour": " (contourne une nébuleuse)",
     "map.plan.no_fuel": " — carburant insuffisant",
     "map.plan.blocked": "Hyperespace impossible : au cœur d'une nébuleuse qui le bloque",
     "map.plan.orbit": "Arrivée en orbite : aucun spatioport",

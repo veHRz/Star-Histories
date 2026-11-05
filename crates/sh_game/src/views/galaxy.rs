@@ -821,21 +821,25 @@ fn spawn_panels(
         SCOPE,
         Tooltip,
         Pickable::IGNORE,
+        // Au-dessus de la couche des repères et des panneaux de la carte, sur un fond presque
+        // opaque : les étiquettes ne se lisent pas au travers.
+        GlobalZIndex(10),
         Node {
             position_type: PositionType::Absolute,
             flex_direction: FlexDirection::Column,
             row_gap: px(3),
-            max_width: px(360),
             // Large à gauche : la barre ambre de la plaquette.
             padding: UiRect::new(px(14), px(12), px(7), px(9)),
             ..default()
         },
+        BackgroundColor(Color::srgba(0.020, 0.025, 0.030, 0.94)),
         fonts.frame(Frame::Plate),
         Visibility::Hidden,
         children![
             (
                 TooltipTitle,
                 Text::new(""),
+                TextLayout::no_wrap(),
                 fonts.title(15.0),
                 TextColor(theme::TEXT),
                 Pickable::IGNORE,
@@ -843,6 +847,7 @@ fn spawn_panels(
             (
                 TooltipBody,
                 Text::new(""),
+                TextLayout::no_wrap(),
                 fonts.body(14.0),
                 TextColor(theme::TEXT_DIM),
                 Pickable::IGNORE,
@@ -850,7 +855,10 @@ fn spawn_panels(
         ],
     ));
     // Le panneau d'itinéraire : un relevé d'instrument. En haut la position et le carburant (à
-    // chasse fixe), puis la route choisie (titre ambre) et ses deux façons d'y aller.
+    // chasse fixe), puis la route choisie (titre ambre) et ses deux façons d'y aller. Ses
+    // lignes ne passent jamais à la ligne d'elles-mêmes : un retour automatique, décidé après
+    // la mesure du nœud, faisait déborder le texte du cadre ; le cadre prend la largeur de la
+    // plus longue ligne et la hauteur de toutes.
     commands.spawn((
         SCOPE,
         MapPanel,
@@ -859,10 +867,10 @@ fn spawn_panels(
             position_type: PositionType::Absolute,
             left: px(20),
             bottom: px(20),
-            max_width: px(560),
             flex_direction: FlexDirection::Column,
             row_gap: px(4),
-            padding: UiRect::new(px(18), px(18), px(12), px(14)),
+            // Même marge en haut et en bas.
+            padding: UiRect::new(px(18), px(18), px(13), px(13)),
             ..default()
         },
         fonts.frame(Frame::Readout),
@@ -870,6 +878,7 @@ fn spawn_panels(
             (
                 RouteLine::Status,
                 Text::new(""),
+                TextLayout::no_wrap(),
                 fonts.mono(14.0),
                 TextColor(theme::SCREEN),
                 Pickable::IGNORE,
@@ -887,6 +896,7 @@ fn spawn_panels(
             (
                 RouteLine::Title,
                 Text::new(""),
+                TextLayout::no_wrap(),
                 fonts.title(16.0),
                 TextColor(theme::ACCENT),
                 Pickable::IGNORE,
@@ -894,6 +904,7 @@ fn spawn_panels(
             (
                 RouteLine::Options,
                 Text::new(""),
+                TextLayout::no_wrap(),
                 fonts.body(15.0),
                 TextColor(theme::TEXT),
                 Pickable::IGNORE,
@@ -1566,11 +1577,12 @@ fn show_tooltip(
     forced: Res<ForcedHover>,
     (screen, entries, location): (Res<MapScreen>, Res<MapEntries>, Option<Res<Location>>),
     window: Single<&Window, With<PrimaryWindow>>,
-    mut tooltip: Single<(&mut Node, &mut Visibility), With<Tooltip>>,
+    mut tooltip: Single<(&mut Node, &mut Visibility, &ComputedNode), With<Tooltip>>,
     mut title: Single<&mut Text, (With<TooltipTitle>, Without<TooltipBody>)>,
     mut body: Single<&mut Text, (With<TooltipBody>, Without<TooltipTitle>)>,
 ) {
-    let (node, visibility) = &mut *tooltip;
+    let (node, visibility, computed) = &mut *tooltip;
+    let size = computed.size() * computed.inverse_scale_factor();
     // Le nom en titre, les autres lignes dessous ; sans entrée survolée, rien.
     let lines = if let Some(fleet) = &hovered_fleet.0 {
         let mut lines = vec![fleet.name.clone(), texts.get("map.tip.kind.fleet")];
@@ -1600,7 +1612,19 @@ fn show_tooltip(
     let cursor = forced_at
         .or_else(|| window.cursor_position())
         .unwrap_or(window.size() / 2.0);
-    set_position(node, cursor.x + 18.0, cursor.y + 14.0);
+    // À droite et sous le curseur ; près d'un bord de la fenêtre, de l'autre côté.
+    let window_size = window.size();
+    let left = if cursor.x + 18.0 + size.x > window_size.x - 8.0 {
+        cursor.x - 18.0 - size.x
+    } else {
+        cursor.x + 18.0
+    };
+    let top = if cursor.y + 14.0 + size.y > window_size.y - 8.0 {
+        cursor.y - 14.0 - size.y
+    } else {
+        cursor.y + 14.0
+    };
+    set_position(node, left.max(8.0), top.max(8.0));
     let mut lines = lines.into_iter();
     set_text(&mut title, lines.next().unwrap_or_default());
     set_text(&mut body, lines.collect::<Vec<_>>().join("\n"));
