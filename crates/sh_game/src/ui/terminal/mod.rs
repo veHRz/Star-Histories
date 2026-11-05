@@ -4,9 +4,10 @@
 //!
 //! Il s'ouvre par une console (bureau des contrats, comptoir de la taverne, terminal du marché),
 //! par un PNJ de comptoir (`items::TalkTo` : la conversation de son rôle, `Dialogue::for_role`,
-//! dont les réponses ouvrent les services), par les touches du journal et du codex, ou par
-//! l'autopilote. La touche de la fiche ouvre désormais l'écran du personnage
-//! (`items::OpenCharacterScreen`) ; la fiche du terminal reste un onglet du journal.
+//! dont les réponses ouvrent les services), par les touches de la fiche, du journal et du codex,
+//! ou par l'autopilote. La fiche du capitaine a un bouton vers l'écran du personnage
+//! (`items::OpenCharacterScreen`). Ouvrir une conversation fait connaître au codex
+//! l'organisation que représente l'interlocuteur (`codex::SpokeWith`).
 //!
 //! Le jeu passe en mode Menu : curseur libre. Souris et clavier : clic sur une ligne pour la
 //! choisir, sur une action pour la faire ; ↑ ↓ (ou la molette) changent de ligne, ← → d'onglet,
@@ -35,6 +36,7 @@ use sh_sim::{Captain, CareerError, SimCommand};
 
 use crate::career::{Career, CareerOutcomes, money};
 use crate::clock::GameClock;
+use crate::codex::SpokeWith;
 use crate::data::{Data, Texts};
 use crate::input::{Back, OpenCodex, OpenJournal, OpenSheet};
 use crate::items::{CharacterTab, OpenCharacterScreen, TalkTo};
@@ -200,9 +202,10 @@ fn on_open_codex(_: On<Start<OpenCodex>>, mut open: MessageWriter<OpenTerminal>)
     open.write(OpenTerminal(Screen::Codex));
 }
 
-/// La touche de la fiche ouvre l'écran du personnage (M9) : inventaire, réputations, emprunts.
-fn on_open_sheet(_: On<Start<OpenSheet>>, mut open: MessageWriter<OpenCharacterScreen>) {
-    open.write(OpenCharacterScreen(CharacterTab::Inventory));
+/// La touche de la fiche ouvre la fiche du capitaine (M10, demande de l'auteur ; en M9 elle
+/// ouvrait l'inventaire) : réputations, emprunts, et son bouton vers l'écran du personnage.
+fn on_open_sheet(_: On<Start<OpenSheet>>, mut open: MessageWriter<OpenTerminal>) {
+    open.write(OpenTerminal(Screen::Sheet));
 }
 
 fn on_open_journal(_: On<Start<OpenJournal>>, mut open: MessageWriter<OpenTerminal>) {
@@ -320,6 +323,7 @@ fn open_terminal(
     mut career: ResMut<Career>,
     terminal: Option<ResMut<Terminal>>,
     mut cursor: Single<&mut CursorOptions, With<PrimaryWindow>>,
+    mut spoke: MessageWriter<SpokeWith>,
 ) {
     let Some(OpenTerminal(screen)) = reader.read().last().cloned() else {
         return;
@@ -336,6 +340,10 @@ fn open_terminal(
         && !talk_again(&data, &mut career.captain, clock.date, &mut term, id)
     {
         return;
+    }
+    // Parler à quelqu'un, c'est connaître la maison qu'il représente (codex).
+    if let Screen::Dialogue { id, .. } = &screen {
+        spoke.write(SpokeWith(id.clone()));
     }
     commands.insert_resource(term);
     next_mode.set(ControlMode::Menu);

@@ -8,7 +8,9 @@
 //! et pages de Contrôles), les flèches haut et bas choisissent une ligne, gauche et droite la
 //! règlent (ou choisissent la case d'une touche), Entrée valide, Retour arrière vide une case.
 //! Échap annule d'abord une touche en attente, sinon ferme l'écran ; il se ferme au relâchement,
-//! comme le terminal, pour que l'écran dessous ne voie pas la touche.
+//! comme le terminal, pour que l'écran dessous ne voie pas la touche. Ces touches s'affichent
+//! dans l'encart des touches (`keys_panel`, M10) ; sous le panneau ne reste que la note de la
+//! page (ce que font ses réglages).
 //!
 //! Menu des touches : deux cases par action. La touche choisie est assignée telle quelle, sans
 //! échange. Si une action active en même temps l'a déjà, un message le dit, ses cases passent en
@@ -28,6 +30,7 @@ use sh_data::PresetLevel;
 use crate::data::{Data, Texts};
 use crate::input::{KEY_ACTIONS, KeyCategory};
 use crate::options::{Slot, UserSettings, choosable, current_layout, physical_label};
+use crate::ui::keys_panel::{KeyHelp, KeyHint, KeySource};
 use crate::ui::menu::panel_node;
 use crate::ui::theme::{self, Frame, MenuButton, UiFonts, menu_button};
 
@@ -62,10 +65,16 @@ impl Plugin for OptionsUiPlugin {
                 escape.run_if(resource_exists::<OptionsScreen>),
                 render.run_if(resource_exists::<Texts>),
             )
-                .chain(),
+                .chain()
+                .in_set(OptionsInput),
         );
     }
 }
+
+/// Les systèmes de l'écran des options : ce qui lit aussi le clavier dans un menu (le repli de
+/// l'encart des touches) passe avant, pour voir si une case attend sa touche.
+#[derive(SystemSet, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct OptionsInput;
 
 /// L'écran des options est ouvert.
 #[derive(Resource, Default)]
@@ -84,6 +93,11 @@ pub struct OptionsScreen {
 }
 
 impl OptionsScreen {
+    /// Une case attend sa nouvelle touche : toute touche pressée lui revient.
+    pub fn is_waiting(&self) -> bool {
+        self.waiting.is_some()
+    }
+
     fn set_page(&mut self, page: Page) {
         self.page = page;
         self.cursor = 0;
@@ -161,17 +175,77 @@ impl Page {
         }
     }
 
-    /// La consigne affichée sous le panneau.
-    fn hint(self) -> &'static str {
+    /// La note de la page, sous le panneau : ce que font ses réglages (les touches de l'écran
+    /// sont dans l'encart des touches). Les pages de touches n'en ont pas.
+    fn note(self) -> Option<&'static str> {
         match self {
-            Page::General => "options.hint.general",
-            Page::Display => "options.hint",
-            Page::Gameplay => "options.hint.gameplay",
-            Page::Sound => "options.hint.sound",
-            Page::Mouse => "options.hint.mouse",
-            Page::Keys(_) => "options.keys.hint",
+            Page::General => Some("options.note.general"),
+            Page::Display => Some("options.note.display"),
+            Page::Gameplay => Some("options.note.gameplay"),
+            Page::Sound => Some("options.note.sound"),
+            Page::Mouse => Some("options.note.mouse"),
+            Page::Keys(_) => None,
         }
     }
+}
+
+/// Les touches de l'écran, pour l'encart (M10) : ce que la consigne écrite sous le panneau
+/// disait. Une case qui attend sa touche n'a que deux gestes : la vider ou annuler.
+fn key_help(texts: &Texts, screen: &OptionsScreen) -> KeyHelp {
+    if screen.is_waiting() {
+        return KeyHelp::new([
+            KeyHint::key(KeyCode::Backspace, texts.get("options.keys.help.clear")),
+            KeyHint::key(KeyCode::Escape, texts.get("options.keys.help.cancel")),
+        ]);
+    }
+    let keys_page = matches!(screen.page, Page::Keys(_));
+    let mut hints = vec![
+        KeyHint::keys(
+            [
+                KeySource::Key(KeyCode::Tab),
+                KeySource::Chord(KeyCode::ShiftLeft, KeyCode::Tab),
+            ],
+            texts.get("options.help.pages"),
+        ),
+        KeyHint::keys(
+            [
+                KeySource::Key(KeyCode::ArrowUp),
+                KeySource::Key(KeyCode::ArrowDown),
+            ],
+            texts.get("options.help.rows"),
+        ),
+        KeyHint::keys(
+            [
+                KeySource::Key(KeyCode::ArrowLeft),
+                KeySource::Key(KeyCode::ArrowRight),
+            ],
+            texts.get(if keys_page {
+                "options.keys.help.slot"
+            } else {
+                "options.help.adjust"
+            }),
+        ),
+        KeyHint::key(
+            KeyCode::Enter,
+            texts.get(if keys_page {
+                "options.keys.help.change"
+            } else {
+                "options.help.confirm"
+            }),
+        )
+        .and_mouse(MouseButton::Left),
+    ];
+    if keys_page {
+        hints.push(KeyHint::key(
+            KeyCode::Backspace,
+            texts.get("options.keys.help.clear"),
+        ));
+    }
+    hints.push(KeyHint::key(
+        KeyCode::Escape,
+        texts.get("options.help.close"),
+    ));
+    KeyHelp::new(hints)
 }
 
 /// Les pages de l'onglet Contrôles, dans l'ordre de leurs boutons.
@@ -627,6 +701,7 @@ fn render(
             OptionsUi,
             GlobalZIndex(30),
             theme::fullscreen_backdrop(),
+            key_help(&texts, &screen),
         ))
         // En haut plutôt qu'au centre : le titre et les onglets ne bougent pas quand la
         // hauteur du panneau change d'une page à l'autre.
@@ -668,30 +743,21 @@ fn render(
                 }
                 foot_buttons(panel, &texts, &fonts, screen.page);
             });
-        // La consigne de la page puis celle du clavier, sous le panneau : longues, elles ne
-        // doivent pas l'élargir.
-        ui.spawn((
-            Text::new(texts.get(screen.page.hint())),
-            fonts.body(15.0),
-            TextColor(theme::TEXT_DIM),
-            TextLayout::justify(Justify::Center),
-            Node {
-                max_width: px(900),
-                margin: UiRect::top(px(12)),
-                ..default()
-            },
-        ));
-        ui.spawn((
-            Text::new(texts.get("options.nav_hint")),
-            fonts.body(13.0),
-            TextColor(theme::TEXT_DISABLED),
-            TextLayout::justify(Justify::Center),
-            Node {
-                max_width: px(900),
-                margin: UiRect::top(px(4)),
-                ..default()
-            },
-        ));
+        // La note de la page, sous le panneau : longue, elle ne doit pas l'élargir. Les touches
+        // sont dans l'encart (`key_help`).
+        if let Some(note) = screen.page.note() {
+            ui.spawn((
+                Text::new(texts.get(note)),
+                fonts.body(15.0),
+                TextColor(theme::TEXT_DIM),
+                TextLayout::justify(Justify::Center),
+                Node {
+                    max_width: px(900),
+                    margin: UiRect::top(px(12)),
+                    ..default()
+                },
+            ));
+        }
     });
 }
 
@@ -1013,7 +1079,7 @@ fn keys_message(
     category: KeyCategory,
 ) -> (String, Color) {
     if screen.waiting.is_some() {
-        return (texts.get("options.keys.waiting_hint"), theme::ACCENT);
+        return (texts.get("options.keys.press"), theme::ACCENT);
     }
     if let Some((index, key)) = screen.notice
         && let Some(action) = KEY_ACTIONS.get(index)

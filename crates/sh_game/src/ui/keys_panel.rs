@@ -30,6 +30,13 @@
 //! disposition du clavier), sans repasser par le remappage des jetons de texte
 //! (`Lang::key_label`, qui part de la touche d'origine).
 //!
+//! Écrans (M10) : le terminal, la conversation, la pause et les options posent leur liste ici au
+//! lieu d'écrire leurs touches en bas de l'écran. Une ligne peut montrer une plage de touches
+//! (« 1–9 », [`KeySource::Range`]), une combinaison (« Maj+Tab », [`KeySource::Chord`]), un clic
+//! ou la molette. L'encart existe aussi au menu principal (options), et la touche qui le replie
+//! y marche comme en jeu : le contexte Menu n'a pas cette action, [`toggle_in_menus`] lit ses
+//! liaisons. Un écran large réserve à gauche la place de l'encart ([`SCREEN_RESERVE`]).
+//!
 //! Coût : l'encart ne se reconstruit que si son contenu change (contexte, touches, langue, repli,
 //! liste d'un écran) ; le reste du temps, il ne fait rien.
 
@@ -51,6 +58,7 @@ use crate::input::{
 use crate::options::UserSettings;
 use crate::state::{AppState, ControlMode};
 use crate::tutorial::Tutorial;
+use crate::ui::options::{OptionsInput, OptionsScreen};
 use crate::ui::theme::{self, Frame, UiFonts};
 use crate::views::BANNER_BOTTOM;
 
@@ -60,9 +68,24 @@ impl Plugin for KeysPanelPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<KeyHelpVisible>()
             .add_observer(on_toggle_key_help)
-            .add_systems(OnEnter(AppState::InGame), spawn_panel)
-            .add_systems(Update, refresh_panel.run_if(in_state(AppState::InGame)));
+            .add_systems(OnEnter(AppState::InGame), spawn_panel::<true>)
+            .add_systems(OnEnter(AppState::MainMenu), spawn_panel::<false>)
+            .add_systems(
+                Update,
+                (
+                    toggle_in_menus
+                        .run_if(panel_exists)
+                        .run_if(in_state(ControlMode::Menu))
+                        .before(OptionsInput),
+                    refresh_panel.run_if(panel_exists),
+                ),
+            );
     }
+}
+
+/// L'encart existe en partie, et au menu principal pour les options qui s'y ouvrent.
+fn panel_exists(state: Option<Res<State<AppState>>>) -> bool {
+    state.is_some_and(|s| matches!(s.get(), AppState::InGame | AppState::MainMenu))
 }
 
 /// L'encart des touches est-il déplié ? Oui par défaut : un nouveau joueur voit les touches.
@@ -77,6 +100,52 @@ impl Default for KeyHelpVisible {
 
 fn on_toggle_key_help(_: On<Start<ToggleKeyHelp>>, mut visible: ResMut<KeyHelpVisible>) {
     visible.0 = !visible.0;
+}
+
+/// Dans un menu (terminal, pause, options) : le contexte Menu n'a pas l'action
+/// [`ToggleKeyHelp`] (ses touches ne se remappent pas), mais l'encart de l'écran doit se replier
+/// avec la même touche qu'en jeu. On lit donc les liaisons clavier de l'action (remappage et
+/// seconde touche compris). Pas pendant que les options attendent une touche : elle va à la case.
+fn toggle_in_menus(
+    keys: Res<ButtonInput<KeyCode>>,
+    options: Option<Res<OptionsScreen>>,
+    actions: Query<(&Name, &Bindings), With<ActionSettings>>,
+    bindings: Query<&Binding>,
+    mut visible: ResMut<KeyHelpVisible>,
+) {
+    if keys.get_just_pressed().next().is_none() || options.is_some_and(|o| o.is_waiting()) {
+        return;
+    }
+    let name = type_name::<ToggleKeyHelp>();
+    let pressed = actions
+        .iter()
+        .filter(|(n, _)| n.as_str() == name)
+        .flat_map(|(_, list)| list.iter())
+        .filter_map(|b| bindings.get(b).ok())
+        .any(|binding| match *binding {
+            Binding::Keyboard { key, mod_keys } => {
+                keys.just_pressed(key) && mods_held(&keys, mod_keys)
+            }
+            _ => false,
+        });
+    if pressed {
+        visible.0 = !visible.0;
+    }
+}
+
+/// Les modificateurs d'une combinaison sont-ils tenus ?
+fn mods_held(keys: &ButtonInput<KeyCode>, mods: ModKeys) -> bool {
+    [
+        (
+            ModKeys::CONTROL,
+            [KeyCode::ControlLeft, KeyCode::ControlRight],
+        ),
+        (ModKeys::SHIFT, [KeyCode::ShiftLeft, KeyCode::ShiftRight]),
+        (ModKeys::ALT, [KeyCode::AltLeft, KeyCode::AltRight]),
+        (ModKeys::SUPER, [KeyCode::SuperLeft, KeyCode::SuperRight]),
+    ]
+    .into_iter()
+    .all(|(flag, pair)| !mods.contains(flag) || keys.any_pressed(pair))
 }
 
 // --- API réutilisable ----------------------------------------------------------------------------
@@ -94,6 +163,10 @@ pub enum KeySource {
     MouseMotion,
     /// La molette.
     Wheel,
+    /// Une plage de touches fixes, en une seule touche dessinée (« 1–9 »).
+    Range(KeyCode, KeyCode),
+    /// Une combinaison fixe : un modificateur tenu, puis une touche (« Maj+Tab »).
+    Chord(KeyCode, KeyCode),
 }
 
 /// Une ligne de l'encart : des touches, un libellé déjà traduit.
@@ -126,6 +199,19 @@ impl KeyHint {
         }
     }
 
+    /// Plusieurs touches de toutes sortes sur une ligne, dans l'ordre donné.
+    pub fn keys(keys: impl IntoIterator<Item = KeySource>, label: impl Into<String>) -> Self {
+        Self {
+            keys: keys.into_iter().collect(),
+            label: label.into(),
+        }
+    }
+
+    /// Une plage de touches fixes (« 1–9 »).
+    pub fn range(first: KeyCode, last: KeyCode, label: impl Into<String>) -> Self {
+        Self::keys([KeySource::Range(first, last)], label)
+    }
+
     /// Ajoute sur la même ligne les touches d'une autre action.
     pub fn and_action<A: InputAction>(mut self) -> Self {
         self.keys.push(KeySource::Action(type_name::<A>()));
@@ -135,6 +221,18 @@ impl KeyHint {
     /// Ajoute sur la même ligne une touche fixe.
     pub fn and_key(mut self, key: KeyCode) -> Self {
         self.keys.push(KeySource::Key(key));
+        self
+    }
+
+    /// Ajoute sur la même ligne un bouton de la souris (« Clic G »).
+    pub fn and_mouse(mut self, button: MouseButton) -> Self {
+        self.keys.push(KeySource::Mouse(button));
+        self
+    }
+
+    /// Ajoute sur la même ligne la molette.
+    pub fn and_wheel(mut self) -> Self {
+        self.keys.push(KeySource::Wheel);
         self
     }
 }
@@ -546,8 +644,35 @@ impl InputView<'_, '_> {
             KeySource::Mouse(button) => push_unique(out, mouse_label(lang, *button)),
             KeySource::MouseMotion => push_unique(out, lang.get("keys.cap.mouse")),
             KeySource::Wheel => push_unique(out, lang.get("keys.cap.wheel")),
+            KeySource::Range(first, last) => push_unique(out, range_label(lang, *first, *last)),
+            KeySource::Chord(modifier, key) => {
+                push_unique(out, chord_label(lang, *modifier, *key));
+            }
         }
     }
+}
+
+/// Une combinaison fixe en une étiquette (« Maj+Tab »).
+fn chord_label(lang: &Lang, modifier: KeyCode, key: KeyCode) -> String {
+    lang.format(
+        "keys.cap.combo",
+        &[
+            ("mod", key_label(lang, modifier).as_str()),
+            ("key", key_label(lang, key).as_str()),
+        ],
+    )
+}
+
+/// Une plage de touches en une étiquette (« 1–9 ») : touches fixes, étiquetées selon la
+/// disposition du clavier, sans remappage.
+fn range_label(lang: &Lang, first: KeyCode, last: KeyCode) -> String {
+    lang.format(
+        "keys.cap.range",
+        &[
+            ("first", key_label(lang, first).as_str()),
+            ("last", key_label(lang, last).as_str()),
+        ],
+    )
 }
 
 /// Une liaison telle que l'encart la montre.
@@ -688,10 +813,15 @@ const PANEL_TOP: f32 = BANNER_BOTTOM + 12.0;
 const PANEL_ALPHA: f32 = 1.0;
 /// Taille des libellés.
 const LABEL_SIZE: f32 = 14.0;
-/// Au-dessus du HUD ; une liste d'écran passe au-dessus des voiles des menus et du terminal (20)
-/// et des messages (25), sous les options (30).
+/// Au-dessus du HUD ; une liste d'écran passe au-dessus des voiles des menus et du terminal (20),
+/// des messages (25) et des options (30), sous l'écran de mort (50).
 const PANEL_Z: i32 = 4;
-const PANEL_Z_SCREEN: i32 = 26;
+const PANEL_Z_SCREEN: i32 = 32;
+
+/// La place que l'encart prend à gauche d'un écran, marge comprise : un écran large (les listes
+/// du terminal) se décale d'autant quand la fenêtre est trop étroite pour qu'il tienne au centre
+/// sans passer dessous (≈ 1 600 px de large). Les libellés des écrans sont courts.
+pub const SCREEN_RESERVE: f32 = 310.0;
 
 #[derive(Component)]
 struct KeysPanel;
@@ -752,13 +882,19 @@ struct PanelChanges<'w, 's> {
     removed_screens: RemovedComponents<'w, 's, KeyHelp>,
 }
 
-fn spawn_panel(mut commands: Commands, fonts: Res<UiFonts>) {
+/// L'encart d'une partie (`IN_GAME`) ou du menu principal : chacun part avec son état.
+fn spawn_panel<const IN_GAME: bool>(mut commands: Commands, fonts: Res<UiFonts>) {
     let mut frame = fonts.frame(Frame::Plate);
     frame.color = Color::WHITE.with_alpha(PANEL_ALPHA);
+    let scope = if IN_GAME {
+        DespawnOnExit(AppState::InGame)
+    } else {
+        DespawnOnExit(AppState::MainMenu)
+    };
     commands.spawn((
         Name::new("Encart des touches"),
         KeysPanel,
-        DespawnOnExit(AppState::InGame),
+        scope,
         // Rien n'y retient un clic : la carte galactique reste cliquable dessous.
         Pickable::IGNORE,
         GlobalZIndex(PANEL_Z),
@@ -1112,6 +1248,34 @@ mod tests {
         assert_eq!(key_label(&lang, KeyCode::ArrowUp), "↑");
         assert_eq!(key_label(&lang, KeyCode::Digit1), "1");
         assert_eq!(key_label(&lang, KeyCode::F1), "F1");
+    }
+
+    #[test]
+    fn plages_et_combinaisons() {
+        let mut lang = Lang::default();
+        lang.strings
+            .insert("keys.cap.range".into(), "{first}–{last}".into());
+        lang.strings
+            .insert("keys.cap.combo".into(), "{mod}+{key}".into());
+        lang.strings.insert("key.ShiftLeft".into(), "Maj".into());
+        // Un remappage des jetons de texte ne touche pas les touches fixes des écrans.
+        lang.remaps.insert("Digit1".into(), "KeyE".into());
+        assert_eq!(range_label(&lang, KeyCode::Digit1, KeyCode::Digit9), "1–9");
+        assert_eq!(
+            chord_label(&lang, KeyCode::ShiftLeft, KeyCode::Tab),
+            "Maj+Tab"
+        );
+        let hint = KeyHint::range(KeyCode::Digit1, KeyCode::Digit9, "Répondre")
+            .and_mouse(MouseButton::Left)
+            .and_wheel();
+        assert_eq!(
+            hint.keys,
+            vec![
+                KeySource::Range(KeyCode::Digit1, KeyCode::Digit9),
+                KeySource::Mouse(MouseButton::Left),
+                KeySource::Wheel
+            ]
+        );
     }
 
     #[test]

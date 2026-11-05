@@ -4,7 +4,8 @@
 //! pas la touche encore enfoncée.
 //!
 //! Habillage (M8) : voile sombre sur la vue figée, équerres aux coins, titre en capitales sur
-//! un filet, boutons dans le même panneau à pans coupés que le menu principal.
+//! un filet, boutons dans le même panneau à pans coupés que le menu principal. Ses touches sont
+//! dans l'encart des touches (M10), pas écrites sous le panneau.
 
 use bevy::prelude::*;
 use bevy::ui::InteractionDisabled;
@@ -18,6 +19,7 @@ use crate::input::Pause;
 use crate::save::{GameMode, SaveKind, list_saves, save_now};
 use crate::state::{AppState, ControlMode};
 use crate::transition::Sequence;
+use crate::ui::keys_panel::{KeyHelp, KeyHint};
 use crate::ui::menu::{panel_node, spawn_save_list};
 use crate::ui::options::OptionsScreen;
 use crate::ui::terminal::Terminal;
@@ -222,10 +224,21 @@ fn render(
     for root in &roots {
         commands.entity(root).despawn();
     }
+    // Les gestes de l'écran, dans l'encart des touches (M10) : Échap reprend la partie, ou
+    // revient de la liste des sauvegardes.
+    let escape = match paused.screen {
+        PauseScreen::Main => "pause.help.resume",
+        PauseScreen::Load => "pause.help.back",
+    };
+    let help = KeyHelp::new([
+        KeyHint::mouse(MouseButton::Left, texts.get("pause.help.choose")),
+        KeyHint::key(KeyCode::Escape, texts.get(escape)),
+    ]);
     let root = commands
         .spawn((
             Name::new("Pause"),
             PauseUi,
+            help,
             DespawnOnExit(AppState::InGame),
             GlobalZIndex(20),
             Node {
@@ -271,15 +284,15 @@ fn render(
                         }
                     }
                 });
-                let hint = if mode.ironman {
-                    "pause.hint_ironman"
+                let note = if mode.ironman {
+                    "pause.note_ironman"
                 } else {
-                    "pause.hint"
+                    "pause.note"
                 };
-                // Sous le panneau, hors du cadre : la consigne est longue et ne doit pas
-                // l'élargir.
+                // Sous le panneau, hors du cadre : la note ne doit pas l'élargir. Les touches
+                // sont dans l'encart.
                 menu.spawn((
-                    Text::new(texts.get(hint)),
+                    Text::new(texts.get(note)),
                     fonts.body(16.0),
                     TextColor(theme::TEXT_DIM),
                     Node {

@@ -4,8 +4,10 @@
 //! (dessiné en nœuds), son nom en capitales espacées, l'organisation qui la tient (cyan), les
 //! voyants et la date ; bandeau de relevés à chasse fixe ; onglets ; corps en puits sombres
 //! (liste à lignes alternées et détail aligné, ou panneaux, ou conversation) ; barre d'actions à
-//! touches gravées, résultat de la dernière action coloré, consigne. Les couleurs disent l'état :
-//! ambre pour ce qui demande l'attention, cyan pour les relevés sains, rouge d'alerte.
+//! touches gravées, résultat de la dernière action coloré. Les couleurs disent l'état : ambre
+//! pour ce qui demande l'attention, cyan pour les relevés sains, rouge d'alerte. Les gestes de
+//! l'écran (lignes, actions numérotées, onglets, Échap) sont dans l'encart des touches (M10),
+//! posé sur la racine ([`KeyHelp`]) ; le panneau ne passe pas dessous.
 //!
 //! L'écran n'est reconstruit que quand la page change (action, jour, fiche du capitaine) ou que
 //! la sélection bouge : jamais à chaque frame. Le survol ne change que des couleurs.
@@ -25,9 +27,11 @@ use crate::career::{Career, MissionLog};
 use crate::clock::GameClock;
 use crate::codex::Codex;
 use crate::data::{Data, Texts};
+use crate::input::Back;
 use crate::interaction::Inventory;
 use crate::living::LivingWorld;
 use crate::state::AppState;
+use crate::ui::keys_panel::{KeyHelp, KeyHint, KeySource, SCREEN_RESERVE};
 use crate::ui::theme::{self, Frame, UiFonts};
 use crate::voyage::{Location, ShipFuel};
 
@@ -230,6 +234,7 @@ impl Ui<'_> {
             .spawn((
                 Name::new("Terminal"),
                 TerminalUi,
+                self.key_help(),
                 DespawnOnExit(AppState::InGame),
                 GlobalZIndex(20),
                 Node {
@@ -237,9 +242,10 @@ impl Ui<'_> {
                     width: percent(100),
                     height: percent(100),
                     // En haut : le bas de l'écran reste aux messages (résultats des actions).
-                    justify_content: JustifyContent::FlexStart,
-                    align_items: AlignItems::Center,
-                    flex_direction: FlexDirection::Column,
+                    // En ligne : deux cales encadrent le panneau (voir plus bas).
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::FlexStart,
+                    flex_direction: FlexDirection::Row,
                     padding: UiRect::top(percent(4)),
                     ..default()
                 },
@@ -247,6 +253,15 @@ impl Ui<'_> {
                 BackgroundColor(theme::OVERLAY.with_alpha(0.5)),
             ))
             .with_children(|root| {
+                // Le panneau est centré, mais jamais sous l'encart des touches, à gauche : la
+                // cale de gauche ne descend pas sous sa largeur, celle de droite prend le reste.
+                // En 1080p, un panneau de liste reste centré ; en 1600 × 900, il se décale.
+                root.spawn(Node {
+                    flex_grow: 1.0,
+                    flex_basis: px(0),
+                    min_width: px(SCREEN_RESERVE),
+                    ..default()
+                });
                 root.spawn((
                     Node {
                         width: px(width),
@@ -274,7 +289,69 @@ impl Ui<'_> {
                     self.body(panel);
                     self.footer(panel);
                 });
+                root.spawn(Node {
+                    flex_grow: 1.0,
+                    flex_basis: px(0),
+                    ..default()
+                });
             });
+    }
+
+    /// Les touches de l'écran, pour l'encart des touches (M10) : seulement les gestes qui servent
+    /// ici, comme la consigne qu'il remplace (lignes de liste, actions numérotées, action en
+    /// évidence, onglets, retour à la conversation ou départ).
+    fn key_help(&self) -> KeyHelp {
+        let t = self.texts;
+        let page = self.page;
+        let mut hints = Vec::new();
+        if !page.rows().is_empty() {
+            hints.push(
+                KeyHint::keys(
+                    [
+                        KeySource::Key(KeyCode::ArrowUp),
+                        KeySource::Key(KeyCode::ArrowDown),
+                    ],
+                    t.get("terminal.help.rows"),
+                )
+                .and_wheel(),
+            );
+        }
+        if !self.numbered.is_empty() {
+            let label = if matches!(page.body, Body::Dialogue { .. }) {
+                "terminal.help.reply"
+            } else {
+                "terminal.help.actions"
+            };
+            hints.push(
+                KeyHint::range(KeyCode::Digit1, KeyCode::Digit9, t.get(label))
+                    .and_mouse(MouseButton::Left),
+            );
+        }
+        if self.focus.is_some() {
+            hints.push(KeyHint::key(KeyCode::Enter, t.get("terminal.help.enter")));
+        }
+        if !page.tabs.is_empty() {
+            hints.push(KeyHint::keys(
+                [
+                    KeySource::Key(KeyCode::ArrowLeft),
+                    KeySource::Key(KeyCode::ArrowRight),
+                ],
+                t.get("terminal.help.tabs"),
+            ));
+        }
+        let back = page.choices.iter().any(|c| {
+            matches!(
+                &c.action,
+                Action::Goto(Screen::Dialogue { node, .. }) if node.is_empty()
+            )
+        });
+        // Échap passe par l'action `Back` du contexte Menu : ses touches réelles.
+        hints.push(KeyHint::action::<Back>(t.get(if back {
+            "terminal.help.back"
+        } else {
+            "terminal.help.leave"
+        })));
+        KeyHelp::new(hints)
     }
 
     // --- Petits éléments ----------------------------------------------------------------------
@@ -1097,6 +1174,16 @@ impl Ui<'_> {
                 ));
             });
         }
+        // La barre d'actions : rien à y mettre (une conversation sans « Partir »), pas de pied
+        // du tout ; les touches de l'écran sont dans l'encart.
+        let bar = self
+            .page
+            .choices
+            .iter()
+            .any(|c| c.slot == Slot::Bar || matches!(c.action, Action::Close));
+        if !bar {
+            return;
+        }
         p.spawn(theme::hairline(theme::RULE));
         p.spawn(Node {
             flex_direction: FlexDirection::Row,
@@ -1126,50 +1213,6 @@ impl Ui<'_> {
                 self.choice_button(row, close);
             }
         });
-        p.spawn((
-            Text::new(self.hint()),
-            self.fonts.body(14.0),
-            TextColor(theme::TEXT_DIM),
-            Node {
-                flex_shrink: 0.0,
-                ..default()
-            },
-        ));
-    }
-
-    /// La consigne : seulement les gestes qui servent sur cet écran.
-    fn hint(&self) -> String {
-        let t = self.texts;
-        let page = self.page;
-        let mut parts = Vec::new();
-        if !page.rows().is_empty() {
-            parts.push(t.get("terminal.hint.rows"));
-        }
-        if !self.numbered.is_empty() {
-            parts.push(t.get(if matches!(page.body, Body::Dialogue { .. }) {
-                "terminal.hint.reply"
-            } else {
-                "terminal.hint.digits"
-            }));
-        }
-        if self.focus.is_some() {
-            parts.push(t.get("terminal.hint.enter"));
-        }
-        if !page.tabs.is_empty() {
-            parts.push(t.get("terminal.hint.tabs"));
-        }
-        let back = page.choices.iter().any(|c| {
-            matches!(
-                &c.action,
-                Action::Goto(Screen::Dialogue { node, .. }) if node.is_empty()
-            )
-        });
-        parts.push(t.get(if back {
-            "terminal.hint.back"
-        } else {
-            "terminal.hint.escape"
-        }));
-        parts.join("   ·   ")
     }
 }
 

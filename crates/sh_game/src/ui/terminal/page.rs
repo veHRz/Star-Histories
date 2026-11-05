@@ -16,9 +16,9 @@ use sh_data::dialogue::Effect;
 use sh_sim::{Captain, Contract, ContractKind, ContractState, SimWorld, contract_offers};
 
 use super::{Screen, Terminal};
-use crate::career::{MissionLog, contract_title, faction_name, money, rank_name};
+use crate::career::{MissionLog, contract_title, money, rank_name};
 use crate::clock::format_date;
-use crate::codex::Entry;
+use crate::codex::{Entry, organization_name};
 use crate::data::{Data, Texts};
 use crate::living::display_name;
 
@@ -723,7 +723,7 @@ impl Ctx<'_> {
             fields: vec![
                 Field::text(
                     t.get("term.field.issuer"),
-                    faction_name(t, self.data, &c.issuer),
+                    organization_name(t, self.data, &c.issuer),
                 ),
                 Field::text(
                     t.get("term.field.from"),
@@ -764,7 +764,7 @@ impl Ctx<'_> {
             } else {
                 t.format(
                     "contracts.delivery",
-                    &[("issuer", &faction_name(t, self.data, &c.issuer))],
+                    &[("issuer", &organization_name(t, self.data, &c.issuer))],
                 )
             };
             detail.text.push((note, Tone::Dim));
@@ -888,7 +888,7 @@ fn dialogue_page(ctx: &Ctx, id: &str, node: &str, extra: Option<&str>) -> Page {
     let owner = dialogue
         .faction
         .as_ref()
-        .map(|f| faction_name(t, ctx.data, f))
+        .map(|f| organization_name(t, ctx.data, f))
         .or_else(|| ctx.place_name());
     // Qui parle : le rôle du PNJ de comptoir, s'il a un libellé.
     let speaker = dialogue
@@ -938,7 +938,7 @@ fn contracts_page(ctx: &Ctx) -> Page {
     let mut page = Page {
         header: ctx.header(
             t.get("contracts.title"),
-            Some(faction_name(t, ctx.data, issuer)),
+            Some(organization_name(t, ctx.data, issuer)),
             Glyph::Contracts,
         ),
         readouts: vec![ctx.credits(), ctx.hold(), ctx.active_contracts()],
@@ -1093,7 +1093,7 @@ fn market_page(ctx: &Ctx, preselect: Option<&str>) -> Page {
                 fields: vec![
                     Field::text(
                         t.get("term.field.issuer"),
-                        faction_name(t, ctx.data, &c.issuer),
+                        organization_name(t, ctx.data, &c.issuer),
                     ),
                     Field::text(
                         t.get("term.field.to"),
@@ -1104,7 +1104,7 @@ fn market_page(ctx: &Ctx, preselect: Option<&str>) -> Page {
                 text: vec![(
                     t.format(
                         "market.betray_warning",
-                        &[("issuer", &faction_name(t, ctx.data, &c.issuer))],
+                        &[("issuer", &organization_name(t, ctx.data, &c.issuer))],
                     ),
                     Tone::Danger,
                 )],
@@ -1153,7 +1153,7 @@ fn bank_page(ctx: &Ctx) -> Page {
             debt.fields = vec![
                 Field::text(
                     t.get("bank.field.lender"),
-                    faction_name(t, ctx.data, &loan.lender),
+                    organization_name(t, ctx.data, &loan.lender),
                 ),
                 Field::number(t.get("bank.field.balance"), money(t, loan.balance))
                     .tone(Tone::Accent),
@@ -1218,7 +1218,7 @@ fn bank_page(ctx: &Ctx) -> Page {
     Page {
         header: ctx.header(
             t.get("bank.title"),
-            Some(faction_name(t, ctx.data, lender)),
+            Some(organization_name(t, ctx.data, lender)),
             Glyph::Bank,
         ),
         readouts,
@@ -1234,7 +1234,7 @@ fn repair_page(ctx: &Ctx) -> Page {
     let mut page = Page {
         header: ctx.header(
             t.get("repair.title"),
-            Some(faction_name(t, ctx.data, &rules.issuer)),
+            Some(organization_name(t, ctx.data, &rules.issuer)),
             Glyph::Shipyard,
         ),
         ..Page::default()
@@ -1412,7 +1412,7 @@ fn sheet_page(ctx: &Ctx) -> Page {
                 Field::number(
                     t.format(
                         "sheet.field.debt",
-                        &[("lender", &faction_name(t, ctx.data, &loan.lender))],
+                        &[("lender", &organization_name(t, ctx.data, &loan.lender))],
                     ),
                     money(t, loan.balance),
                 )
@@ -1483,7 +1483,7 @@ fn sheet_page(ctx: &Ctx) -> Page {
         }
         standing
             .fields
-            .push(Field::text(faction_name(t, ctx.data, faction), shown).tone(tone));
+            .push(Field::text(organization_name(t, ctx.data, faction), shown).tone(tone));
     }
     if standing.fields.is_empty() {
         standing
@@ -1553,10 +1553,10 @@ fn codex_page(ctx: &Ctx, preselect: Option<&Entry>) -> Page {
         .iter()
         .map(|(entry, kind)| {
             let (title, lines) = crate::codex::describe(t, ctx.data, entry)
-                .unwrap_or_else(|| (crate::codex::entry_name(ctx.data, entry), Vec::new()));
+                .unwrap_or_else(|| (crate::codex::entry_name(t, ctx.data, entry), Vec::new()));
             Row {
                 cells: vec![
-                    Cell::text(crate::codex::entry_name(ctx.data, entry)),
+                    Cell::text(crate::codex::entry_name(t, ctx.data, entry)),
                     Cell::text(t.get(kind)).tone(Tone::Dim),
                 ],
                 enabled: true,

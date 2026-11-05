@@ -5,13 +5,14 @@
     // --- Commun -------------------------------------------------------------------------------
     "terminal.close": "Leave",
     "terminal.back_to_talk": "Back to the conversation",
-    "terminal.hint.rows": "↑ ↓ or wheel: pick a line",
-    "terminal.hint.digits": "[Digit1]–[Digit9] or click: actions",
-    "terminal.hint.reply": "[Digit1]–[Digit9] or click: reply",
-    "terminal.hint.enter": "[Enter]: highlighted action",
-    "terminal.hint.tabs": "← →: tabs",
-    "terminal.hint.escape": "[Escape]: leave",
-    "terminal.hint.back": "[Escape]: back to the conversation",
+    // Lignes de l'encart des touches (M10) : les touches s'affichent à côté.
+    "terminal.help.rows": "Pick a line",
+    "terminal.help.actions": "Actions",
+    "terminal.help.reply": "Reply",
+    "terminal.help.enter": "Highlighted action",
+    "terminal.help.tabs": "Tabs",
+    "terminal.help.leave": "Leave",
+    "terminal.help.back": "Back to the conversation",
     // La tablette du joueur tient le journal, la fiche et le codex (objet `datapad`).
     "term.datapad": "Shipboard datapad",
     "term.readout.credits": "Account",
@@ -174,8 +175,8 @@
     "codex.type.faction": "Organisation",
     // --- Dialogues : bureau des contrats (P25) ------------------------------------------------
     "dlg.office.name": "Hexa-Corp contract office",
-    "dlg.office.first": "A clerk in the grey of Hexa-Corp looks up from three screens at once. \"New face. Contracts or the Bank? Both are this counter. Hexa-Corp serves everyone, captain, as long as they pay and deliver.\"",
-    "dlg.office.again": "\"Captain.\" The clerk does not look up. \"Contracts, or the Bank?\"",
+    "dlg.office.first": "A clerk in the grey of Hexa-Corp looks up from three screens at once. \"New face. Here for a contract? Hexa-Corp serves everyone, captain, as long as they pay and deliver.\"",
+    "dlg.office.again": "\"Captain.\" The clerk does not look up. \"A contract?\"",
     "dlg.office.trusted": "The clerk almost smiles. \"Captain. Your deliveries arrive on time; that gets noticed upstairs. What can Logistics do for you?\"",
     "dlg.office.ask_work": "I'm looking for work.",
     "dlg.office.ask_bank": "About my mortgage.",
@@ -185,12 +186,10 @@
     "dlg.office.show_contracts": "Show me the open contracts.",
     "dlg.office.ask_rules": "What if something goes wrong?",
     "dlg.office.rules": "\"Late is a failure, and failures are on your file. A cargo sold elsewhere is a breach: every crate is registered, we always know. The Corporation will bill you twice its value and close your file. Some captains think the galaxy is large enough to hide in. It is not.\"",
-    "dlg.office.bank": "The clerk turns another screen your way: your ship, the mortgage, the schedule. \"An installment every thirty days. Miss three and the Bank collects automatically. That is in the contract too.\"",
-    "dlg.office.pay": "Pay the installment.",
-    "dlg.office.show_account": "Show me the account statement.",
-    "dlg.office.paid": "\"Received. The Bank thanks you.\"",
+    // M10 : la Banque a son propre guichet ; le bureau des contrats y renvoie poliment.
+    "dlg.office.bank": "The clerk shakes their head, eyes still on the screens. \"This is the Logistics counter, captain. For the mortgage, see the Bank's counter.\"",
     "dlg.office.closed": "The clerk's screens go dark one after the other. \"Your file is closed, captain. Hexa-Corp has nothing for you. The Bank, however, still expects its money.\"",
-    "dlg.office.bank_closed": "\"Your debt does not close with your file. Pay, or the Bank will collect.\"",
+    "dlg.office.bank_closed": "\"Your debt does not close with your file. The Bank's counter, for its part, stays open.\"",
     // --- Dialogues : guichet de la Banque (P25, M9) -------------------------------------------
     "dlg.bank.name": "Bank counter",
     "dlg.bank.first": "Behind thick glass, a Bank clerk checks your identity on a screen. \"Mortgage, installments, exchange at the Hexis rate: it all goes through this counter, captain.\"",

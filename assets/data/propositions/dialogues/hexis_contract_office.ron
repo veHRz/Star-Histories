@@ -1,6 +1,7 @@
 // Le bureau des contrats d'Hexa-Corp au spatioport d'Hexis : PROPOSITION P25.
-// M9 : le guichetier est aussi le PNJ de comptoir du rôle `contracts` (`role`), et son guichet
-// de la Banque ouvre le relevé du compte (`Open(Bank)`).
+// M9 : le guichetier est aussi le PNJ de comptoir du rôle `contracts` (`role`).
+// M10 (demande de l'auteur) : il ne fait plus la Banque, qui a son propre guichetier
+// (`hexis_bank.ron`) ; à qui parle de son hypothèque, il renvoie poliment vers ce guichet.
 // Canon (§4.4) : la Logistique émet les contrats CT, CR, CRS ; la Banque (division Finance)
 // tient l'hypothèque (CH, saisie automatique) ; le Renseignement et la Flotte Beta traquent
 // les mauvais payeurs. Le guichetier est anonyme ; ses répliques sont proposées.
@@ -64,16 +65,9 @@
                 (text: "dlg.office.back", next: "again"),
             ],
         ),
+        // La Banque a son guichet : le guichetier y renvoie.
         "bank": (
             text: "dlg.office.bank",
-            choices: [
-                (text: "dlg.office.pay", when: [HasDebt], effects: [PayInstallment], next: "paid"),
-                (text: "dlg.office.show_account", effects: [Open(Bank)]),
-                (text: "dlg.office.back", next: "again"),
-            ],
-        ),
-        "paid": (
-            text: "dlg.office.paid",
             choices: [
                 (text: "dlg.office.back", next: "again"),
                 (text: "dlg.office.bye"),
@@ -86,12 +80,10 @@
                 (text: "dlg.office.bye"),
             ],
         ),
-        // La Banque, elle, encaisse toujours.
+        // Même au traître : la Banque, elle, encaisse toujours (à son guichet).
         "bank_closed": (
             text: "dlg.office.bank_closed",
             choices: [
-                (text: "dlg.office.pay", when: [HasDebt], effects: [PayInstallment], next: "closed"),
-                (text: "dlg.office.show_account", effects: [Open(Bank)]),
                 (text: "dlg.office.bye"),
             ],
         ),
