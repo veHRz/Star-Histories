@@ -102,6 +102,7 @@ pub struct PlanetParams {
     pub terminator: Vec4,
     pub haze: Vec4,
     pub haze_shape: Vec4,
+    pub surface_finish: Vec4,
 }
 
 impl PlanetParams {
@@ -119,12 +120,7 @@ impl PlanetParams {
                 coarse.weight,
                 fine.weight,
             ),
-            detail_misc: Vec4::new(
-                coarse.blur,
-                fine.blur,
-                TRIPLANAR_SHARPNESS,
-                look.water_roughness,
-            ),
+            detail_misc: Vec4::new(coarse.blur, fine.blur, TRIPLANAR_SHARPNESS, 0.0),
             detail_strength: Vec4::new(s.urban, s.industry, s.rough, s.lights),
             night_color: scaled(look.night.color, look.night.intensity),
             night_core: scaled(look.night.core_color, look.night.intensity),
@@ -140,7 +136,13 @@ impl PlanetParams {
                 look.haze.color[2],
                 look.haze.strength,
             ),
-            haze_shape: Vec4::new(look.haze.power, look.haze.floor, look.roughness, 0.0),
+            haze_shape: Vec4::new(look.haze.power, look.haze.floor, 0.0, 0.0),
+            surface_finish: Vec4::new(
+                look.roughness,
+                look.water_roughness,
+                look.industry_roughness,
+                look.industry_metallic,
+            ),
         }
     }
 }

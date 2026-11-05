@@ -30,16 +30,20 @@
                 intensity: 1.4,
                 on: (-0.04, 0.16),
             ),
-            // Brume industrielle jaunâtre, surtout au limbe ; le crépuscule déborde un peu.
+            // Brume industrielle jaunâtre, au limbe seulement (de jour, un voile sur tout le
+            // disque délavait les villes) ; le crépuscule déborde un peu.
             haze: (
-                color: (0.78, 0.70, 0.52),
-                strength: 0.6,
-                power: 5.0,
-                floor: 0.03,
+                color: (0.72, 0.66, 0.50),
+                strength: 0.45,
+                power: 6.0,
+                floor: 0.0,
                 lit: (-0.25, 0.35),
             ),
             roughness: 0.95,
             water_roughness: 0.35,
+            // Toits et cuves des usines : reflets du soleil sur les zones sombres.
+            industry_roughness: 0.45,
+            industry_metallic: 0.5,
         ),
     },
 )

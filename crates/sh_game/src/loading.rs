@@ -14,6 +14,7 @@ use crate::data::{Data, Texts, data_dir};
 use crate::materials::TextureLibrary;
 use crate::state::{AppState, CurrentPlace, EnterGame, ViewLevel};
 use crate::ui::theme::{self, UiFonts};
+use crate::views::planet::PaintedPlanets;
 
 pub struct LoadingPlugin;
 
@@ -163,6 +164,7 @@ fn finish_loading(
     mut commands: Commands,
     task: Option<ResMut<LoadTask>>,
     textures: Res<TextureLibrary>,
+    planets: Res<PaintedPlanets>,
     start: Res<StartRequest>,
     mut app_state: ResMut<NextState<AppState>>,
     mut view: ResMut<NextState<ViewLevel>>,
@@ -170,8 +172,9 @@ fn finish_loading(
     mut exit: MessageWriter<AppExit>,
 ) {
     // Les textures partagées doivent être prêtes (mipmaps comprises) avant le premier modèle :
-    // les poser plus tard réenverrait tout au GPU en pleine partie.
-    let Some(mut task) = task.filter(|_| textures.ready()) else {
+    // les poser plus tard réenverrait tout au GPU en pleine partie. De même pour les textures
+    // peintes des astres (la 4K d'Hexis en Haut : ≈ 45 Mo envoyés sous l'écran de chargement).
+    let Some(mut task) = task.filter(|_| textures.ready() && planets.ready()) else {
         return;
     };
     let Some(result) = check_ready(&mut task.0) else {

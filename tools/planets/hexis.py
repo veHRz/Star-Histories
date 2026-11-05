@@ -208,6 +208,18 @@ class Sphere:
             amp *= gain
         return self.normalize(total)
 
+    def blur(self, a, factor):
+        """Flou large (dilatation douce) : moyenne par blocs de `factor` texels, deux passes de
+        lissage (raccord en longitude), puis interpolation à pleine résolution."""
+        h, w = self.H // factor, self.W // factor
+        small = a[: h * factor, : w * factor].reshape(h, factor, w, factor).mean(axis=(1, 3))
+        for _ in range(2):
+            small = (small + np.roll(small, 1, 1) + np.roll(small, -1, 1)) / 3.0
+            up = np.vstack([small[:1], small[:-1]])
+            down = np.vstack([small[1:], small[-1:]])
+            small = (small + up + down) / 3.0
+        return self.upsample(small.astype(F32))
+
     def normalize(self, a):
         weights = self.area
         mean = float((a * weights).sum() / weights.sum())
@@ -308,15 +320,15 @@ def crater_list(sp, mask, count, rmin_km, rmax_km, rng, planet_km=640.0):
 
 # Couleurs linéaires (albédo). Terres nues ocre et brûlées, villes gris froid, usines sombres et
 # rouillées, zones ravagées charbonneuses, mers presque noires, sel terne des bassins asséchés.
-WASTE_A = (0.150, 0.118, 0.082)
-WASTE_B = (0.092, 0.078, 0.064)
-TAILINGS = (0.165, 0.115, 0.075)
-URBAN_DARK = (0.088, 0.088, 0.090)
-URBAN_MID = (0.138, 0.136, 0.134)
-URBAN_LIGHT = (0.215, 0.210, 0.200)
-IND_DARK = (0.055, 0.054, 0.054)
-IND_RUST = (0.175, 0.090, 0.045)
-IND_METAL = (0.240, 0.250, 0.262)
+WASTE_A = (0.120, 0.094, 0.066)
+WASTE_B = (0.078, 0.064, 0.050)
+TAILINGS = (0.140, 0.100, 0.068)
+URBAN_DARK = (0.120, 0.120, 0.122)
+URBAN_MID = (0.190, 0.188, 0.183)
+URBAN_LIGHT = (0.270, 0.265, 0.255)
+IND_DARK = (0.048, 0.052, 0.058)
+IND_RUST = (0.140, 0.080, 0.048)
+IND_METAL = (0.170, 0.180, 0.195)
 CHAR = (0.034, 0.030, 0.027)
 ASH = (0.150, 0.142, 0.132)
 GLASS = (0.020, 0.024, 0.028)
@@ -328,6 +340,7 @@ SALT = (0.170, 0.158, 0.136)
 SALT_DARK = (0.105, 0.097, 0.084)
 MUD = (0.120, 0.100, 0.078)
 SMOG = (0.280, 0.255, 0.190)
+SMOG_PLUME = (0.300, 0.285, 0.235)
 
 
 def hexis_maps(width, seed=425):
@@ -428,23 +441,49 @@ def hexis_maps(width, seed=425):
     n_mid = sp.field(30.0, 3, 15)
     n_rust = sp.field(14.0, 3, 16)
 
+    # --- Masques du jour : ils ne touchent pas les lumières de nuit (calculées plus bas avec
+    # les masques d'origine, approuvées telles quelles en jeu).
+    # Le bâti dense suit la densité même des lumières : de jour, les agglomérations claires
+    # tombent là où brillent les villes la nuit.
+    built = urban ** F32(1.6) * (F32(0.06) + F32(0.5) * towns + F32(0.9) * cores)
+    dense = smoothstep(0.05, 0.30, built)
+    # Corridors urbanisés le long des grands axes, plus larges que les axes éclairés : ils
+    # relient les agglomérations et dessinent la trame en grand.
+    corridors = np.maximum(line(a1, 0.10), F32(0.7) * line(a2, 0.08))
+    corridors = corridors * land * reach * (F32(1.0) - destroyed)
+    built_day = np.maximum(urban, corridors * F32(0.9))
+    # Ceintures industrielles en lisière des agglomérations (par plaques), en plus des sites
+    # côtiers et de la ceinture du spatioport.
+    around = sp.blur(dense, max(1, sp.W // 256))
+    patches = smoothstep(-0.2, 0.7, sp.field(9.0, 3, 22))
+    belts = land * smoothstep(0.12, 0.35, around) * (F32(1.0) - dense) * patches
+    ind_day = np.maximum(industry, belts * F32(0.9)) * (F32(1.0) - destroyed)
+    # Panaches de smog au-dessus des usines, étirés par les vents zonaux.
+    plumes = smoothstep(0.08, 0.45, sp.blur(ind_day, max(1, sp.W // 512)))
+    plumes = plumes * smoothstep(-0.3, 1.4, smog_f)
+    log("masques du jour")
+
     # --- Couleur ---
-    # Terres nues : variation douce ; la rouille (terrils, scories) se tient autour des usines.
+    # Terres nues ocre sombre : les nappes grises des villes s'y détachent. La rouille (terrils,
+    # scories) se tient autour des usines.
     halo = smoothstep(q_i - 0.9, q_i, ind_f)
     waste = mix(WASTE_A, WASTE_B, smoothstep(-2.0, 2.0, F32(0.6) * n_mid + F32(0.6) * n_rust))
-    waste = mix(waste, TAILINGS, smoothstep(0.2, 1.4, n_rust) * halo * F32(0.75))
-    # Gris froid, plus sombre que les terres ocre : les villes se lisent par la teinte, sans
-    # ressembler à du givre ; les centres et les villes secondaires sont plus clairs.
+    waste = mix(waste, TAILINGS, smoothstep(0.2, 1.4, n_rust) * halo * F32(0.5))
+    # Gris clair et neutre (béton, toits) ; les centres et les villes secondaires plus clairs.
     urban_col = mix(URBAN_DARK, URBAN_MID, smoothstep(-1.4, 1.0, F32(0.5) * n_fine + F32(0.7) * n_mid))
-    dense = np.clip(cores * F32(0.8) + towns * F32(0.4) + F32(0.05) * n_fine, 0, 1)
     urban_col = mix(urban_col, URBAN_LIGHT, dense)
-    ind_col = mix(IND_DARK, IND_RUST, smoothstep(-0.3, 1.5, n_rust))
-    ind_col = mix(ind_col, IND_METAL, smoothstep(0.8, 2.0, n_fine) * F32(0.6))
+    # Grain du bâti et quartiers sombres (parcs, friches, cours d'usine) : une ville est un
+    # tissu, pas une nappe lisse qu'on prendrait pour un nuage ou de la neige.
+    urban_col = urban_col * (F32(0.80) + F32(0.40) * smoothstep(-1.6, 1.6, n_fine))[..., None]
+    urban_col = mix(urban_col, URBAN_DARK, smoothstep(0.7, 1.7, n_mid) * F32(0.6))
+    # Usines sombres et métalliques (le shader leur donne leur reflet), liserés de rouille.
+    ind_col = mix(IND_DARK, IND_METAL, smoothstep(0.5, 2.0, n_fine) * F32(0.7))
+    ind_col = mix(ind_col, IND_RUST, smoothstep(0.6, 1.8, n_rust) * F32(0.5))
     rav_col = mix(CHAR, ASH, smoothstep(-0.4, 2.0, n_mid + F32(0.6) * n_fine))
     rav_col = mix(rav_col, GLASS, scars)
 
-    land_col = mix(waste, urban_col, urban)
-    land_col = mix(land_col, ind_col, industry)
+    land_col = mix(waste, urban_col, built_day)
+    land_col = mix(land_col, ind_col, ind_day)
     land_col = mix(land_col, rav_col, ravaged * F32(0.92))
     ejecta_grain = F32(0.6) + F32(0.4) * smoothstep(-1, 1, n_fine)
     land_col = mix(land_col, ASH, c_ejecta * F32(0.30) * ejecta_grain)
@@ -468,7 +507,8 @@ def hexis_maps(width, seed=425):
 
     color = mix(sea_col, land_col, land)
     color = mix(color, salt_col, dried)
-    color = mix(color, SMOG, smog * F32(0.30))
+    color = mix(color, SMOG, smog * F32(0.22))
+    color = mix(color, SMOG_PLUME, plumes * F32(0.5))
     log("couleur")
 
     # --- Lumières de nuit : centres éclatants, semis de villes, axes, usines ; banlieues
@@ -489,7 +529,8 @@ def hexis_maps(width, seed=425):
     log("lumières")
 
     water = sea * (F32(1.0) - dried)
-    data = np.stack([lights, urban, industry, water], axis=-1).astype(F32)
+    # Données : les masques du jour pilotent le détail et le fini métallique des usines.
+    data = np.stack([lights, built_day, ind_day, water], axis=-1).astype(F32)
     return color.astype(F32), np.clip(data, 0.0, 1.0)
 
 
@@ -788,10 +829,10 @@ LOOK = {
     "night_core": (1.0, 0.86, 0.62),
     "night_intensity": 1.4,
     "lights_on": (-0.04, 0.16),
-    "haze_color": (0.78, 0.70, 0.52),
-    "haze_strength": 0.6,
-    "haze_power": 5.0,
-    "haze_floor": 0.03,
+    "haze_color": (0.72, 0.66, 0.50),
+    "haze_strength": 0.45,
+    "haze_power": 6.0,
+    "haze_floor": 0.0,
     "haze_lit": (-0.25, 0.35),
 }
 SUN_OUT = 400.0 / (1.2 * 2**7) / math.pi  # 400 lux, exposition INDOOR (EV100 7), ÷ π
@@ -949,6 +990,12 @@ def previews(color, data, detail):
     views = {
         # Arrivée près de L'Enclume, Hexis au centre (SH_LOOK) : face éclairée.
         "loin-jour": (absolute_to_maps(enclume), (0, 0, 0), 75.0),
+        # À la même distance que l'arrivée (2,5 rayons), le soleil de trois quarts.
+        "trois-quarts": (
+            absolute_to_maps((2.5 * math.cos(math.radians(98.0)), 0.3, 2.5 * math.sin(math.radians(98.0)))),
+            (0, 0, 0),
+            75.0,
+        ),
         # SH_ARRIVAL=hexis,2000000 : terminateur au bord.
         "terminateur": (absolute_to_maps(tuple(3.125 * c for c in offset)), (0, 0, 0), 75.0),
         # SH_ARRIVAL=hexis,-2000000 + SH_LOOK : côté nuit.

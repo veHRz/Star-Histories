@@ -994,6 +994,13 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
         }
     }
 
+    // --- Apparence des astres ----------------------------------------------------------------
+    // Les données seules (pas de dossier d'assets ici) : la présence des textures est vérifiée
+    // par le test de `planets.rs`.
+    for problem in data.planets.check(&data.galaxy, None) {
+        c.fail(crate::paths::PLANETS, problem);
+    }
+
     // --- Dialogues ---------------------------------------------------------------------------
     for id in duplicates(data.dialogues.iter().map(|d| d.id.as_str())) {
         c.fail("dialogues", format!("identifiant en double : {id}"));

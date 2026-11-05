@@ -66,6 +66,10 @@ pub struct PlanetLook {
     pub roughness: f32,
     /// Rugosité perçue de l'eau : plus lisse, elle renvoie un reflet du soleil.
     pub water_roughness: f32,
+    /// Fini des zones industrielles (toits et cuves métalliques) : rugosité et part de métal,
+    /// pour qu'elles accrochent des reflets du soleil.
+    pub industry_roughness: f32,
+    pub industry_metallic: f32,
 }
 
 /// La grande couche (quartiers, vue de loin) et la fine (îlots, orbite basse).
@@ -131,8 +135,9 @@ impl PlanetLooks {
         self.bodies.get(body)
     }
 
-    /// Incohérences : astre inconnu ou secret, texture absente (si `assets_dir` est donné),
-    /// réglage hors de sa plage. Vide si tout va bien.
+    /// Incohérences (messages sans nom de fichier : la validation le donne en contexte) : astre
+    /// inconnu ou secret, texture absente (si `assets_dir` est donné), réglage hors de sa plage.
+    /// Vide si tout va bien.
     pub fn check(&self, galaxy: &Galaxy, assets_dir: Option<&Path>) -> Vec<String> {
         let mut issues = Vec::new();
         for (id, look) in &self.bodies {
@@ -140,10 +145,8 @@ impl PlanetLooks {
                 .ok()
                 .and_then(|i| galaxy.body(&i));
             match body {
-                None => issues.push(format!("planets.ron : astre inconnu « {id} »")),
-                Some(b) if b.secret => {
-                    issues.push(format!("planets.ron : « {id} » est un astre secret"));
-                }
+                None => issues.push(format!("astre inconnu « {id} »")),
+                Some(b) if b.secret => issues.push(format!("« {id} » est un astre secret")),
                 Some(_) => {}
             }
             if let Some(dir) = assets_dir {
@@ -153,7 +156,7 @@ impl PlanetLooks {
                     .chain([&look.surface, &look.detail])
                     .filter(|p| !dir.join(p).is_file());
                 for path in paths {
-                    issues.push(format!("planets.ron ({id}) : texture absente « {path} »"));
+                    issues.push(format!("{id} : texture absente « {path} »"));
                 }
             }
             let layers = [look.detail_layers.coarse, look.detail_layers.fine];
@@ -161,20 +164,26 @@ impl PlanetLooks {
                 .iter()
                 .any(|l| !(l.tile_km > 0.0 && l.weight >= 0.0 && l.blur >= 0.0))
             {
-                issues.push(format!("planets.ron ({id}) : couche de détail invalide"));
+                issues.push(format!("{id} : couche de détail invalide"));
             }
             let unit = |v: f32| (0.0..=1.0).contains(&v);
-            if !unit(look.roughness) || !unit(look.water_roughness) {
-                issues.push(format!("planets.ron ({id}) : rugosité hors de [0, 1]"));
+            let finish = [
+                look.roughness,
+                look.water_roughness,
+                look.industry_roughness,
+                look.industry_metallic,
+            ];
+            if !finish.into_iter().all(unit) {
+                issues.push(format!("{id} : rugosité ou métal hors de [0, 1]"));
             }
             if !unit(look.haze.strength) || !unit(look.haze.floor) || look.haze.power <= 0.0 {
-                issues.push(format!("planets.ron ({id}) : voile hors de sa plage"));
+                issues.push(format!("{id} : voile hors de sa plage"));
             }
             if look.night.intensity < 0.0
                 || look.night.on[0] >= look.night.on[1]
                 || look.haze.lit[0] >= look.haze.lit[1]
             {
-                issues.push(format!("planets.ron ({id}) : seuils jour / nuit invalides"));
+                issues.push(format!("{id} : seuils jour / nuit invalides"));
             }
         }
         issues

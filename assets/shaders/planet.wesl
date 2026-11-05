@@ -20,8 +20,7 @@ import bevy_pbr::render::{
 struct PlanetParams {
     // x, y : carreaux par rayon des deux couches de détail ; z, w : leurs poids.
     detail_scale: vec4<f32>,
-    // x, y : flou des deux couches (niveaux de mipmap) ; z : netteté du mélange triplanaire ;
-    // w : rugosité de l'eau.
+    // x, y : flou des deux couches (niveaux de mipmap) ; z : netteté du mélange triplanaire.
     detail_misc: vec4<f32>,
     // Force de la modulation : x ville, y industrie, z relief, w lumières.
     detail_strength: vec4<f32>,
@@ -33,8 +32,10 @@ struct PlanetParams {
     terminator: vec4<f32>,
     // rgb : teinte du voile ; w : opacité au limbe.
     haze: vec4<f32>,
-    // x : puissance du fresnel ; y : voile minimal ; z : rugosité des terres.
+    // x : puissance du fresnel ; y : voile minimal.
     haze_shape: vec4<f32>,
+    // Fini : x rugosité des terres, y de l'eau, z des usines ; w part de métal des usines.
+    surface_finish: vec4<f32>,
 }
 
 @group(constants::MATERIAL_BIND_GROUP) @binding(100) var<uniform> planet: PlanetParams;
@@ -120,7 +121,10 @@ fn fragment(
 
     let base = pbr_input.material.base_color;
     pbr_input.material.base_color = vec4<f32>(base.rgb * max(1.0 + modulation, 0.0), base.a);
-    pbr_input.material.perceptual_roughness = mix(planet.haze_shape.z, planet.detail_misc.w, water);
+    // Usines : toits et cuves métalliques qui accrochent le soleil ; eau plus lisse encore.
+    let finish = planet.surface_finish;
+    pbr_input.material.perceptual_roughness = mix(mix(finish.x, finish.z, industry), finish.y, water);
+    pbr_input.material.metallic = finish.w * industry * (1.0 - water);
     pbr_input.material.base_color = alpha_discard(
         pbr_input.material.flags,
         pbr_input.material.alpha_cutoff,
