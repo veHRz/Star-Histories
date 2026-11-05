@@ -15,6 +15,16 @@ antérieur) a encore sa propre copie de ces fonctions.
 Aperçus (M8, lot C) : `preview_lit` (Cycles, une lampe par repère `LIGHT_` et les surfaces
 émissives) et `preview_game` (ce que le jeu affiche en Bas et Moyen dans une cellule à
 lightmap : couleur × (1 − métal) × lightmap × exposition, plus l'émissif).
+
+M9 (lot A, docs/m9-retours.md §3) :
+- noms de salle : `meta["rooms"]` = {cellule: usage} (« cockpit », « cabin »… ou la clé complète
+  « room.cockpit ») ; le descripteur écrit `name_key: Some("room.<usage>")` par cellule
+  (`room_key`, liste des usages connus : `ROOM_USAGES`) ;
+- volumes d'interaction : `half_extents` et `fit_interact` (de `common`) pour les repères
+  `INTERACT_*` que le script de lieu crée lui-même ;
+- décor par niveau : `export_sector` fusionne par (matériau, niveau) (`common.join_by_material`),
+  ne garde que le niveau 0 dans la version simplifiée (LOD) et refuse un collider marqué
+  `detail` ; le bake (`lightmap.bake_cells`) coupe l'ombre du décor optionnel.
 """
 
 from __future__ import annotations
@@ -33,6 +43,29 @@ import ship_interior as kit
 # Extension des modèles de cellule (glTF séparé depuis M8 : images partagées, une seule copie
 # en mémoire vidéo quel que soit le nombre de cellules qui les citent).
 MODEL_EXT = ".gltf"
+
+# Usages de salle connus (docs/m9-retours.md §3.5) : clés `room.<usage>` des fichiers de langue
+# (`lang/<code>/rooms.ron`, lot L2). Un usage hors liste est permis, mais signalé : sa clé doit
+# être ajoutée aux langues, sinon la validation des données échoue.
+ROOM_USAGES = (
+    "cockpit", "cabin", "airlock", "cargo_hold", "engine_room", "mess", "crew_quarters", "corridor",
+    "hangar", "arrivals_hall", "contracts_office", "tavern", "market", "bank", "shipyard_office",
+)
+
+# Aides aux volumes d'interaction (M9) : voir `common.half_extents` et `common.fit_interact`.
+half_extents = c.half_extents
+fit_interact = c.fit_interact
+# Objet ramassable rattaché à son repère, pour `parts["pickups"]` (voir `ship_interior.attach_pickup`).
+attach_pickup = kit.attach_pickup
+
+
+def room_key(usage: str) -> str:
+    """« cockpit » → « room.cockpit » (une clé complète « room.… » est rendue telle quelle) ;
+    signale un usage hors de `ROOM_USAGES`."""
+    key = usage if usage.startswith("room.") else f"room.{usage}"
+    if key[len("room."):] not in ROOM_USAGES:
+        print(f"attention : nom de salle « {key} » hors de la liste connue (à ajouter aux langues, lot L2)")
+    return key
 
 
 def openings_for(cell: str, cells: dict, portals: list, windows: dict) -> list:
@@ -95,8 +128,13 @@ def fmt(v) -> str:
 
 def sector_ron(meta: dict, cells: dict, portals: list, spawns: list, lightmaps: dict) -> str:
     """Descripteur RON. `meta` : id, kind, name_key, status, door_model, models, comment ;
-    `model_ext` facultatif (défaut `MODEL_EXT`, glTF séparé)."""
+    `model_ext` facultatif (défaut `MODEL_EXT`, glTF séparé) ; `rooms` facultatif (M9) :
+    {cellule: usage} → `name_key: Some("room.<usage>")` dans la cellule."""
     ext = meta.get("model_ext", MODEL_EXT)
+    rooms = meta.get("rooms", {})
+    unknown = sorted(set(rooms) - set(cells))
+    if unknown:
+        raise ValueError(f"meta['rooms'] cite des cellules inconnues : {unknown}")
     lines = [
         f"// Généré par {meta['script']} : NE PAS ÉDITER À LA MAIN.",
         f"// {meta['comment']}",
@@ -116,6 +154,10 @@ def sector_ron(meta: dict, cells: dict, portals: list, spawns: list, lightmaps: 
         lines += [
             "        (",
             f'            id: "{cell}",',
+        ]
+        if cell in rooms:
+            lines.append(f'            name_key: Some("{room_key(rooms[cell])}"),')
+        lines += [
             f'            model: "{model}{ext}",',
             f'            lod: "{model}_lod{ext}",',
             f"            min: {fmt(lo)},",
@@ -229,6 +271,13 @@ def export_sector(
     exports = c.collection("EXPORT")
     # Matrices à jour avant dépliage et fusion (les pavés orientés posent matrix_basis).
     bpy.context.view_layer.update()
+    # Décor par niveau (M9) : jamais de collider optionnel, et la version simplifiée (LOD) ne
+    # garde que ce que le Bas affiche.
+    bad = sorted(o.name for p in built.values() for o in p["colliders"] if c.detail_of(o) > 0)
+    if bad:
+        raise ValueError(f"colliders marqués comme décor optionnel (detail ≥ 1) : {bad[:8]}")
+    for p in built.values():
+        p["structure"] = [o for o in p["structure"] if c.detail_of(o) == 0]
     renamed = sum(unique_collider_names(p["colliders"]) for p in built.values())
     if renamed:
         print(f"colliders renommés (noms en double du kit) : {renamed}")
@@ -255,8 +304,12 @@ def export_sector(
                 _check_gltf_names(f"assets/{meta['models']}/{cell}{suffix}{MODEL_EXT}")
             for obj in merged + lod:
                 obj.hide_set(True)
+            by_level = {}
+            for o in merged:
+                by_level[c.detail_of(o)] = by_level.get(c.detail_of(o), 0) + _tris([o])
             stats[cell] = {
                 "tris": _tris(merged + parts["pickups"]),
+                "tris_by_detail": by_level,
                 "lod_tris": _tris(lod),
                 "materials": sorted({o.data.materials[0].name for o in merged}),
                 "res": resolutions[cell],
@@ -274,6 +327,8 @@ def export_sector(
             f"{s['culled']} faces cachées retirées"
         )
         print(f"  matériaux : {', '.join(s['materials'])}")
+        if len(s["tris_by_detail"]) > 1:
+            print("  décor par niveau : " + ", ".join(f"niveau {k} : {v} triangles" for k, v in sorted(s["tris_by_detail"].items())))
     removed = _remove_stale(meta["models"], cells)
     if removed:
         print(f"anciens modèles supprimés : {', '.join(removed)}")

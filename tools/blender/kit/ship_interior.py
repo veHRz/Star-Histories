@@ -24,6 +24,16 @@ Gameplay intact : mêmes colliders, mêmes repères `INTERACT_` / `SOCKET_` / `L
 positions relatives, mêmes ouvertures. Un détail qui avance de plus de 0,1 m dans la pièce sous
 2,1 m a son collider (`_col`).
 
+M9 (lot A, docs/m9-retours.md §3) :
+- décor par niveau de qualité : les pièces d'habillage prennent `detail=` (0 par défaut : comme
+  en M8 ; ≥ 1 : marquées `detail`, sans collider, `_finish`) ;
+- volumes d'interaction : chaque `INTERACT_` de siège, console, casier ou comptoir est au centre
+  de l'objet et porte `half_extents` (`_interact`) ; sièges toujours interactifs (`role` :
+  "pilot", "copilot", "passenger" par défaut) ;
+- portes sans écran ; nouvelles pièces : `bed`, `locker(container=)`, `locker_bank`, `counter`
+  (comptoir de PNJ, `SOCKET_<nom>_npc`), `wall_desk`, `shelf`, `cabin_porthole` ; style de coque
+  `hangar` et `floor_holes` ; pièces de hangar dans `kit/hangar.py` (aussi `kit.hangar_shell`…).
+
 Grille modulaire : 2 m (P5). Repères : X = tribord, Y = avant, Z = haut (Blender).
 """
 
@@ -46,7 +56,7 @@ WALL = 0.2  # épaisseur des cloisons
 DOOR_W = 1.4
 DOOR_H = 2.2
 
-STYLES = ("ship", "industrial", "station")
+STYLES = ("ship", "industrial", "station", "hangar")
 # Hauteur sous laquelle un détail en saillie doit avoir un collider (le joueur y passe la tête).
 HEAD_CLEAR = 2.1
 
@@ -68,7 +78,9 @@ def palette() -> dict:
     grating_glow, trim_sheet (trim sheet `trim_ship`, à poser avec `common.uv_trim`), rubber, buttons,
     band_cool / band_amber / band_warm / band_reactor (bandeaux, cuits), light_amber, beacon,
     concrete, tiles, paint_yellow, paint_black, door_paint, crate_slate / crate_rust /
-    crate_yellow. Plusieurs clés peuvent désigner le même matériau.
+    crate_yellow. M9 : fabric_dark (couvertures), fabric_light (matelas, oreillers), glass_dark
+    (verre fumé opaque), grating_plain (caillebotis sans lumière dessous : passerelles). Plusieurs
+    clés peuvent désigner le même matériau.
     """
     lib = c.material_library()
     tints = lib.TINTS
@@ -107,6 +119,12 @@ def palette() -> dict:
         "light_amber": c.material("sh_light_amber", (1.0, 0.8, 0.6), emission=(1.0, 0.55, 0.2), emission_strength=4.0),
         "beacon": c.material("sh_beacon_red", (0.6, 0.05, 0.03), emission=(1.0, 0.12, 0.06), emission_strength=6.0),
         "glass": c.material("sh_glass", (0.55, 0.70, 0.80), roughness=0.05, alpha=0.12),
+        # M9 : couverture des couchettes, verre fumé opaque (hublots de porte et de cabine : on
+        # ne voit pas au travers, rien à charger derrière).
+        "fabric_dark": c.textured_material("sh_fabric_dark", "fabric", tint=(0.30, 0.34, 0.41)),
+        "grating_plain": c.textured_material("sh_grating_plain", "grating"),
+        "fabric_light": c.textured_material("sh_fabric_light", "fabric", tint=(0.66, 0.66, 0.63)),
+        "glass_dark": c.material("sh_glass_dark", (0.02, 0.026, 0.032), roughness=0.08),
     }
     # Clés historiques (M1), désormais texturées.
     m.update({
@@ -240,6 +258,73 @@ def _tris(objs) -> int:
     return sum(sum(len(p.vertices) - 2 for p in o.data.polygons) for o in objs if o.type == "MESH" and not o.name.endswith("_col"))
 
 
+def _finish(vis, col, marks, detail: int = 0):
+    """Applique le niveau de décor d'une pièce (M9, `common.set_detail`) : ses maillages (et ses
+    `LIGHT_`) sont marqués, et un décor optionnel (niveau ≥ 1) n'a jamais de collider (ils sont
+    supprimés de la scène). Niveau 0 : rien ne change (comportement de M8)."""
+    if not detail:
+        return vis, col, marks
+    c.set_detail(vis + [mk for mk in marks if mk.name.startswith("LIGHT_")], detail)
+    for obj in col:
+        bpy.data.objects.remove(obj, do_unlink=True)
+    return vis, [], marks
+
+
+def _interact(name, center, size, props: dict, coll, margin: float = 0.04):
+    """Repère `INTERACT_<name>` au centre du volume de l'objet (repère local de la pièce, avant
+    `_place`), avec l'extra `half_extents` (M9) qui couvre `size` (tailles Blender) plus
+    `margin` de chaque côté : le rayon de visée touche le capteur avant le collider."""
+    props = dict(props)
+    props["half_extents"] = c.half_extents(size, margin)
+    return c.empty(f"INTERACT_{name}", center, coll, props)
+
+
+def _strut(name, p0, p1, w, h, mat, coll, uv="box", tile=None, bevel=0.0):
+    """Barre de section w × h de p0 à p1 (treillis, contreventements, bras) : la largeur w est
+    horizontale quand c'est possible, la hauteur h dans le plan vertical de la barre."""
+    p0, p1 = Vector(p0), Vector(p1)
+    d = p1 - p0
+    L = d.length
+    t = d.normalized()
+    side = t.cross(Vector((0, 0, 1)))
+    if side.length < 1e-4:
+        side = Vector((1, 0, 0))
+    side.normalize()
+    up = side.cross(t).normalized()
+    obj = c.box(name, (L, w, h), (0, 0, 0), mat, coll, bevel=bevel)
+    obj.matrix_basis = Matrix.Translation((p0 + p1) / 2) @ Matrix((t, side, up)).transposed().to_4x4()
+    return _uv(obj, uv, tile)
+
+
+def _ring(name, r_in, r_out, depth, center, mat, coll, axis="Y", segments=20):
+    """Anneau plat (couronne extrudée) d'axe `axis` : cadres de hublot, colliers, enrouleurs."""
+    mesh = bpy.data.meshes.new(name)
+    bm = bmesh.new()
+    rings = []
+    for z in (-depth / 2, depth / 2):
+        for r in (r_out, r_in):
+            rings.append([bm.verts.new((r * math.cos(2 * math.pi * i / segments), r * math.sin(2 * math.pi * i / segments), z)) for i in range(segments)])
+    oz0, iz0, oz1, iz1 = rings
+    for i in range(segments):
+        j = (i + 1) % segments
+        bm.faces.new((oz0[i], oz0[j], oz1[j], oz1[i]))  # flanc extérieur
+        bm.faces.new((iz0[j], iz0[i], iz1[i], iz1[j]))  # flanc intérieur
+        bm.faces.new((oz1[i], oz1[j], iz1[j], iz1[i]))  # face avant
+        bm.faces.new((oz0[j], oz0[i], iz0[i], iz0[j]))  # face arrière
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    if axis == "Y":
+        bmesh.ops.rotate(bm, verts=bm.verts, cent=(0, 0, 0), matrix=Matrix.Rotation(math.radians(90), 3, "X"))
+    elif axis == "X":
+        bmesh.ops.rotate(bm, verts=bm.verts, cent=(0, 0, 0), matrix=Matrix.Rotation(math.radians(90), 3, "Y"))
+    bm.to_mesh(mesh)
+    bm.free()
+    mesh.materials.append(mat)
+    obj = bpy.data.objects.new(name, mesh)
+    obj.location = center
+    coll.objects.link(obj)
+    return _uv(obj, "box")
+
+
 # --- Repère d'une cloison -------------------------------------------------------------------------
 
 
@@ -313,7 +398,55 @@ _STYLE = {
     "ship": {"wall": "panel", "ceiling": "panel", "floor": "floor_plate", "frame": "dark", "band": "band_cool", "rib": "dark"},
     "industrial": {"wall": "panel", "ceiling": "dark", "floor": "floor_plate", "frame": "dark", "band": "band_amber", "rib": "dark"},
     "station": {"wall": "concrete", "ceiling": "dark", "floor": "tiles", "frame": "paint_black", "band": "band_warm", "rib": "paint_black"},
+    # M9 : grande salle haute (hangar) : sol de béton, soubassement sombre de 2,4 m à pied de
+    # bandes de danger, colonnes en H tous les 6 m, bandeaux ambrés à 3 m.
+    "hangar": {"wall": "panel", "ceiling": "dark", "floor": "concrete", "frame": "paint_black", "band": "band_amber", "rib": "dark"},
 }
+
+
+def _rect_minus(outer, holes):
+    """Rectangles (x0, x1, y0, y1) qui couvrent `outer` privé des `holes` (même format), par
+    découpage en grille puis fusion des cases voisines : peu de pavés (sol percé d'une fosse)."""
+    ax0, ax1, ay0, ay1 = outer
+    xs = sorted({ax0, ax1} | {min(max(h[i], ax0), ax1) for h in holes for i in (0, 1)})
+    ys = sorted({ay0, ay1} | {min(max(h[i], ay0), ay1) for h in holes for i in (2, 3)})
+
+    def kept(xa, xb, ya, yb):
+        mx, my = (xa + xb) / 2, (ya + yb) / 2
+        return not any(h[0] < mx < h[1] and h[2] < my < h[3] for h in holes)
+
+    rows = []
+    for ya, yb in zip(ys[:-1], ys[1:]):
+        if yb - ya < 1e-6:
+            continue
+        runs, start = [], None
+        for xa, xb in zip(xs[:-1], xs[1:]):
+            if xb - xa < 1e-6:
+                continue
+            if kept(xa, xb, ya, yb):
+                start = xa if start is None else start
+                end = xb
+            elif start is not None:
+                runs.append((start, end))
+                start = None
+        if start is not None:
+            runs.append((start, end))
+        rows.append((ya, yb, runs))
+    out = []
+    open_ = {}
+    for ya, yb, runs in rows:
+        nxt = {}
+        for run in runs:
+            if run in open_:
+                nxt[run] = (open_[run][0], yb)
+            else:
+                nxt[run] = (ya, yb)
+        for run, span in open_.items():
+            if run not in nxt:
+                out.append((run[0], run[1], span[0], span[1]))
+        open_ = nxt
+    out += [(run[0], run[1], span[0], span[1]) for run, span in open_.items()]
+    return out
 
 
 def room_shell(
@@ -340,6 +473,8 @@ def room_shell(
     rib_every: float | None = None,
     beams=True,
     avoid=(),
+    floor_holes=(),
+    dressing_detail: int = 0,
 ) -> dict:
     """Sol, plafond et quatre cloisons d'une salle de dimensions intérieures données.
 
@@ -366,6 +501,13 @@ def room_shell(
     - `avoid` : [(x, y)] (plafonniers) : pas de poutre à moins de 0,45 m, pas de traverse de
       nervure de couloir à moins de 0,55 m (le long du grand axe).
 
+    Paramètres ajoutés en M9 (à mot-clé) :
+    - `style` "hangar" : grande salle haute (sol de béton, soubassement sombre de 2,4 m, colonnes
+      en H tous les 6 m, bandeaux ambrés à 3 m) ; `hangar.hangar_shell` y ajoute la charpente ;
+    - `floor_holes` : [(x0, x1, y0, y1)] rectangles où le sol (visuel et collision) est percé
+      (fosse d'un berceau d'amarrage, `hangar.docking_cradle`) ;
+    - `dressing_detail` : niveau de décor de l'habillage des couloirs (chemin de câbles, tuyaux).
+
     Renvoie {"visual": [...], "structure": [...], "colliders": [...]} (`structure` : ce qui
     reste dans la version simplifiée de la cellule). Les colliders des murs, du sol, du plafond
     et des fenêtres sont exactement ceux de M1 ; s'y ajoutent ceux des détails en saillie.
@@ -381,7 +523,7 @@ def room_shell(
         corridor = min(w, d) <= 3.0
     long_y = d >= w - 1e-6
     long_sides = ("E", "W") if long_y else ("N", "S")
-    every = rib_every or (4.0 if style == "station" and not corridor else GRID)
+    every = rib_every or ({"station": 4.0, "hangar": 6.0}.get(style, GRID) if not corridor else GRID)
     if top_chamfer is None:
         top_chamfer = 0.45 if corridor else (0.35 if style == "ship" else 0.0)
     if low_chamfer is None:
@@ -411,8 +553,17 @@ def room_shell(
         return _BAY_OFFSETS[k]
 
     # --- Sol -----------------------------------------------------------------------------------
-    col("floor", (w + 2 * WALL, d + 2 * WALL, WALL), (cx, cy, z0 - WALL / 2))
-    if floor_strip:
+    if floor_holes:
+        # Sol percé : un pavé (visuel et collision) par rectangle restant.
+        for a0, a1, b0, b1 in _rect_minus((x0 - WALL, x1 + WALL, y0 - WALL, y1 + WALL), [tuple(h) for h in floor_holes]):
+            size, center = (a1 - a0, b1 - b0, WALL), ((a0 + a1) / 2, (b0 + b1) / 2, z0 - WALL / 2)
+            col("floor", size, center)
+            add(_box(nm("floor"), size, center, S["floor"], coll), True)
+    else:
+        col("floor", (w + 2 * WALL, d + 2 * WALL, WALL), (cx, cy, z0 - WALL / 2))
+    if floor_holes:
+        pass
+    elif floor_strip:
         L = d + 2 * WALL if long_y else w + 2 * WALL
         across = w if long_y else d
         side_w = (across + 2 * WALL - 0.8) / 2
@@ -513,8 +664,9 @@ def room_shell(
                 if bands:
                     _corner_band(prefix, fr, sa + 0.1, sb - 0.1, height - tc, S["band"], m, coll, add, nm)
         elif side in long_sides and bands and style != "ship" and not corridor:
-            # Bandeaux de salle sans pan coupé : sous le plafond, entre les nervures.
-            zb = height - (0.62 if style == "station" else 0.42)
+            # Bandeaux de salle sans pan coupé : sous le plafond, entre les nervures (à 3 m dans
+            # un hangar : ils éclairent le soubassement et le sol, pas la charpente).
+            zb = 3.0 if style == "hangar" else height - (0.62 if style == "station" else 0.42)
             bounds = [fr.lo] + rib_pos + [fr.hi]
             for pa, pb in zip(bounds[:-1], bounds[1:]):
                 seg = [(sa, sb) for sa, sb in _cuts(pa + 0.35, pb - 0.35, [(a - 0.3, b + 0.3) for a, b, oh, sill in holes if sill + oh + 0.3 > zb]) if sb - sa > 0.6]
@@ -551,8 +703,8 @@ def room_shell(
                 continue
             if corridor and side not in long_sides:
                 continue
-            if style == "industrial" and not corridor and side in long_sides:
-                _column(prefix, fr, p, height, m, coll, nm, col, add)
+            if style in ("industrial", "hangar") and not corridor and side in long_sides:
+                _column(prefix, fr, p, height, m, coll, nm, col, add, heavy=style == "hangar")
                 continue
             if style == "station" and not corridor:
                 _pilaster(prefix, fr, p, height, m, coll, nm, col, add)
@@ -603,10 +755,10 @@ def room_shell(
         else:
             a, b = (x0 + 0.02, cy + 0.42, zt), (x1 - 0.02, cy + 0.42, zt)
             pa = [((x0 + 0.02, cy - 0.42, zt - 0.16), (x1 - 0.02, cy - 0.42, zt - 0.16)), ((x0 + 0.02, cy - 0.58, zt - 0.13), (x1 - 0.02, cy - 0.58, zt - 0.13))]
-        for o in cable_tray(nm("tray"), (a[0], a[1], zt - 0.12), (b[0], b[1], zt - 0.12), m, coll, hang_to=zt)[0]:
+        for o in cable_tray(nm("tray"), (a[0], a[1], zt - 0.12), (b[0], b[1], zt - 0.12), m, coll, hang_to=zt, detail=dressing_detail)[0]:
             add(o)
         for i, (q0, q1) in enumerate(pa):
-            for o in pipe(nm("pipe"), q0, q1, m, coll, radius=0.05 if i == 0 else 0.035, hang_to=zt)[0]:
+            for o in pipe(nm("pipe"), q0, q1, m, coll, radius=0.05 if i == 0 else 0.035, hang_to=zt, detail=dressing_detail)[0]:
                 add(o)
     return out
 
@@ -720,6 +872,12 @@ def _wainscot(prefix, fr: _Wall, sa, sb, style, m, coll, add, nm):
         add(_box(nm("wainscot"), size, tuple(fr.p(s, 0.02, 0.45)), m["dark"], coll))
         add(_ori(nm("rail"), (L, 0.11, 0.05), tuple(fr.p(s, 0.045, 0.95)), tuple(rt), (0, 0, 1), m["trim_sheet"], coll, "edge"))
         add(_ori(nm("kick"), (L, 0.12, 0.012), tuple(fr.p(s, 0.046, 0.065)), tuple(rt), (0, 0, 1), m["trim_sheet"], coll, "rivets"))
+    elif style == "hangar":
+        # Soubassement sombre de 2,4 m, lisse, pied à bandes de danger.
+        size = (L, 0.04, 2.4) if fr.side in "NS" else (0.04, L, 2.4)
+        add(_box(nm("wainscot"), size, tuple(fr.p(s, 0.02, 1.2)), m["dark"], coll), True)
+        add(_ori(nm("rail"), (L, 0.11, 0.05), tuple(fr.p(s, 0.045, 2.45)), tuple(rt), (0, 0, 1), m["trim_sheet"], coll, "edge"))
+        add(_ori(nm("hazard_foot"), (L, 0.3, 0.012), tuple(fr.p(s, 0.046, 0.15)), tuple(rt), (0, 0, 1), m["trim_sheet"], coll, "hazard"))
     else:
         size = (L, 0.05, 0.18) if fr.side in "NS" else (0.05, L, 0.18)
         add(_box(nm("socle"), size, tuple(fr.p(s, 0.025, 0.09)), m["paint_black"], coll))
@@ -727,19 +885,26 @@ def _wainscot(prefix, fr: _Wall, sa, sb, style, m, coll, add, nm):
         add(_ori(nm("rail"), (L, 0.11, 0.05), tuple(fr.p(s, 0.025, 1.27)), tuple(rt), (0, 0, 1), m["trim_sheet"], coll, "edge"))
 
 
-def _column(prefix, fr: _Wall, s, height, m, coll, nm, col, add):
+def _column(prefix, fr: _Wall, s, height, m, coll, nm, col, add, heavy: bool = False):
     """Colonne en H contre le mur (style industriel) : âme, semelles, face rivée, gousset de
-    pied ; collider."""
+    pied ; collider. `heavy` (hangar) : profil de 0,5 m, pied jaune à bandes de danger sur 1,5 m."""
     z = Vector((0, 0, 1))
-    size_web = (0.025, 0.18, height) if fr.side in "NS" else (0.18, 0.025, height)
-    add(_box(nm("col_web"), size_web, tuple(fr.p(s, 0.1, height / 2)), m["dark"], coll), True)
-    size_back = (0.26, 0.025, height) if fr.side in "NS" else (0.025, 0.26, height)
-    add(_box(nm("col_back"), size_back, tuple(fr.p(s, 0.0125, height / 2)), m["dark"], coll))
-    add(_ori(nm("col_front"), (height, 0.26, 0.025), tuple(fr.p(s, 0.19, height / 2)), (0, 0, 1), tuple(fr.n.cross(z)), m["trim_sheet"], coll, "rivets"), True)
-    size_foot = (0.34, 0.24, 0.1) if fr.side in "NS" else (0.24, 0.34, 0.1)
-    add(_box(nm("col_foot"), size_foot, tuple(fr.p(s, 0.12, 0.05)), m["dark"], coll, bevel=0.01))
-    size = (0.28, 0.2, height) if fr.side in "NS" else (0.2, 0.28, height)
-    col("column", size, tuple(fr.p(s, 0.1, height / 2)))
+    k = 1.9 if heavy else 1.0
+    wd, dp = 0.26 * k, 0.2 * k
+    size_web = (0.025 * k, dp - 0.02, height) if fr.side in "NS" else (dp - 0.02, 0.025 * k, height)
+    add(_box(nm("col_web"), size_web, tuple(fr.p(s, dp / 2, height / 2)), m["dark"], coll), True)
+    size_back = (wd, 0.025 * k, height) if fr.side in "NS" else (0.025 * k, wd, height)
+    add(_box(nm("col_back"), size_back, tuple(fr.p(s, 0.0125 * k, height / 2)), m["dark"], coll))
+    add(_ori(nm("col_front"), (height, wd, 0.025 * k), tuple(fr.p(s, dp - 0.01 * k, height / 2)), (0, 0, 1), tuple(fr.n.cross(z)), m["trim_sheet"], coll, "rivets"), True)
+    size_foot = (wd + 0.08 * k, dp + 0.04, 0.1 * k) if fr.side in "NS" else (dp + 0.04, wd + 0.08 * k, 0.1 * k)
+    add(_box(nm("col_foot"), size_foot, tuple(fr.p(s, dp / 2 + 0.02, 0.05 * k)), m["dark"], coll, bevel=0.01))
+    if heavy:
+        # Gaine de protection jaune au pied (chocs des chariots), bandes de danger.
+        guard = (wd + 0.04, 0.03, 1.5) if fr.side in "NS" else (0.03, wd + 0.04, 1.5)
+        add(_box(nm("col_guard"), guard, tuple(fr.p(s, dp + 0.015, 0.75 + 0.1 * k)), m["paint_yellow"], coll))
+        add(_ori(nm("col_guard_band"), (wd + 0.04, 0.3, 0.008), tuple(fr.p(s, dp + 0.034, 1.4)), tuple(fr.right()), (0, 0, 1), m["trim_sheet"], coll, "hazard"))
+    size = (wd + 0.02, dp, height) if fr.side in "NS" else (dp, wd + 0.02, height)
+    col("column", size, tuple(fr.p(s, dp / 2, height / 2)))
 
 
 def _pilaster(prefix, fr: _Wall, s, height, m, coll, nm, col, add):
@@ -803,14 +968,20 @@ def console(name: str, center, facing: float, m: dict, coll, label: str = "conso
         vis.append(_box(f"{name}_upright{sx}", (0.05, 0.1, hu), (sx * 0.61, -0.25, 0.9 + hu / 2), m["dark"], coll))
     vis.append(_cyl(f"{name}_conduit", 0.03, 0.95, (0.45, -0.27, 0.5), m["rubber"], coll, segments=8))
     col = [c.collider_box(f"{name}", (1.3, 0.6, 1.0), (0, 0, 0.5), coll)]
-    marks = [c.empty(f"INTERACT_{name}", (0, 0.1, 1.0), coll, {"interact": "console", "label": label})]
+    # Volume d'interaction (M9) : toute la console, du sol à la visière.
+    top = 1.3 if low else 1.6
+    marks = [_interact(name, (0, 0, top / 2), (1.3, 0.6, top), {"interact": "console", "label": label}, coll)]
     _place(vis + col + marks, center, facing)
     return vis, col, marks
 
 
-def seat(name: str, center, facing: float, m: dict, coll, role: str = "seat"):
+def seat(name: str, center, facing: float, m: dict, coll, role: str = "passenger"):
     """Siège de poste : pied à embase, assise et dossier matelassés, appui-tête, accoudoirs
-    (pavé de commandes sur le droit). Assis face à +Y."""
+    (pavé de commandes sur le droit). Assis face à +Y.
+
+    Toujours interactif (`interact: "seat"`, `role` : "pilot", "copilot", "passenger"…), avec
+    l'œil `SOCKET_<name>_eye` (`usage: "seat_eye"`) ; M9 : volume d'interaction qui couvre tout
+    le siège (on s'assoit en visant n'importe où sur la chaise)."""
     vis = [
         _cyl(f"{name}_foot", 0.24, 0.04, (0, 0, 0.02), m["dark"], coll, segments=16),
         _cyl(f"{name}_post", 0.06, 0.34, (0, 0, 0.21), m["bare"], coll, segments=10),
@@ -833,7 +1004,7 @@ def seat(name: str, center, facing: float, m: dict, coll, role: str = "seat"):
     vis.append(_ori(f"{name}_pad", (0.055, 0.12, 0.006), (0.32, 0.1, 0.688), (1, 0, 0), (0, 1, 0), m["buttons"], coll))
     col = [c.collider_box(f"{name}", (0.7, 0.7, 1.2), (0, -0.05, 0.6), coll)]
     marks = [
-        c.empty(f"INTERACT_{name}", (0, 0, 0.9), coll, {"interact": "seat", "role": role}),
+        _interact(name, (0, -0.05, 0.62), (0.7, 0.7, 1.24), {"interact": "seat", "role": role}, coll, margin=0.03),
         c.empty(f"SOCKET_{name}_eye", (0, -0.05, 1.25), coll, {"usage": "seat_eye"}),
     ]
     _place(vis + col + marks, center, facing)
@@ -871,9 +1042,275 @@ def bunk(name: str, center, facing: float, m: dict, coll):
     return vis, col, []
 
 
-def crate(name: str, center, facing: float, m: dict, coll, size=(0.9, 0.9, 0.9), variant: str = "olive"):
+def bed(name: str, center, facing: float, m: dict, coll, size=(2.1, 1.0), *, lamp: bool = True, wall_pad: bool = True,
+        pad_gaps=()):
+    """Couchette de capitaine (M9) : socle de rangement sombre à deux tiroirs (face +Y), cadre de
+    métal brut, matelas et oreiller matelassés, couverture pliée, tête de lit (−X) à coussin et
+    tablette, pied de lit à barre ; `wall_pad` : dosseret matelassé côté −Y (le lit s'adosse au
+    mur par −Y), interrompu sur 0,26 m à chaque position x locale de `pad_gaps` (nervure du mur
+    de `room_shell`, tous les 2 m) ; `lamp` : liseuse chaude et son repère `LIGHT_<name>_lamp`
+    (220 lm, 2,5 m). `size` : (longueur le long de X, largeur le long de Y). Colliders : couchage
+    et tête de lit."""
+    L, Wd = size
+    base_h = 0.36
+    mz = base_h + 0.05  # dessous du matelas
+    ys = 0.03 if wall_pad else 0.0  # le matelas s'écarte du dosseret
+    vis = [
+        _box(f"{name}_base", (L, Wd, base_h - 0.08), (0, 0, 0.08 + (base_h - 0.08) / 2), m["dark"], coll, bevel=0.012),
+        _box(f"{name}_kick", (L - 0.08, Wd - 0.1, 0.08), (0, -0.03, 0.04), m["rubber"], coll),
+        _box(f"{name}_mattress", (L - 0.12, Wd - 0.1 - ys, 0.17), (0.0, ys / 2, mz + 0.085), m["fabric_light"], coll, bevel=0.04),
+        _box(f"{name}_pillow", (0.38, Wd - 0.34, 0.11), (-L / 2 + 0.3, ys / 2, mz + 0.22), m["fabric_light"], coll, bevel=0.045),
+        _box(f"{name}_blanket", (0.72, Wd - 0.05 - ys, 0.06), (L / 2 - 0.46, ys / 2, mz + 0.2), m["fabric_dark"], coll, bevel=0.025),
+        _box(f"{name}_blanket_fold", (0.26, Wd - 0.07 - ys, 0.05), (L / 2 - 0.24, ys / 2, mz + 0.255), m["fabric_dark"], coll, bevel=0.022),
+    ]
+    drawer_z = 0.08 + (base_h - 0.08) / 2
+    for i, x in enumerate((-L / 4 + 0.04, L / 4 - 0.04)):
+        dw = L / 2 - 0.2
+        vis.append(_ori(f"{name}_drawer{i}", (dw, base_h - 0.15, 0.014), (x, Wd / 2 + 0.007, drawer_z), *_FRONT, m["panel"], coll, ("box", (0.3 * i, 0.1)), bevel=0.003))
+        vis.append(_box(f"{name}_pull{i}", (0.22, 0.02, 0.03), (x, Wd / 2 + 0.024, drawer_z + 0.05), m["bare"], coll))
+    vis.append(_ori(f"{name}_label", (0.3, 0.07, 0.004), (L / 4 - 0.04, Wd / 2 + 0.016, drawer_z - 0.045), *_FRONT, m["trim_sheet"], coll, "stencils"))
+    # Cadre de métal brut : longerons et traverse de pied au ras du socle.
+    for sy in (-1, 1):
+        vis.append(_box(f"{name}_rail{sy}", (L, 0.05, 0.07), (0, sy * (Wd / 2 - 0.025), base_h + 0.035), m["bare"], coll, bevel=0.008))
+    vis.append(_box(f"{name}_rail_foot", (0.05, Wd - 0.1, 0.07), (L / 2 - 0.025, 0, base_h + 0.035), m["bare"], coll, bevel=0.008))
+    # Pied de lit : deux montants et une barre.
+    for sy in (-1, 1):
+        vis.append(_box(f"{name}_foot_post{sy}", (0.05, 0.05, 0.66 - base_h), (L / 2 - 0.025, sy * (Wd / 2 - 0.025), base_h + (0.66 - base_h) / 2), m["dark"], coll))
+    vis.append(_box(f"{name}_foot_bar", (0.06, Wd, 0.05), (L / 2 - 0.025, 0, 0.66), m["dark"], coll, bevel=0.01))
+    # Tête de lit (−X) : panneau, coussin, tablette, liseuse.
+    hb = 1.05
+    vis.append(_box(f"{name}_head", (0.08, Wd + 0.04, hb), (-L / 2 - 0.04, 0, hb / 2), m["dark"], coll, bevel=0.012))
+    vis.append(_ori(f"{name}_head_pad", (Wd - 0.16, 0.42, 0.06), (-L / 2 + 0.03, ys / 2, mz + 0.45), (0, 1, 0), (0, 0, 1), m["fabric"], coll, bevel=0.025))
+    vis.append(_box(f"{name}_shelf", (0.26, Wd + 0.04, 0.04), (-L / 2 + 0.05, 0, hb + 0.02), m["dark"], coll, bevel=0.008))
+    vis.append(_box(f"{name}_shelf_lip", (0.02, Wd + 0.04, 0.03), (-L / 2 + 0.17, 0, hb + 0.055), m["bare"], coll))
+    lx, ly = -L / 2 + 0.1, -Wd / 2 + 0.2
+    vis.append(_box(f"{name}_lamp_box", (0.12, 0.2, 0.06), (lx, ly, hb - 0.1), m["dark"], coll, bevel=0.008))
+    vis.append(_ori(f"{name}_lamp", (0.16, 0.06, 0.01), (lx + 0.005, ly, hb - 0.132), (1, 0, 0), (0, -1, 0), m["band_warm"], coll, ("strip", 0.5)))
+    if wall_pad:
+        lo, hi = -L / 2 + 0.21, L / 2 - 0.05
+        for k, (sa, sb) in enumerate(_cuts(lo, hi, [(g - 0.13, g + 0.13) for g in pad_gaps])):
+            if sb - sa < 0.25:
+                continue
+            xm = (sa + sb) / 2
+            vis.append(_box(f"{name}_wall_frame{k}", (sb - sa, 0.02, 0.5), (xm, -Wd / 2 + 0.01, mz + 0.42), m["dark"], coll))
+            vis.append(_ori(f"{name}_wall_pad{k}", (sb - sa - 0.08, 0.4, 0.05), (xm, -Wd / 2 + 0.045, mz + 0.42), *_FRONT, m["fabric"], coll,
+                            ("box", (0.3 * k, 0.0)), bevel=0.02))
+    col = [
+        c.collider_box(f"{name}", (L, Wd, 0.62), (0, 0, 0.31), coll),
+        c.collider_box(f"{name}_head", (0.1, Wd + 0.04, hb + 0.06), (-L / 2 - 0.04, 0, (hb + 0.06) / 2), coll),
+    ]
+    marks = []
+    if lamp:
+        marks.append(c.empty(f"LIGHT_{name}_lamp", (lx + 0.15, ly, hb - 0.3), coll, {"lumens": 220.0, "range": 2.5, "color": WARM, "shadow_candidate": 0}))
+    _place(vis + col + marks, center, facing)
+    return vis, col, marks
+
+
+def counter(name: str, center, facing: float, m: dict, coll, length: float = 2.4, *, role: str = "contracts",
+            variant: str = "a", screen: bool = True, style: str = "station", depth: float = 0.75, height: float = 1.05,
+            npc_gap: float = 0.195):
+    """Comptoir d'accueil (M9), client côté +Y, employé (PNJ) côté −Y. Un seul plateau à
+    `height` sur toute la profondeur (chant de métal brut côté client), corps à façade en
+    panneaux (noirs et jaunes en `station`, tôle claire en `ship`), bandeau lumineux sous le
+    surplomb côté client, plinthe de caoutchouc ; pavé de paiement et petit écran incliné vers le
+    client (`screen`) ; côté employé, tiroirs et portes de rangement, petit moniteur tourné vers
+    le PNJ (posé loin du bord, hors de la zone des mains).
+
+    Cotes du PNJ (lot E de M9, impératives) : le PNJ a son origine sur `SOCKET_<name>_npc` ;
+    son corps avance jusqu'à 0,19 m devant le socket sous le plateau, ses mains se posent à
+    1,05 m de haut entre 0,21 et 0,31 m devant le socket. D'où : plateau à 1,05 m (`height`),
+    bord du plateau côté employé à `npc_gap` = 0,195 m devant le socket (0,19 à 0,20), caisson
+    en retrait de 3 cm sous ce bord (à 0,225 m du socket). Tout bar où un PNJ se tient suit les
+    mêmes cotes.
+
+    Repères (convention docs/m9-retours.md §3.4) :
+    - `SOCKET_<name>_npc` : pied du PNJ, regard vers +Y (le client) ; extras `usage: "npc"`,
+      `role`, `variant` (le jeu y pose `models/characters/clerk_<variant>.gltf`) ;
+    - `INTERACT_<name>` : `interact: "npc"`, mêmes `role` et `variant`, `half_extents` qui
+      couvre le comptoir et le PNJ (≈ 1,8 m), du sol à 1,95 m.
+    Le PNJ n'est pas dans le kit. Collider : tout le comptoir (le PNJ a le sien, s'il en faut un)."""
+    L, D, Hc = length, depth, height
+    station = style == "station"
+    facade = m["paint_black"] if station else m["panel"]
+    accent = m["paint_yellow"] if station else m["dark"]
+    band = m["band_warm"] if station else m["band_cool"]
+    yf = D / 2  # face client
+    yb = -D / 2  # bord du plateau côté employé
+    bb = yb + 0.03  # face du caisson côté employé (en retrait sous le plateau)
+    bf = yf - 0.03  # face du caisson côté client (les panneaux de façade vont jusqu'à yf)
+    hb = Hc - 0.05  # dessus du caisson, sous le plateau
+    vis = [
+        _box(f"{name}_body", (L, bf - bb, hb), (0, (bf + bb) / 2, hb / 2), m["dark"], coll),
+        _box(f"{name}_kick", (L - 0.02, 0.02, 0.1), (0, bf + 0.01, 0.05), m["rubber"], coll),
+        # Plateau unique : bord employé à yb, surplomb de 4 cm côté client, chant de métal brut.
+        _box(f"{name}_top", (L + 0.06, D + 0.04, 0.05), (0, 0.02, Hc - 0.025), m["dark"], coll, bevel=0.01),
+        _box(f"{name}_top_edge", (L + 0.08, 0.03, 0.035), (0, yf + 0.055, Hc - 0.03), m["bare"], coll, bevel=0.006),
+        # Bandeau lumineux sous le surplomb (cuit : il éclaire la façade et le sol).
+        _ori(f"{name}_band_housing", (L - 0.1, 0.08, 0.03), (0, yf + 0.002, Hc - 0.11), *_FRONT, m["dark"], coll, bevel=0.005),
+        _ori(f"{name}_band", (L - 0.24, 0.035, 0.012), (0, yf + 0.022, Hc - 0.11), *_FRONT, band, coll, ("strip", 1.0)),
+    ]
+    # Façade : panneaux encadrés, montants d'accent, plaque à pochoirs.
+    n = max(2, round(L / 0.8))
+    pw = L / n
+    for i in range(n):
+        x = -L / 2 + pw * (i + 0.5)
+        vis.append(_ori(f"{name}_panel{i}", (pw - 0.07, Hc - 0.32, 0.03), (x, yf - 0.015, 0.1 + (Hc - 0.32) / 2 + 0.03), *_FRONT, facade, coll, ("box", (0.37 * i, 0.11 * i)), bevel=0.006))
+        if i > 0:
+            vis.append(_ori(f"{name}_mullion{i}", (0.06, Hc - 0.26, 0.04), (x - pw / 2, yf - 0.01, 0.1 + (Hc - 0.26) / 2), *_FRONT, accent, coll))
+    vis.append(_ori(f"{name}_label", (min(0.6, pw * 0.7), 0.1, 0.004), (-L / 2 + pw * 0.5, yf + 0.002, Hc - 0.32), *_FRONT, m["trim_sheet"], coll, "stencils"))
+    for sx in (-1, 1):
+        vis.append(_box(f"{name}_end{sx}", (0.05, bf - bb + 0.05, hb), (sx * (L / 2 - 0.025), (bf + bb) / 2 + 0.015, hb / 2), accent, coll, bevel=0.008))
+    # Côté client : pavé posé à plat (le haut de la texture vers l'employé), écran incliné.
+    vis.append(_ori(f"{name}_keypad", (0.16, 0.12, 0.012), (-L * 0.28, yf - 0.1, Hc + 0.006), (-1, 0, 0), (0, -1, 0), m["buttons"], coll, tile=0.3))
+    if screen:
+        sxp = L * 0.24
+        a = math.radians(25)
+        up = (0, -math.sin(a), math.cos(a))
+        sy = yf - 0.22
+        vis.append(_cyl(f"{name}_scr_post", 0.02, 0.14, (sxp, sy, Hc + 0.07), m["bare"], coll, segments=8))
+        vis.append(_ori(f"{name}_scr_housing", (0.36, 0.24, 0.04), (sxp, sy, Hc + 0.2), (-1, 0, 0), up, m["dark"], coll, bevel=0.008))
+        n_scr = Vector((0, math.cos(a), math.sin(a)))
+        sc = Vector((sxp, sy, Hc + 0.2)) + n_scr * 0.021
+        vis.append(_ori(f"{name}_scr", (0.3, 0.18, 0.004), tuple(sc), (-1, 0, 0), up, m["screen"], coll, tile=0.6))
+    # Côté employé : tiroirs en haut, portes de rangement en bas, moniteur sur le plateau.
+    ndr = max(2, round(L / 0.8))
+    dw = (L - 0.12) / ndr
+    for i in range(ndr):
+        x = -L / 2 + 0.06 + dw * (i + 0.5)
+        vis.append(_ori(f"{name}_drawer{i}", (dw - 0.04, 0.16, 0.012), (x, bb - 0.006, hb - 0.12), (1, 0, 0), (0, 0, 1), m["panel"], coll, ("box", (0.2 * i, 0.3)), bevel=0.003))
+        vis.append(_box(f"{name}_dpull{i}", (0.14, 0.02, 0.022), (x, bb - 0.018, hb - 0.09), m["bare"], coll))
+        vis.append(_ori(f"{name}_door{i}", (dw - 0.04, hb - 0.38, 0.012), (x, bb - 0.006, 0.12 + (hb - 0.38) / 2), (1, 0, 0), (0, 0, 1), m["panel"], coll, ("box", (0.31 * i, 0.6)), bevel=0.003))
+        vis.append(_box(f"{name}_dgrip{i}", (0.02, 0.02, 0.14), (x + dw / 2 - 0.08, bb - 0.018, 0.12 + (hb - 0.38) * 0.75), m["bare"], coll))
+    vis.append(_box(f"{name}_cab_kick", (L - 0.04, 0.012, 0.1), (0, bb - 0.006, 0.05), m["rubber"], coll))
+    mx, my = -L * 0.3, yb + 0.43
+    vis.append(_box(f"{name}_mon_base", (0.18, 0.12, 0.02), (mx, my + 0.02, Hc + 0.01), m["dark"], coll))
+    vis.append(_box(f"{name}_mon_post", (0.04, 0.03, 0.12), (mx, my + 0.04, Hc + 0.07), m["dark"], coll))
+    vis.append(_box(f"{name}_mon", (0.4, 0.04, 0.26), (mx, my, Hc + 0.22), m["dark"], coll, bevel=0.008))
+    vis.append(_ori(f"{name}_mon_scr", (0.35, 0.21, 0.004), (mx, my - 0.022, Hc + 0.22), (1, 0, 0), (0, 0, 1), m["screen"], coll, tile=0.7))
+    col = [c.collider_box(f"{name}", (L, D, Hc), (0, 0, Hc / 2), coll)]
+    npc_y = yb - npc_gap
+    back = npc_y - 0.32
+    front = yf + 0.06
+    props = {"role": role, "variant": variant}
+    marks = [
+        c.empty(f"SOCKET_{name}_npc", (0, npc_y, 0.0), coll, {"usage": "npc", **props}),
+        _interact(name, (0, (front + back) / 2, 0.975), (L, front - back, 1.95), {"interact": "npc", **props}, coll, margin=0.03),
+    ]
+    _place(vis + col + marks, center, facing)
+    return vis, col, marks
+
+
+def wall_desk(name: str, center, facing: float, m: dict, coll, width: float = 1.2, *, shelf: bool = True, screen: bool = True,
+              items_detail: int = 0):
+    """Bureau mural (M9) : `center` au pied du mur, la pièce vers +Y. Platine sombre au mur,
+    plateau à chant de métal brut sur deux consoles en équerre, caisson à tiroir, petit écran
+    mural (`screen`), étagère haute éclairée par-dessous (`shelf`, liseré chaud cuit) et ses
+    objets (boîtes, classeurs ; niveau de décor `items_detail`). Colliders : plateau jusqu'au
+    sol (on ne se glisse pas dessous), étagère."""
+    W = width
+    vis = [
+        _box(f"{name}_back", (W + 0.04, 0.02, 1.15), (0, 0.01, 0.5 + 1.15 / 2), m["dark"], coll, bevel=0.005),
+        _box(f"{name}_top", (W, 0.58, 0.04), (0, 0.31, 0.76), m["dark"], coll, bevel=0.008),
+        _box(f"{name}_edge", (W + 0.01, 0.025, 0.045), (0, 0.6, 0.755), m["bare"], coll, bevel=0.005),
+        _box(f"{name}_drawer_box", (0.42, 0.5, 0.16), (W / 2 - 0.23, 0.28, 0.66), m["dark"], coll, bevel=0.006),
+        _ori(f"{name}_drawer", (0.38, 0.12, 0.012), (W / 2 - 0.23, 0.536, 0.66), *_FRONT, m["panel"], coll, ("box", (0.4, 0.2)), bevel=0.003),
+        _box(f"{name}_pull", (0.16, 0.02, 0.022), (W / 2 - 0.23, 0.55, 0.67), m["bare"], coll),
+    ]
+    for sx in (-1, 1):
+        x = sx * (W / 2 - 0.08)
+        vis.append(_box(f"{name}_cleat{sx}", (0.05, 0.03, 0.5), (x, 0.035, 0.5), m["bare"], coll))
+        vis.append(_strut(f"{name}_brace{sx}", (x, 0.04, 0.32), (x, 0.5, 0.735), 0.04, 0.03, m["dark"], coll))
+    if screen:
+        vis.append(_box(f"{name}_scr_housing", (0.46, 0.04, 0.3), (-W * 0.15, 0.04, 1.12), m["dark"], coll, bevel=0.008))
+        vis.append(_ori(f"{name}_scr", (0.4, 0.24, 0.004), (-W * 0.15, 0.062, 1.12), *_FRONT, m["screen"], coll, tile=0.6))
+        vis.append(_ori(f"{name}_buttons", (0.14, 0.2, 0.006), (W * 0.2, 0.023, 1.1), *_FRONT, m["buttons"], coll, tile=0.3))
+    col = [c.collider_box(f"{name}", (W, 0.62, 0.8), (0, 0.31, 0.4), coll)]
+    items = []
+    if shelf:
+        zs = 1.48
+        vis.append(_box(f"{name}_shelf", (W, 0.26, 0.03), (0, 0.13, zs), m["dark"], coll, bevel=0.006))
+        vis.append(_box(f"{name}_shelf_lip", (W, 0.015, 0.05), (0, 0.255, zs + 0.01), m["bare"], coll))
+        vis.append(_ori(f"{name}_shelf_light", (W - 0.2, 0.03, 0.008), (0, 0.2, zs - 0.019), (1, 0, 0), (0, -1, 0), m["band_warm"], coll, ("strip", 0.5)))
+        for sx in (-1, 1):
+            vis.append(_strut(f"{name}_shelf_brace{sx}", (sx * (W / 2 - 0.06), 0.03, zs - 0.2), (sx * (W / 2 - 0.06), 0.22, zs - 0.02), 0.03, 0.025, m["dark"], coll))
+        x = -W / 2 + 0.12
+        for i, (w_, h_, mat) in enumerate(((0.07, 0.24, "dark"), (0.07, 0.26, "fabric_dark"), (0.06, 0.22, "crate_slate"), (0.25, 0.12, "crate_rust"), (0.18, 0.09, "dark"))):
+            items.append(_box(f"{name}_item{i}", (w_, 0.2, h_), (x + w_ / 2, 0.13, zs + 0.015 + h_ / 2), m[mat], coll, bevel=0.006))
+            x += w_ + (0.02 if i < 2 else 0.08)
+        col.append(c.collider_box(f"{name}_shelf", (W, 0.27, 0.1), (0, 0.135, zs + 0.03), coll))
+    if items_detail:
+        c.set_detail(items, items_detail)
+    vis += items
+    _place(vis + col, center, facing)
+    return vis, col, []
+
+
+def shelf(name: str, center, facing: float, m: dict, coll, width: float = 1.0, height: float = 1.8, depth: float = 0.34,
+          levels: int = 4, *, items: bool = True, items_detail: int = 0, detail: int = 0):
+    """Étagère sur pied adossée au mur (M9), `center` au pied du mur, la pièce vers +Y : joues
+    perforées sombres, fond en tôle peinte, tablettes à rebord de métal brut, objets posés
+    (caisses, boîtes, bidons ; niveau de décor `items_detail`, pour un Bas plus sobre). `detail` :
+    niveau de toute l'étagère (alors sans collider)."""
+    W, Hh, D = width, height, depth
+    vis = [_ori(f"{name}_back", (W, Hh, 0.02), (0, 0.01, Hh / 2), *_FRONT, m["panel"], coll, ("box", (0.21, 0.4)))]
+    for sx in (-1, 1):
+        vis.append(_box(f"{name}_side{sx}", (0.04, D, Hh), (sx * (W / 2 - 0.02), D / 2, Hh / 2), m["dark"], coll, bevel=0.006))
+        vis.append(_box(f"{name}_foot{sx}", (0.06, D + 0.04, 0.04), (sx * (W / 2 - 0.03), D / 2 + 0.02, 0.02), m["rubber"], coll))
+    zs = [0.12 + i * (Hh - 0.2) / (levels - 1) for i in range(levels)]
+    stuff = []
+    palette_items = ("crate_slate", "dark", "crate_rust", "fabric_dark", "crate", "bare")
+    for i, z in enumerate(zs):
+        vis.append(_box(f"{name}_board{i}", (W - 0.08, D - 0.03, 0.025), (0, D / 2 + 0.005, z), m["dark"], coll))
+        vis.append(_box(f"{name}_lip{i}", (W - 0.08, 0.012, 0.045), (0, D - 0.004, z + 0.01), m["bare"], coll))
+        if not items or i == levels - 1 and Hh > 1.9:
+            continue
+        # Objets : suite déterministe de largeurs et de hauteurs (aucun hasard).
+        x = -W / 2 + 0.07
+        k = 0
+        room = (zs[i + 1] - z - 0.06) if i + 1 < levels else 0.3
+        while True:
+            w_ = (0.14, 0.22, 0.1, 0.3, 0.18, 0.12)[(i * 2 + k) % 6]
+            h_ = min(room, (0.18, 0.12, 0.26, 0.16, 0.22, 0.1)[(i + k * 3) % 6])
+            if x + w_ > W / 2 - 0.07:
+                break
+            mat = m[palette_items[(i + k) % len(palette_items)]]
+            if (i + k) % 5 == 4:
+                stuff.append(_cyl(f"{name}_can{i}{k}", min(w_, 0.16) / 2, h_, (x + min(w_, 0.16) / 2, D / 2, z + 0.0125 + h_ / 2), mat, coll, segments=10))
+            else:
+                stuff.append(_box(f"{name}_box{i}{k}", (w_, D - 0.1, h_), (x + w_ / 2, D / 2 + 0.01, z + 0.0125 + h_ / 2), mat, coll, bevel=0.006))
+            x += w_ + (0.03 if k % 2 else 0.07)
+            k += 1
+    if items_detail:
+        c.set_detail(stuff, items_detail)
+    vis += stuff
+    col = [c.collider_box(f"{name}", (W, D, Hh), (0, D / 2, Hh / 2), coll)]
+    _place(vis + col, center, facing)
+    return _finish(vis, col, [], detail)
+
+
+def cabin_porthole(name: str, center, facing: float, m: dict, coll, radius: float = 0.22, *, detail: int = 0):
+    """Hublot de cabine (M9) : `center` sur la face du mur, à la hauteur du centre, face vers la
+    pièce. Couronne sombre boulonnée, joint de caoutchouc, verre fumé opaque en retrait (on ne
+    voit pas au travers : rien à charger derrière), plaque à pochoirs dessous. Sans collider
+    (saillie < 0,1 m)."""
+    r = radius
+    vis = [
+        _ring(f"{name}_frame", r, r + 0.075, 0.06, (0, 0.03, 0), m["dark"], coll, axis="Y", segments=16),
+        _ring(f"{name}_gasket", r - 0.018, r + 0.004, 0.02, (0, 0.065, 0), m["rubber"], coll, axis="Y", segments=16),
+        _cyl(f"{name}_glass", r, 0.02, (0, 0.018, 0), m["glass_dark"], coll, axis="Y", segments=16),
+    ]
+    for i in range(8):
+        a = 2 * math.pi * (i + 0.5) / 8
+        vis.append(_cyl(f"{name}_bolt{i}", 0.011, 0.016, ((r + 0.04) * math.cos(a), 0.066, (r + 0.04) * math.sin(a)), m["bare"], coll, axis="Y", segments=6))
+    vis.append(_ori(f"{name}_label", (0.22, 0.06, 0.004), (0, 0.003, -r - 0.13), *_FRONT, m["trim_sheet"], coll, "stencils"))
+    _place(vis, center, facing)
+    return _finish(vis, [], [], detail)
+
+
+def crate(name: str, center, facing: float, m: dict, coll, size=(0.9, 0.9, 0.9), variant: str = "olive", *, detail: int = 0):
     """Caisse de tôle nervurée à cornières sombres, cerclages et étiquette à pochoirs ;
-    `variant` : "olive", "slate", "rust", "yellow"."""
+    `variant` : "olive", "slate", "rust", "yellow". `detail` (M9) : niveau de décor (≥ 1 : sans
+    collider), pour toutes les pièces d'habillage ci-dessous aussi."""
     sx, sy, sz = size
     mat = m["crate"] if variant == "olive" else m[f"crate_{variant}"]
     vis = [_box(f"{name}", (sx - 0.04, sy - 0.04, sz - 0.04), (0, 0, sz / 2), mat, coll, bevel=0.008)]
@@ -887,12 +1324,15 @@ def crate(name: str, center, facing: float, m: dict, coll, size=(0.9, 0.9, 0.9),
     vis.append(_ori(f"{name}_hazard", (sy * 0.5, 0.1, 0.004), (sx / 2 - 0.018, 0, sz * 0.3), (0, 1, 0), (0, 0, 1), m["trim_sheet"], coll, "hazard"))
     col = [c.collider_box(f"{name}", (sx, sy, sz), (0, 0, sz / 2), coll)]
     _place(vis + col, center, facing)
-    return vis, col, []
+    return _finish(vis, col, [], detail)
 
 
-def locker(name: str, center, facing: float, m: dict, coll, both_sides: bool = True):
+def locker(name: str, center, facing: float, m: dict, coll, both_sides: bool = True, *, container: str | None = None):
     """Casier : caisson sombre, porte peinte à grilles, poignée, pochoir. `both_sides` : une porte
-    sur chaque face ±Y (les scripts de M1 l'adossent indifféremment par l'une ou l'autre)."""
+    sur chaque face ±Y (les scripts de M1 l'adossent indifféremment par l'une ou l'autre).
+    `container` (M9) : identifiant unique du contenu (ex. « corvette_chambre_casier_1 ») ; le
+    casier devient interactif (`INTERACT_<name>`, `interact: "locker"`, `container`, volume
+    qui couvre tout le casier). None : décor (comportement de M8)."""
     vis = [_box(f"{name}", (0.6, 0.51, 2.0), (0, 0, 1.0), m["dark"], coll, bevel=0.015)]
     for sy in ((1, -1) if both_sides else (1,)):
         right = (-sy, 0, 0)
@@ -904,8 +1344,79 @@ def locker(name: str, center, facing: float, m: dict, coll, both_sides: bool = T
         vis.append(_box(f"{name}_handle{sy}", (0.03, 0.03, 0.2), (sy * -0.18, y + sy * 0.04, 1.05), m["bare"], coll))
         vis.append(_ori(f"{name}_lock{sy}", (0.06, 0.08, 0.006), (sy * -0.18, y + sy * 0.024, 1.22), right, (0, 0, 1), m["buttons"], coll))
     col = [c.collider_box(f"{name}", (0.6, 0.55, 2.0), (0, 0, 1.0), coll)]
-    _place(vis + col, center, facing)
-    return vis, col, []
+    marks = []
+    if container:
+        marks.append(_interact(name, (0, 0, 1.0), (0.6, 0.55, 2.0), {"interact": "locker", "container": container}, coll, margin=0.03))
+    _place(vis + col + marks, center, facing)
+    return vis, col, marks
+
+
+def locker_bank(name: str, center, facing: float, m: dict, coll, count: int = 3, *, containers=None,
+                width: float = 0.6, depth: float = 0.55, height: float = 2.0, tint: str = "panel"):
+    """Rangée de `count` casiers verticaux (M9), portes vers +Y, `center` au milieu de la base de
+    la rangée (adossable à un mur par −Y). Bâti commun sombre (socle, couronne, montants),
+    chaque porte peinte avec ses charnières, ses deux grilles, son numéro au pochoir, sa
+    serrure à voyant et sa poignée ; un collider pour la rangée.
+
+    Chaque casier est interactif : `INTERACT_<name>_<i>` (i = 1…count), `interact: "locker"`,
+    `container` et `half_extents` (le casier, de la face avant au mur). `containers` : liste
+    d'identifiants (un par casier), ou préfixe (« corvette_chambre_casier » →
+    « corvette_chambre_casier_1 »…) ; None : « <name>_<i> ». `tint` : clé de palette des portes."""
+    if isinstance(containers, str) or containers is None:
+        prefix = containers or name
+        containers = [f"{prefix}_{i + 1}" for i in range(count)]
+    if len(containers) != count:
+        raise ValueError(f"locker_bank {name} : {count} casiers mais {len(containers)} contenus")
+    W = width * count
+    vis = [
+        _box(f"{name}_body", (W, depth - 0.03, height - 0.12), (0, -0.015, 0.1 + (height - 0.12) / 2), m["dark"], coll),
+        _box(f"{name}_plinth", (W - 0.04, depth - 0.1, 0.1), (0, -0.04, 0.05), m["rubber"], coll),
+        _box(f"{name}_crown", (W + 0.03, depth + 0.02, 0.06), (0, 0.0, height - 0.03), m["dark"], coll, bevel=0.01),
+        _ori(f"{name}_crown_label", (W * 0.8, 0.045, 0.004), (0, depth / 2 + 0.012, height - 0.03), *_FRONT, m["trim_sheet"], coll, "rivets"),
+    ]
+    marks = []
+    yf = depth / 2 - 0.015  # face avant du bâti
+    door_mat = m[tint]
+    for i in range(count):
+        x = -W / 2 + width * (i + 0.5)
+        # Montant entre deux portes (et aux deux bouts).
+        vis.append(_box(f"{name}_stile{i}", (0.04, 0.03, height - 0.18), (x - width / 2 + 0.02, yf + 0.015, 0.1 + (height - 0.18) / 2 + 0.03), m["dark"], coll))
+        dz = 0.1 + (height - 0.2) / 2 + 0.02
+        dh = height - 0.24
+        dw = width - 0.07
+        vis.append(_ori(f"{name}_door{i}", (dw, dh, 0.022), (x, yf + 0.011, dz), *_FRONT, door_mat, coll, ("box", (0.31 * i, 0.17 * i)), bevel=0.004))
+        df = yf + 0.022
+        for j, z in enumerate((dz + dh * 0.36, dz - dh * 0.38)):
+            vis.append(_ori(f"{name}_vent{i}{j}", (dw * 0.72, 0.15, 0.006), (x, df + 0.003, z), *_FRONT, m["trim_sheet"], coll, "vent"))
+        # Numéro au pochoir : chaque porte montre un autre caractère de la bande (U calé sur
+        # le début d'un groupe : « 07 », « 12 », « B4 », « 03 », « A2 »).
+        lab = _ori(f"{name}_label{i}", (0.2, 0.1, 0.004), (x - dw * 0.18, df + 0.002, dz + dh * 0.18), *_FRONT, m["trim_sheet"], coll, None)
+        c.uv_trim(lab, "stencils", meters_per_tile=2.0)
+        u0 = min(d.uv[0] for d in lab.data.uv_layers[0].data)
+        _shift_uv(lab, _STENCIL_STARTS[i % len(_STENCIL_STARTS)] - u0)
+        hx = x + dw / 2 - 0.08  # côté poignée (charnières de l'autre côté)
+        vis.append(lab)
+        vis.append(_box(f"{name}_handle{i}", (0.03, 0.035, 0.22), (hx, df + 0.025, dz), m["bare"], coll, bevel=0.006))
+        vis.append(_ori(f"{name}_lock{i}", (0.05, 0.07, 0.006), (hx, df + 0.003, dz + 0.2), *_FRONT, m["buttons"], coll, tile=0.3))
+        for k, z in enumerate((dz + dh / 2 - 0.18, dz - dh / 2 + 0.18)):
+            vis.append(_box(f"{name}_hinge{i}{k}", (0.025, 0.03, 0.12), (x - dw / 2 + 0.01, df + 0.008, z), m["bare"], coll))
+        marks.append(_interact(f"{name}_{i + 1}", (x, 0.02, height / 2), (width - 0.02, depth + 0.04, height),
+                               {"interact": "locker", "container": containers[i]}, coll, margin=0.0))
+    vis.append(_box(f"{name}_stile_end", (0.04, 0.03, height - 0.18), (W / 2 - 0.02, yf + 0.015, 0.1 + (height - 0.18) / 2 + 0.03), m["dark"], coll))
+    col = [c.collider_box(f"{name}", (W, depth, height), (0, 0, height / 2), coll)]
+    _place(vis + col + marks, center, facing)
+    return vis, col, marks
+
+
+# Début (en U, tuile de 2 m) de groupes de caractères de la bande `stencils` de la trim sheet.
+_STENCIL_STARTS = (0.022, 0.522, 0.772, 0.892, 0.272)
+
+
+def _shift_uv(obj, du: float) -> None:
+    """Décale le 1er jeu d'UV le long de U (`du` en unités de texture)."""
+    layer = obj.data.uv_layers[0]
+    for d in layer.data:
+        d.uv = (d.uv[0] + du, d.uv[1])
 
 
 def table(name: str, center, facing: float, m: dict, coll, size=(1.8, 0.9)):
@@ -928,20 +1439,46 @@ def table(name: str, center, facing: float, m: dict, coll, size=(1.8, 0.9)):
 
 
 def pickup(name: str, center, facing: float, m: dict, coll, item: str):
-    """Petit objet ramassable (boîte à outils, bloc-données…) : mallette jaune, poignée,
-    loquets, voyant vert (repérable dans la pénombre)."""
+    """Objet ramassable provisoire : petite mallette jaune à joint sombre et voyant (repérable
+    dans la pénombre), posée sur la surface (`center`). Le repère `INTERACT_<name>`
+    (`interact: "pickup"`, `item`) est 0,15 m au-dessus de la surface : le jeu y remplace la
+    mallette par le vrai modèle de l'objet (`models/items/<item>.gltf`, posé 0,15 m sous le
+    repère) et la cache ; dans le bake, tout ce qui est sous ce repère ne fait pas d'ombre
+    (`lightmap.removable`). M9 : réduite (≈ 50 triangles), c'est un repère, pas un modèle."""
     vis = [
-        _box(f"{name}", (0.45, 0.25, 0.2), (0, 0, 0.1), m["accent"], coll, bevel=0.02),
-        _box(f"{name}_seam", (0.46, 0.26, 0.012), (0, 0, 0.15), m["dark"], coll),
-        _box(f"{name}_handle", (0.25, 0.03, 0.03), (0, 0, 0.235), m["dark"], coll),
+        _box(f"{name}", (0.26, 0.17, 0.1), (0, 0, 0.05), m["accent"], coll, bevel=0.012),
+        _box(f"{name}_seam", (0.265, 0.175, 0.01), (0, 0, 0.072), m["dark"], coll),
+        _ori(f"{name}_light", (0.06, 0.03, 0.004), (0, 0.0875, 0.04), *_FRONT, m["buttons"], coll, tile=0.25),
     ]
-    for sx in (-1, 1):
-        vis.append(_box(f"{name}_handle_post{sx}", (0.02, 0.02, 0.03), (sx * 0.1, 0, 0.212), m["dark"], coll))
-        vis.append(_box(f"{name}_latch{sx}", (0.04, 0.012, 0.05), (sx * 0.15, 0.128, 0.15), m["bare"], coll))
-    vis.append(_ori(f"{name}_light", (0.08, 0.04, 0.004), (0, 0.127, 0.08), *_FRONT, m["buttons"], coll, tile=0.25))
     marks = [c.empty(f"INTERACT_{name}", (0, 0, 0.15), coll, {"interact": "pickup", "item": item})]
     _place(vis + marks, center, facing)
     return vis, [], marks
+
+
+def attach_pickup(result):
+    """Prépare un objet ramassable pour l'export (M9) : les pièces visibles de `pickup(...)`
+    fusionnées en un seul objet (plusieurs matériaux) `<nom>_mesh`, **enfant** de son repère
+    `INTERACT_<nom>` (transformation monde conservée). Le jeu remplace ces enfants par le modèle
+    de l'objet, et le bake (`lightmap.removable`) ne leur fait pas projeter d'ombre. À mettre dans
+    `parts["pickups"]` (jamais dans `visual` : il ne doit pas être fusionné avec la cellule).
+    Renvoie (objet, repères)."""
+    vis, _, marks = result
+    root = next(mk for mk in marks if mk.name.startswith("INTERACT_"))
+    bpy.context.view_layer.update()
+    bpy.ops.object.select_all(action="DESELECT")
+    for o in vis:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = vis[0]
+    if len(vis) > 1:
+        bpy.ops.object.join()
+    joined = bpy.context.view_layer.objects.active
+    joined.name = f"{root.name[len('INTERACT_'):]}_mesh"
+    joined.data.name = joined.name
+    bpy.context.view_layer.update()
+    world = joined.matrix_world.copy()
+    joined.parent = root
+    joined.matrix_world = world
+    return joined, marks
 
 
 def reactor(name: str, center, m: dict, coll, *, ceiling: float | None = None):
@@ -1044,33 +1581,59 @@ def door_panel(name: str, m: dict, coll, *, style: str = "ship"):
     d'épaisseur au plus. Le jeu en place un à chaque portail de type porte et l'anime (il
     coulisse vers +X dans la cloison). Objet mobile sans lightmap, éclairé par l'ambiante en
     Bas et Moyen : relief, teintes moyennes et accents émissifs (bandeau, écran, voyants) pour
-    qu'il se lise. Deux faces identiques (±Y). `style` : "ship" ou "station" (jaune et noir)."""
+    qu'il se lise. Deux faces identiques (±Y). `style` : "ship" ou "station" (jaune et noir).
+
+    M9 : plus d'écran ni de boutons sur le vantail (le boîtier de commande posé à côté de la
+    porte par `room_shell` suffit). Caisson haut : hublot de verre fumé opaque (un bloc qui
+    traverse le vantail, dans son joint), trappe de visite, plaque à pochoirs ; traverse
+    médiane lumineuse ; caisson bas : raidisseurs rivés, grille ; montant d'attaque (−X) à bande
+    de danger et voyant. Dimensions, collider et fonctionnement inchangés."""
     W, H = DOOR_W, DOOR_H
     paint = m["door_paint"] if style == "ship" else m["paint_yellow"]
     rail = m["dark"] if style == "ship" else m["paint_black"]
+    # Hublot : centre (wx, wz), ouverture ww × wh, à la même place vue des deux faces.
+    wx, wz, ww, wh = 0.3, 1.6, 0.14, 0.36
     vis = [
         _box(f"{name}_panel", (W, 0.06, H), (0, 0, H / 2), paint, coll, bevel=0.008),
         # Joint de caoutchouc sur le bord d'attaque (−X : le bord qui se ferme contre le montant).
         _box(f"{name}_gasket", (0.03, 0.064, H - 0.02), (-W / 2 + 0.014, 0, H / 2), m["rubber"], coll),
+        # Verre fumé : dépasse de 4 mm de chaque face du vantail.
+        _box(f"{name}_window", (ww, 0.068, wh), (wx, 0, wz), m["glass_dark"], coll),
     ]
     for sy in (1, -1):
         right = (-sy, 0, 0)
         nrm = Vector((0, sy, 0))
 
-        def plate(tag, sx_, sz_, x, z, mat, uv="box", th=0.012, tile=None):
-            vis.append(_ori(f"{name}_{tag}{sy}", (sx_, sz_, th), (x, sy * (0.03 + th / 2), z), right, (0, 0, 1), mat, coll, uv, tile=tile))
+        def plate(tag, sx_, sz_, x, z, mat, uv="box", th=0.012, tile=None, bevel=0.0):
+            vis.append(_ori(f"{name}_{tag}{sy}", (sx_, sz_, th), (x, sy * (0.03 + th / 2), z), right, (0, 0, 1), mat, coll, uv, tile=tile, bevel=bevel))
 
+        # Cadre : montants, traverse haute rivée, plinthe à bandes de danger.
         plate("stile_l", 0.1, H, -W / 2 + 0.05, H / 2, rail, th=0.018)
         plate("stile_r", 0.1, H, W / 2 - 0.05, H / 2, rail, th=0.018)
         plate("top", W - 0.2, 0.12, 0, H - 0.06, m["trim_sheet"], "rivets", th=0.018)
         plate("kick", W - 0.2, 0.22, 0, 0.11, m["trim_sheet"], "hazard", th=0.018)
+        # Traverse médiane et son bandeau lumineux (repère dans la pénombre).
         plate("channel", W - 0.2, 0.13, 0, 1.12, rail, th=0.014)
         plate("strip", W - 0.36, 0.05, 0, 1.12, m["trim_sheet"], "light_strip", th=0.022)
-        plate("vent", 0.7, 0.16, 0.05, 0.5, m["trim_sheet"], "vent", th=0.006)
-        plate("bezel", 0.48, 0.32, 0.1, 1.62, rail, th=0.02)
-        plate("screen", 0.38, 0.21, 0.1, 1.62, m["screen"], th=0.024, tile=0.6)
-        plate("lights", 0.14, 0.18, -0.42 * sy, 1.4, m["buttons"], th=0.016, tile=0.35)
-        plate("label", 0.62, 0.1, 0.0, 1.92, m["trim_sheet"], "stencils", th=0.008)
+        # Montant d'attaque : bande de danger verticale (caisson bas) et voyant d'état (haut).
+        plate("lead_hazard", 0.06, 0.8, -W / 2 + 0.05, 0.64, m["trim_sheet"], "hazard", th=0.024)
+        plate("lead_lamp", 0.04, 0.24, -W / 2 + 0.05, 1.7, m["trim_sheet"], "light_strip", th=0.024)
+        # Caisson haut : joint du hublot, trappe de visite encadrée et sa poignée, pochoirs.
+        for tag, sx_, sz_, x, z in (
+            ("win_t", ww + 0.07, 0.035, wx, wz + wh / 2 + 0.0175),
+            ("win_b", ww + 0.07, 0.035, wx, wz - wh / 2 - 0.0175),
+            ("win_l", 0.035, wh, wx - ww / 2 - 0.0175, wz),
+            ("win_r", 0.035, wh, wx + ww / 2 + 0.0175, wz),
+        ):
+            plate(tag, sx_, sz_, x, z, m["rubber"], th=0.016)
+        plate("hatch_frame", 0.4, 0.46, -0.2, 1.58, rail, th=0.01, bevel=0.004)
+        plate("hatch", 0.32, 0.38, -0.2, 1.58, paint, ("box", (0.37, 0.21)), th=0.016, bevel=0.005)
+        plate("hatch_grip", 0.14, 0.025, -0.2, 1.43, m["bare"], th=0.026)
+        plate("label", 0.6, 0.1, 0.02, 1.94, m["trim_sheet"], "stencils", th=0.008)
+        # Caisson bas : trois raidisseurs rivés, grille d'aération.
+        for i, z in enumerate((0.62, 0.8, 0.98)):
+            plate(f"rib{i}", 0.76, 0.06, 0.0, z, m["trim_sheet"], "rivets", th=0.016)
+        plate("vent", 0.7, 0.16, 0.05, 0.38, m["trim_sheet"], "vent", th=0.006)
         plate("grip", 0.04, 0.42, -0.5 * sy, 0.78, m["bare"], th=0.028)
         plate("grip_plate", 0.1, 0.5, -0.5 * sy, 0.78, rail, th=0.008)
         # Goussets à 45° dans les quatre coins : le panneau se lit à pans coupés.
@@ -1113,7 +1676,7 @@ def _auto_col(name, objs, coll, cols, force=None):
         cols.append(c.collider_box(name, tuple(max(0.02, s) for s in size), tuple((lo + hi) / 2), coll))
 
 
-def cable_tray(name: str, p0, p1, m: dict, coll, width: float = 0.34, hang_to: float | None = None):
+def cable_tray(name: str, p0, p1, m: dict, coll, width: float = 0.34, hang_to: float | None = None, *, detail: int = 0):
     """Chemin de câbles horizontal (faisceaux colorés de la trim sheet), rebords sombres,
     étriers tous les 1 m, suspentes jusqu'à `hang_to` (hauteur du plafond)."""
     ax, L, mid = _span(p0, p1)
@@ -1135,11 +1698,12 @@ def cable_tray(name: str, p0, p1, m: dict, coll, width: float = 0.34, hang_to: f
                 off = Vector((0, s * (width / 2 + 0.03), 0)) if ax == 0 else Vector((s * (width / 2 + 0.03), 0, 0))
                 vis.append(_box(f"{name}_hanger{i}{s}", (0.02, 0.02, hz), tuple(p + off + Vector((0, 0, 0.07 + hz / 2))), m["dark"], coll))
     cols = []
-    _auto_col(name, vis[:1], coll, cols)
-    return vis, cols, []
+    _auto_col(name, vis[:1], coll, cols, force=False if detail else None)
+    return _finish(vis, cols, [], detail)
 
 
-def pipe(name: str, p0, p1, m: dict, coll, radius: float = 0.05, clamps: float = 1.0, hang_to: float | None = None, mat: str | None = None):
+def pipe(name: str, p0, p1, m: dict, coll, radius: float = 0.05, clamps: float = 1.0, hang_to: float | None = None, mat: str | None = None,
+         *, detail: int = 0):
     """Tuyau droit à brides (bande `flange` de la trim sheet : brides tous les 1 m, collier
     jaune), brides aux deux bouts, colliers tous les `clamps` m ; suspentes jusqu'à `hang_to`
     pour un tuyau horizontal. `mat` : clé de la palette pour un tuyau uni (projection boîte)."""
@@ -1163,11 +1727,11 @@ def pipe(name: str, p0, p1, m: dict, coll, radius: float = 0.05, clamps: float =
                 hz = hang_to - p.z - radius
                 vis.append(_box(f"{name}_hanger{i}", (0.025, 0.025, hz), tuple(p + Vector((0, 0, radius + hz / 2))), m["dark"], coll))
     cols = []
-    _auto_col(name, [body], coll, cols)
-    return vis, cols, []
+    _auto_col(name, [body], coll, cols, force=False if detail else None)
+    return _finish(vis, cols, [], detail)
 
 
-def duct(name: str, p0, p1, m: dict, coll, size=(0.55, 0.36), vents: bool = True, hang_to: float | None = None):
+def duct(name: str, p0, p1, m: dict, coll, size=(0.55, 0.36), vents: bool = True, hang_to: float | None = None, *, detail: int = 0):
     """Gaine de ventilation horizontale en tôle brute : joints tous les 1 m, grilles dessous
     tous les 2 m, suspentes jusqu'à `hang_to`."""
     ax, L, mid = _span(p0, p1)
@@ -1190,11 +1754,11 @@ def duct(name: str, p0, p1, m: dict, coll, size=(0.55, 0.36), vents: bool = True
                 off = unit.cross(Vector((0, 0, 1))) * s * (w / 2 + 0.03)
                 vis.append(_box(f"{name}_hanger{i}{s}", (0.025, 0.025, hz), tuple(mid + unit * t + off + Vector((0, 0, h / 2 + hz / 2))), m["dark"], coll))
     cols = []
-    _auto_col(name, vis[:1], coll, cols)
-    return vis, cols, []
+    _auto_col(name, vis[:1], coll, cols, force=False if detail else None)
+    return _finish(vis, cols, [], detail)
 
 
-def junction_box(name: str, center, facing: float, m: dict, coll, size=(0.45, 0.16, 0.55)):
+def junction_box(name: str, center, facing: float, m: dict, coll, size=(0.45, 0.16, 0.55), *, detail: int = 0):
     """Boîtier de jonction mural : caisson sombre, boutons et voyants, pochoir, grille basse,
     conduit qui monte. `center` : sur le mur, à la hauteur du centre du boîtier."""
     sx, sd, sz = size
@@ -1213,10 +1777,10 @@ def junction_box(name: str, center, facing: float, m: dict, coll, size=(0.45, 0.
         for o in cols:
             bpy.data.objects.remove(o, do_unlink=True)
         cols = []
-    return vis, cols, []
+    return _finish(vis, cols, [], detail)
 
 
-def vent(name: str, center, facing: float, m: dict, coll, size=(0.6, 0.25), surface: str = "wall"):
+def vent(name: str, center, facing: float, m: dict, coll, size=(0.6, 0.25), surface: str = "wall", *, detail: int = 0):
     """Bouche d'aération à cadre sombre ; `surface` : "wall" (face vers `facing`), "ceiling"
     (face vers le bas) ou "floor" (vers le haut)."""
     w, h = size
@@ -1234,10 +1798,10 @@ def vent(name: str, center, facing: float, m: dict, coll, size=(0.6, 0.25), surf
             _ori(f"{name}", (w, h, 0.006), (0, 0, dz * 0.023), right, up, m["trim_sheet"], coll, "vent"),
         ]
     _place(vis, center, facing)
-    return vis, [], []
+    return _finish(vis, [], [], detail)
 
 
-def wall_screen(name: str, center, facing: float, m: dict, coll, size=(0.66, 0.46)):
+def wall_screen(name: str, center, facing: float, m: dict, coll, size=(0.66, 0.46), *, detail: int = 0):
     """Écran mural : boîtier sombre, écran segmenté émissif, rangée de boutons dessous."""
     w, h = size
     vis = [
@@ -1246,12 +1810,13 @@ def wall_screen(name: str, center, facing: float, m: dict, coll, size=(0.66, 0.4
         _ori(f"{name}_buttons", (w * 0.8, 0.08, 0.008), (0, 0.084, -h / 2 - 0.05), *_FRONT, m["buttons"], coll),
     ]
     _place(vis, center, facing)
-    return vis, [], []
+    return _finish(vis, [], [], detail)
 
 
-def light_band(name: str, p0, p1, m: dict, coll, normal=(0, 0, -1), tone: str = "cool"):
+def light_band(name: str, p0, p1, m: dict, coll, normal=(0, 0, -1), tone: str = "cool", *, detail: int = 0):
     """Bandeau lumineux (carter sombre + diffuseur `sh_band_<tone>`, cuit dans les lightmaps)
-    de p0 à p1, sa face vers `normal`. `tone` : "cool", "amber", "warm", "reactor"."""
+    de p0 à p1, sa face vers `normal`. `tone` : "cool", "amber", "warm", "reactor". Un bandeau
+    de niveau ≥ 1 n'éclaire pas le bake (sa lumière disparaîtrait avec lui en Bas)."""
     p0, p1 = Vector(p0), Vector(p1)
     right = (p1 - p0).normalized()
     nrm = Vector(normal).normalized()
@@ -1262,20 +1827,21 @@ def light_band(name: str, p0, p1, m: dict, coll, normal=(0, 0, -1), tone: str = 
         _ori(f"{name}_housing", (L, 0.16, 0.06), tuple(mid + nrm * 0.03), tuple(right), tuple(up), m["dark"], coll, bevel=0.01),
         _ori(f"{name}", (max(0.1, L - 0.2), 0.085, 0.02), tuple(mid + nrm * 0.07), tuple(right), tuple(up), m[f"band_{tone}"], coll, ("strip", 1.0)),
     ]
-    return vis, [], []
+    return _finish(vis, [], [], detail)
 
 
-def hazard_stripe(name: str, p0, p1, m: dict, coll, width: float = 0.14):
-    """Bande de danger jaune et noir posée au sol (z de p0), de p0 à p1."""
+def hazard_stripe(name: str, p0, p1, m: dict, coll, width: float = 0.14, *, detail: int = 0, trim: str = "hazard"):
+    """Bande de danger jaune et noir posée au sol (z de p0), de p0 à p1. `trim` (M9) : autre
+    bande de la trim sheet (« chevrons », « warning_red »…)."""
     p0, p1 = Vector(p0), Vector(p1)
     right = (p1 - p0).normalized()
     up = Vector((0, 0, 1)).cross(right)
     mid = (p0 + p1) / 2 + Vector((0, 0, 0.003))
-    vis = [_ori(f"{name}", ((p1 - p0).length, width, 0.006), tuple(mid), tuple(right), tuple(up), m["trim_sheet"], coll, "hazard")]
-    return vis, [], []
+    vis = [_ori(f"{name}", ((p1 - p0).length, width, 0.006), tuple(mid), tuple(right), tuple(up), m["trim_sheet"], coll, trim)]
+    return _finish(vis, [], [], detail)
 
 
-def hazard_frame(name: str, center, size, m: dict, coll, width: float = 0.14):
+def hazard_frame(name: str, center, size, m: dict, coll, width: float = 0.14, *, detail: int = 0):
     """Cadre de bandes de danger au sol autour d'un rectangle (trappe, zone de levage)."""
     cx, cy, cz = center
     sx, sy = size
@@ -1287,10 +1853,10 @@ def hazard_frame(name: str, center, size, m: dict, coll, width: float = 0.14):
                                 ((-sx / 2 - width / 2, sy / 2), (-sx / 2 - width / 2, -sy / 2)))):
         v = hazard_stripe(f"{name}_{i + 2}", (cx + a[0], cy + a[1], cz - 0.0005), (cx + b[0], cy + b[1], cz - 0.0005), m, coll, width)[0]
         vis += v
-    return vis, [], []
+    return _finish(vis, [], [], detail)
 
 
-def ceiling_beam(name: str, p0, p1, m: dict, coll, depth: float = 0.26, width: float = 0.26, mat=None):
+def ceiling_beam(name: str, p0, p1, m: dict, coll, depth: float = 0.26, width: float = 0.26, mat=None, *, detail: int = 0):
     """Poutre de plafond en I (âme, semelles, semelle basse rivée), p0 et p1 sur le plafond
     (dessus de la poutre). `mat` : matériau de l'âme (défaut : métal sombre)."""
     ax, L, mid = _span(p0, p1)
@@ -1305,22 +1871,24 @@ def ceiling_beam(name: str, p0, p1, m: dict, coll, depth: float = 0.26, width: f
         _ori(f"{name}_bot", (L, width, 0.025), tuple(mid - Vector((0, 0, depth - 0.0125))), tuple(unit), tuple(-side if ax == 0 else side), m["trim_sheet"], coll, "rivets"),
     ]
     cols = []
-    _auto_col(name, vis, coll, cols)
-    return vis, cols, []
+    _auto_col(name, vis, coll, cols, force=False if detail else None)
+    return _finish(vis, cols, [], detail)
 
 
-def floor_grating(name: str, center, size, facing: float, m: dict, coll, glow: bool = True):
-    """Caillebotis encastré au sol, cadre sombre ; `glow` : lumière par-dessous (émissif)."""
+def floor_grating(name: str, center, size, facing: float, m: dict, coll, glow: bool = True, *, detail: int = 0):
+    """Caillebotis encastré au sol, cadre sombre ; `glow` : lumière par-dessous (True : vive,
+    False : faible, None : aucune, M9)."""
     sx, sy = size
-    vis = [_box(f"{name}", (sx, sy, 0.012), (0, 0, 0.006), m["grating_glow"] if glow else m["grating"], coll)]
+    mat = m["grating_glow"] if glow else (m["grating"] if glow is not None else m["grating_plain"])
+    vis = [_box(f"{name}", (sx, sy, 0.012), (0, 0, 0.006), mat, coll)]
     for s in (-1, 1):
         vis.append(_box(f"{name}_rim_x{s}", (sx + 0.08, 0.04, 0.016), (0, s * (sy / 2 + 0.02), 0.008), m["dark"], coll))
         vis.append(_box(f"{name}_rim_y{s}", (0.04, sy, 0.016), (s * (sx / 2 + 0.02), 0, 0.008), m["dark"], coll))
     _place(vis, center, facing)
-    return vis, [], []
+    return _finish(vis, [], [], detail)
 
 
-def column(name: str, center, height: float, facing: float, m: dict, coll):
+def column(name: str, center, height: float, facing: float, m: dict, coll, *, detail: int = 0):
     """Colonne en H adossée au mur (`center` : pied, sur la face du mur ; `facing` vers la
     pièce), face rivée, gousset de pied ; collider."""
     vis = [
@@ -1331,18 +1899,20 @@ def column(name: str, center, height: float, facing: float, m: dict, coll):
     ]
     cols = [c.collider_box(f"{name}", (0.28, 0.2, height), (0, 0.1, height / 2), coll)]
     _place(vis + cols, center, facing)
-    return vis, cols, []
+    return _finish(vis, cols, [], detail)
 
 
-def stencil(name: str, center, facing: float, m: dict, coll, length: float = 1.0):
+def stencil(name: str, center, facing: float, m: dict, coll, length: float = 1.0, *, detail: int = 0):
     """Plaque à pochoirs génériques (chiffres, flèches) sur un mur."""
     vis = [_ori(f"{name}", (length, 0.12, 0.004), (0, 0.002, 0), *_FRONT, m["trim_sheet"], coll, "stencils")]
     _place(vis, center, facing)
-    return vis, [], []
+    return _finish(vis, [], [], detail)
 
 
-def beacon(name: str, center, facing: float, m: dict, coll, lumens: float = 900.0, rng: float = 4.0):
-    """Gyrophare rouge mural + repère LIGHT_ (lumière rouge du jeu)."""
+def beacon(name: str, center, facing: float, m: dict, coll, lumens: float = 900.0, rng: float = 4.0, *, detail: int = 0,
+           light: bool = True):
+    """Gyrophare rouge mural + repère LIGHT_ (lumière rouge du jeu) ; `light` = False : sans
+    repère (simple voyant). De niveau ≥ 1, son `LIGHT_` l'est aussi : il n'est pas cuit."""
     vis = [
         _cyl(f"{name}_base", 0.07, 0.06, (0, 0.03, 0), m["dark"], coll, axis="Y", segments=16),
         _cyl(f"{name}", 0.055, 0.1, (0, 0.11, 0), m["beacon"], coll, axis="Y", segments=16),
@@ -1350,12 +1920,12 @@ def beacon(name: str, center, facing: float, m: dict, coll, lumens: float = 900.
     for i in range(3):
         a = i * math.pi / 3
         vis.append(_ori(f"{name}_cage{i}", (0.014, 0.13, 0.014), (0, 0.12, 0), (math.cos(a), 0, math.sin(a)), (0, 1, 0), m["dark"], coll))
-    marks = [c.empty(f"LIGHT_{name}", (0, 0.3, 0), coll, {"lumens": lumens, "range": rng, "color": RED, "shadow_candidate": 0})]
+    marks = [c.empty(f"LIGHT_{name}", (0, 0.3, 0), coll, {"lumens": lumens, "range": rng, "color": RED, "shadow_candidate": 0})] if light else []
     _place(vis + marks, center, facing)
-    return vis, [], marks
+    return _finish(vis, [], marks, detail)
 
 
-def cabinet(name: str, center, facing: float, m: dict, coll, size=(1.1, 0.32, 1.7)):
+def cabinet(name: str, center, facing: float, m: dict, coll, size=(1.1, 0.32, 1.7), *, detail: int = 0):
     """Armoire électrique posée au sol contre un mur : boutons, écran, grille, pochoir ;
     collider. `center` : pied, sur la face du mur."""
     sx, sd, sz = size
@@ -1369,10 +1939,10 @@ def cabinet(name: str, center, facing: float, m: dict, coll, size=(1.1, 0.32, 1.
     ]
     cols = [c.collider_box(f"{name}", (sx, sd + 0.02, sz + 0.1), (0, sd / 2, (sz + 0.1) / 2), coll)]
     _place(vis + cols, center, facing)
-    return vis, cols, []
+    return _finish(vis, cols, [], detail)
 
 
-def pump(name: str, center, facing: float, m: dict, coll, height: float | None = None):
+def pump(name: str, center, facing: float, m: dict, coll, height: float | None = None, *, detail: int = 0):
     """Pompe sur châssis : réservoir cerclé, moteur et son pupitre, colonne montante (jusqu'à
     `height` si donné), durite ; collider."""
     vis = [
@@ -1388,17 +1958,61 @@ def pump(name: str, center, facing: float, m: dict, coll, height: float | None =
     vis.append(_cyl(f"{name}_riser", 0.07, top - 1.43, (-0.3, 0, 1.43 + (top - 1.43) / 2), m["trim_sheet"], coll, segments=12, uv="flange"))
     cols = [c.collider_box(f"{name}", (1.5, 0.95, 1.45), (0, 0, 0.72), coll)]
     _place(vis + cols, center, facing)
-    return vis, cols, []
+    return _finish(vis, cols, [], detail)
+
+
+# --- Pièces de hangar (kit/hangar.py) --------------------------------------------------------------
+# Accessibles aussi depuis ce module (`kit.hangar_shell(...)`), chargées à la demande (le module
+# `hangar` importe celui-ci).
+
+HANGAR_PIECES = ("hangar_shell", "floodlight", "docking_cradle", "gangway", "gantry_crane", "cargo_container", "crate_stack",
+                 "fuel_bollard")
+
+
+def __getattr__(name):
+    if name in HANGAR_PIECES:
+        import importlib
+
+        here = str(Path(__file__).resolve().parent)
+        if here not in sys.path:
+            sys.path.insert(0, here)
+        return getattr(importlib.import_module("hangar"), name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 # --- Export des pièces du kit ------------------------------------------------------------------
 
 KIT_DIR = "assets/models/kit/ship_interior"
+# Interactions qui doivent couvrir leur objet (M9, docs/m9-retours.md §3.3).
+_VOLUME_INTERACTIONS = ("seat", "console", "locker", "npc")
+
+
+def _check_interactions(objects, name: str) -> None:
+    """Tout siège, console, casier ou comptoir de PNJ exporté a son `half_extents` ; un siège a
+    son œil `SOCKET_<nom>_eye` ; un PNJ son `SOCKET_<nom>_npc`."""
+    names = {o.name for o in objects}
+    for obj in objects:
+        if not obj.name.startswith("INTERACT_"):
+            continue
+        kind = obj.get("interact")
+        if kind in _VOLUME_INTERACTIONS and "half_extents" not in obj.keys():
+            raise RuntimeError(f"{name} : {obj.name} ({kind}) sans half_extents")
+        base = obj.name[len("INTERACT_"):]
+        if kind == "seat" and f"SOCKET_{base}_eye" not in names:
+            raise RuntimeError(f"{name} : siège {obj.name} sans SOCKET_{base}_eye")
+        if kind == "npc" and f"SOCKET_{base}_npc" not in names:
+            raise RuntimeError(f"{name} : PNJ {obj.name} sans SOCKET_{base}_npc")
 
 
 def export_kit() -> dict:
-    """Exporte chaque pièce en glTF séparé (fusionnée par matériau, colliders et repères), et
-    `art/kit/ship_interior.blend`. Renvoie {pièce: (triangles, matériaux)}."""
+    """Exporte chaque pièce en glTF séparé (fusionnée par matériau et par niveau de décor,
+    colliders et repères), et `art/kit/ship_interior.blend`. Renvoie {pièce: (triangles par
+    niveau de décor, matériaux)}."""
+    here = str(Path(__file__).resolve().parent)
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import hangar as hg
+
     c.reset_scene()
     m = palette()
     pieces = {}
@@ -1409,7 +2023,7 @@ def export_kit() -> dict:
         pieces[name] = (vis, col, marks, coll)
 
     def shell(parts):
-        return parts["visual"], parts["colliders"], []
+        return parts["visual"], parts["colliders"], parts.get("marks", [])
 
     piece("corridor_straight", lambda k: shell(room_shell("cs", -1.2, 1.2, 0, 4, 0, 2.6, [], m, k, floor_strip=True)))
     piece("corridor_corner", lambda k: shell(room_shell("cc", -1.2, 1.2, 0, 2.4, 0, 2.6, [("E", 1.2, DOOR_W + 0.6, 2.4)], m, k)))
@@ -1425,9 +2039,10 @@ def export_kit() -> dict:
     piece("seat", lambda k: seat("seat", (0, 0, 0), 0.0, m, k))
     piece("bunk", lambda k: bunk("bunk", (0, 0, 0), 0.0, m, k))
     piece("crate", lambda k: crate("crate", (0, 0, 0), 0.0, m, k))
-    piece("locker", lambda k: locker("locker", (0, 0, 0), 0.0, m, k))
+    piece("locker", lambda k: locker("locker", (0, 0, 0), 0.0, m, k, container="kit_locker"))
     piece("table", lambda k: table("table", (0, 0, 0), 0.0, m, k))
-    piece("pickup", lambda k: pickup("pickup", (0, 0, 0), 0.0, m, k, item="spare_parts"))
+    # Objet ramassable : mallette rattachée à son repère (convention des secteurs, `attach_pickup`).
+    piece("pickup", lambda k: (lambda r: ([r[0]], [], r[1]))(attach_pickup(pickup("pickup", (0, 0, 0), 0.0, m, k, item="spare_parts"))))
     piece("reactor", lambda k: reactor("reactor", (0, 0, 0), m, k))
     piece("ceiling_light", lambda k: ceiling_light("ceiling_light", (0, 0, 2.6), 0.0, m, k, {"lumens": 60000.0}))
     piece("stairs", lambda k: stairs("stairs", -0.8, 0.8, 0, 0.8, 4, m, k))
@@ -1446,24 +2061,60 @@ def export_kit() -> dict:
     piece("beacon", lambda k: beacon("beacon", (0, 0, 2.2), 0.0, m, k))
     piece("cabinet", lambda k: cabinet("cabinet", (0, 0, 0), 0.0, m, k))
     piece("pump", lambda k: pump("pump", (0, 0, 0), 0.0, m, k))
+    # M9 : chambre, comptoir, hangar.
+    piece("bed", lambda k: bed("bed", (0, 0, 0), 0.0, m, k))
+    piece("locker_bank", lambda k: locker_bank("locker_bank", (0, 0, 0), 0.0, m, k, 3, containers="kit_locker_bank"))
+    piece("counter", lambda k: counter("counter", (0, 0, 0), 0.0, m, k))
+    piece("wall_desk", lambda k: wall_desk("wall_desk", (0, 0, 0), 0.0, m, k))
+    piece("shelf", lambda k: shelf("shelf", (0, 0, 0), 0.0, m, k, items_detail=1))
+    piece("cabin_porthole", lambda k: cabin_porthole("cabin_porthole", (0, 0, 1.5), 0.0, m, k))
+    piece("hangar_shell", lambda k: shell(hg.hangar_shell("hg", -9, 9, -12, 12, 10.0, [("S", -5.0, DOOR_W, DOOR_H)], m, k,
+                                                         floor_holes=[(-4.0, 4.0, -6.0, 6.0)], bay_door=("N", 0.0, 10.0, 7.0))))
+    piece("floodlight", lambda k: hg.floodlight("floodlight", (0, 0, 6.0), 0.0, m, k))
+    piece("docking_cradle", lambda k: hg.docking_cradle("cradle", -4.0, 4.0, -6.0, 6.0, m, k, gaps=[("W", 0.0, 1.8)]))
+    piece("gangway", lambda k: hg.gangway("gangway", (-3.0, 0.0, 0.0), (0.0, 0.0, 0.0), m, k))
+    piece("gantry_crane", lambda k: hg.gantry_crane("gantry", (0, 0, 0), 0.0, m, k))
+    piece("cargo_container", lambda k: hg.cargo_container("container", (0, 0, 0), 0.0, m, k))
+    piece("crate_stack", lambda k: hg.crate_stack("crate_stack", (0, 0, 0), 0.0, m, k))
+    piece("fuel_bollard", lambda k: hg.fuel_bollard("fuel_bollard", (0, 0, 0), 0.0, m, k, hose_to=(1.6, 1.4)))
 
     bpy.context.view_layer.update()
     exports = c.collection("EXPORT")
     stats = {}
-    for i, (name, (vis, col, marks, coll)) in enumerate(pieces.items()):
+    cursor_x, cursor_y, row_h = 0.0, 0.0, 0.0
+    for name, (vis, col, marks, coll) in pieces.items():
+        _check_interactions(marks, name)
         merged = c.join_by_material(vis, f"{name}", exports)
         c.export_gltf(f"{KIT_DIR}/{name}.gltf", merged + col + marks)
-        stats[name] = (_tris(merged), sorted({o.data.materials[0].name for o in merged}))
-        # Revue visuelle dans le .blend : pièces alignées, une rangée tous les 8 m.
+        by_level = {}
+        for o in merged:
+            by_level[c.detail_of(o)] = by_level.get(c.detail_of(o), 0) + _tris([o])
+        stats[name] = (by_level, sorted({o.data.materials[0].name for o in merged}))
+        # Revue visuelle dans le .blend : pièces en rangées, espacées selon leur emprise.
+        lo = Vector((1e9, 1e9, 0.0))
+        hi = Vector((-1e9, -1e9, 0.0))
+        for o in merged:
+            for b in o.bound_box:
+                p = o.matrix_world @ Vector(b)
+                lo.x, lo.y, hi.x, hi.y = min(lo.x, p.x), min(lo.y, p.y), max(hi.x, p.x), max(hi.y, p.y)
+        sx, sy = hi.x - lo.x, hi.y - lo.y
+        if cursor_x > 0 and cursor_x + sx > 60.0:
+            cursor_x, cursor_y, row_h = 0.0, cursor_y + row_h + 3.0, 0.0
+        dx, dy = cursor_x - lo.x, cursor_y - lo.y
         for obj in vis + col + marks + merged:
-            obj.location.x += (i % 6) * 9.0
-            obj.location.y += (i // 6) * 9.0
+            if obj.parent is not None:
+                continue  # suit son parent (mallette d'un objet ramassable)
+            obj.location.x += dx
+            obj.location.y += dy
+        cursor_x += sx + 3.0
+        row_h = max(row_h, sy)
         for obj in merged:
             obj.hide_set(True)
             obj.hide_render = True
     c.save_blend("art/kit/ship_interior.blend")
-    for name, (tris, mats) in stats.items():
-        print(f"kit {name} : {tris} triangles, {len(mats)} matériaux ({', '.join(mats)})")
+    for name, (by_level, mats) in stats.items():
+        levels = ", ".join(f"niveau {k} : {v}" for k, v in sorted(by_level.items()))
+        print(f"kit {name} : {sum(by_level.values())} triangles ({levels}), {len(mats)} matériaux ({', '.join(mats)})")
     print(f"kit exporté : {len(pieces)} pièces dans {KIT_DIR}/")
     return stats
 

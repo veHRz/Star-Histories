@@ -10,7 +10,12 @@ Conventions (vérifiées de bout en bout par le jeu) :
 - l'avant d'un objet pointe vers +Y dans Blender (−Z dans Bevy) ;
 - noms relus par le jeu : `*_col` (collision, non rendue), `*_lod1`, `CELL_<id>`,
   `PORTAL_<a>_<b>`, `SPAWN_<id>`, `SOCKET_<usage>`, `INTERACT_<type>`, `LIGHT_<id>` ;
-- les propriétés personnalisées deviennent des extras glTF (métadonnées).
+- les propriétés personnalisées deviennent des extras glTF (métadonnées) ;
+- décor par niveau de qualité (M9, docs/m9-retours.md §3.2) : propriété `detail` (entier,
+  `set_detail`) : absente ou 0 = toujours affiché, 1 = Moyen et Haut, 2 = Haut seulement ;
+  `join_by_material` ne mélange jamais deux niveaux ;
+- volume d'interaction (M9, §3.3) : extra `half_extents` d'un `INTERACT_*` (`half_extents`,
+  `fit_interact`), demi-tailles en mètres dans le repère local du nœud converti au jeu (Y-haut).
 
 Lancement :
 - en arrière-plan : blender --background --factory-startup --python tools/blender/<…>.py
@@ -199,14 +204,18 @@ def empty(
 
 
 def join_by_material(objects: list[bpy.types.Object], prefix: str, coll) -> list[bpy.types.Object]:
-    """Fusionne des copies des objets, un maillage par matériau : peu d'appels de rendu."""
-    groups: dict[str, list[bpy.types.Object]] = {}
+    """Fusionne des copies des objets, un maillage par matériau **et par niveau de décor**
+    (`detail`) : peu d'appels de rendu, et le jeu peut cacher un niveau sans toucher aux autres.
+
+    Niveau 0 : `<prefix>_<matériau>` (nom inchangé depuis M1) ; niveau n > 0 :
+    `<prefix>_<matériau>_d<n>`, qui porte la propriété `detail` = n (extra glTF)."""
+    groups: dict[tuple[str, int], list[bpy.types.Object]] = {}
     for obj in objects:
         if obj.type != "MESH" or not obj.data.materials:
             continue
-        groups.setdefault(obj.data.materials[0].name, []).append(obj)
+        groups.setdefault((obj.data.materials[0].name, detail_of(obj)), []).append(obj)
     merged = []
-    for mat_name, objs in sorted(groups.items()):
+    for (mat_name, level), objs in sorted(groups.items()):
         copies = []
         for obj in objs:
             copy = obj.copy()
@@ -220,10 +229,91 @@ def join_by_material(objects: list[bpy.types.Object], prefix: str, coll) -> list
         if len(copies) > 1:
             bpy.ops.object.join()
         joined = bpy.context.view_layer.objects.active
-        joined.name = f"{prefix}_{mat_name}"
+        joined.name = f"{prefix}_{mat_name}" if level == 0 else f"{prefix}_{mat_name}_d{level}"
         joined.data.name = joined.name
+        if DETAIL_KEY in joined.keys():
+            del joined[DETAIL_KEY]
+        if level > 0:
+            joined[DETAIL_KEY] = level
         merged.append(joined)
     return merged
+
+
+# --- Décor par niveau de qualité (M9) -----------------------------------------------------------
+# Convention (docs/m9-retours.md §3.2) : `detail` absent ou 0 = toujours ; 1 = Moyen et Haut ;
+# 2 = Haut seulement. Le jeu cache un nœud (et ses enfants) dont `detail` dépasse le niveau du
+# préréglage (`decor_detail`). Un décor optionnel n'a pas de collision, n'est jamais fusionné
+# avec la géométrie de base et ne projette pas d'ombre dans le bake (lightmap.py) ; il a ses UV
+# de lightmap comme le reste.
+
+DETAIL_KEY = "detail"
+DETAIL_MAX = 2
+# Repères qui portent du gameplay : jamais optionnels (le jeu doit se jouer pareil en Bas).
+_GAMEPLAY_PREFIXES = ("INTERACT_", "SOCKET_", "PORTAL_", "SPAWN_", "CELL_")
+
+
+def detail_of(obj: bpy.types.Object) -> int:
+    """Niveau de décor d'un objet (0 si la propriété est absente)."""
+    return int(obj.get(DETAIL_KEY, 0))
+
+
+def set_detail(objects, level: int) -> None:
+    """Marque des objets de décor au niveau `level` (0, 1 ou 2), propriété personnalisée
+    `detail` exportée en extra glTF ; 0 retire la marque. Refuse un collider (`_col`) ou un
+    repère de gameplay (`INTERACT_`, `SOCKET_`…) à un niveau > 0. Un `LIGHT_` peut l'être : sa
+    lampe n'est alors pas cuite (`lightmap.bake_cells`), elle n'existe qu'en dynamique."""
+    level = int(level)
+    if not 0 <= level <= DETAIL_MAX:
+        raise ValueError(f"niveau de décor hors bornes : {level} (0 à {DETAIL_MAX})")
+    for obj in objects:
+        if level > 0 and (obj.name.endswith("_col") or obj.name.startswith(_GAMEPLAY_PREFIXES)):
+            raise ValueError(f"{obj.name} : un collider ou un repère de gameplay ne peut pas être un décor optionnel")
+        if level > 0:
+            obj[DETAIL_KEY] = level
+        elif DETAIL_KEY in obj.keys():
+            del obj[DETAIL_KEY]
+
+
+# --- Volumes d'interaction (M9) ---------------------------------------------------------------
+# Convention (docs/m9-retours.md §3.3) : extra `half_extents: [x, y, z]` sur un `INTERACT_*` →
+# capteur en pavé centré sur le nœud ; absent → sphère de 0,35 m. Les demi-tailles sont
+# exprimées dans le repère **local** du nœud (elles tournent avec l'objet), converti comme
+# l'export glTF : x Blender → x, hauteur (z Blender) → y, profondeur (y Blender) → z.
+
+
+def half_extents(size: tuple[float, float, float], margin: float = 0.0) -> list[float]:
+    """Tailles complètes Blender (x, y, z) → demi-tailles du jeu [x, y (hauteur), z], en
+    mètres, agrandies de `margin` de chaque côté."""
+    sx, sy, sz = size
+    return [round(sx / 2 + margin, 4), round(sz / 2 + margin, 4), round(sy / 2 + margin, 4)]
+
+
+def fit_interact(mark: bpy.types.Object, objects, margin: float = 0.04, recenter: bool = True) -> list[float]:
+    """Ajuste un repère `INTERACT_*` pour que son pavé couvre `objects` (boîtes englobantes
+    dans le repère de rotation du repère) : `half_extents` écrit (marge `margin` comprise,
+    pour que le rayon de visée touche le capteur avant le collider de l'objet) et, si
+    `recenter`, le repère est déplacé au centre de la boîte (sa rotation ne change pas).
+    Renvoie les demi-tailles du jeu."""
+    bpy.context.view_layer.update()
+    rot = mark.matrix_world.to_quaternion().to_matrix()
+    inv = rot.inverted()
+    lo = Vector((1e9, 1e9, 1e9))
+    hi = Vector((-1e9, -1e9, -1e9))
+    for obj in objects:
+        corners = [obj.matrix_world @ Vector(b) for b in obj.bound_box] if obj.type == "MESH" else [obj.matrix_world.translation]
+        for p in corners:
+            q = inv @ p
+            lo = Vector(map(min, lo, q))
+            hi = Vector(map(max, hi, q))
+    size = hi - lo
+    if recenter:
+        center = rot @ ((lo + hi) / 2)
+        if mark.parent is not None:
+            center = mark.parent.matrix_world.inverted() @ center
+        mark.location = center
+    he = half_extents(tuple(size), margin)
+    mark["half_extents"] = he
+    return he
 
 
 # --- Fichiers ---------------------------------------------------------------------------------

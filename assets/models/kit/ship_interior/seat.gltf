@@ -26,13 +26,18 @@
 		{
 			"extras":{
 				"interact":"seat",
-				"role":"seat"
+				"role":"passenger",
+				"half_extents":[
+					0.38,
+					0.65,
+					0.38
+				]
 			},
 			"name":"INTERACT_seat",
 			"translation":[
 				0,
-				0.8999999761581421,
-				0
+				0.6200000047683716,
+				0.05000000074505806
 			]
 		},
 		{

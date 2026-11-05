@@ -107,13 +107,18 @@
 		{
 			"extras":{
 				"interact":"console",
-				"label":"console"
+				"label":"console",
+				"half_extents":[
+					0.69,
+					0.69,
+					0.34
+				]
 			},
 			"name":"INTERACT_console_low",
 			"translation":[
 				0,
-				1,
-				-0.10000000149011612
+				0.6499999761581421,
+				0
 			]
 		}
 	],

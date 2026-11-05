@@ -16,11 +16,29 @@
 				2,
 				3,
 				4,
-				5
+				5,
+				6
 			]
 		}
 	],
 	"nodes":[
+		{
+			"extras":{
+				"interact":"locker",
+				"container":"kit_locker",
+				"half_extents":[
+					0.33,
+					1.03,
+					0.305
+				]
+			},
+			"name":"INTERACT_locker",
+			"translation":[
+				0,
+				1,
+				0
+			]
+		},
 		{
 			"mesh":0,
 			"name":"locker_col",

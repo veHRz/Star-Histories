@@ -21,6 +21,15 @@ des objets mobiles (portes), sans carte d'ombre.
 
 Unités : la puissance d'une lampe Blender (W) vaut lumens / 683, comme l'exporteur glTF ; une
 valeur de bake (W/m²/sr) vaut donc 683 nits dans Bevy.
+
+Décor par niveau de qualité (M9, docs/m9-retours.md §3.2) : un objet de niveau `detail` ≥ 1
+(caché en Bas) reçoit sa lightmap normalement, mais pendant le bake il ne projette pas d'ombre
+et n'éclaire ni ne renvoie de lumière vers les autres (visibilités Cycles « shadow » et
+« diffuse » coupées) : sa disparition ne laisse ni ombre ni reflet fantôme. Un repère `LIGHT_`
+de niveau ≥ 1 n'est pas cuit (sa lumière n'existe qu'en dynamique, en Haut). Même traitement
+pour un objet ramassable (tout ce qui est sous un repère `INTERACT_*` d'`interact: "pickup"`) :
+il est amovible (le jeu le remplace par le modèle de l'objet, puis le retire quand on le prend),
+il ne doit pas laisser d'ombre cuite sur la table.
 """
 
 from __future__ import annotations
@@ -215,11 +224,29 @@ def _setup_cycles(scene) -> None:
         bg.inputs["Strength"].default_value = 0.0
 
 
-def spawn_lamps(marks, coll) -> list[bpy.types.Object]:
-    """Une lampe ponctuelle Blender par repère `LIGHT_` (mêmes réglages que dans le jeu)."""
+def removable(obj) -> bool:
+    """Vrai pour ce qui peut disparaître en jeu, donc ne doit ni ombrer ni éclairer le bake :
+    un décor optionnel (`detail` ≥ 1) ou ce qui est sous un repère `INTERACT_*` de genre
+    `pickup` (le repère compris)."""
+    if c.detail_of(obj) > 0:
+        return True
+    node = obj
+    while node is not None:
+        if node.name.startswith("INTERACT_") and node.get("interact") == "pickup":
+            return True
+        node = node.parent
+    return False
+
+
+def spawn_lamps(marks, coll, max_detail: int | None = None) -> list[bpy.types.Object]:
+    """Une lampe ponctuelle Blender par repère `LIGHT_` (mêmes réglages que dans le jeu).
+    `max_detail` : ignore les repères de niveau de décor supérieur (le bake passe 0) ; None :
+    toutes (aperçus)."""
     lamps = []
     for mark in marks:
         if not mark.name.startswith("LIGHT_"):
+            continue
+        if max_detail is not None and c.detail_of(mark) > max_detail:
             continue
         data = bpy.data.lights.new(f"bake_{mark.name}", type="POINT")
         data.energy = float(mark.get("lumens", 20000.0)) / WATTS_TO_LUMENS
@@ -307,6 +334,15 @@ def bake_cells(cells: dict, out_dir: str, lamps_coll) -> dict:
         if obj.type == "MESH" and obj not in bakeable and not obj.hide_render:
             obj.hide_render = True
             hidden.append(obj)
+    # Décor optionnel (niveau ≥ 1) et objets ramassables : cuits, mais sans ombre ni lumière
+    # renvoyée sur les autres (`removable`). États d'origine notés avant toute modification (un
+    # plafonnier peut aussi être un décor).
+    optional = []
+    for obj in bakeable:
+        if removable(obj):
+            optional.append((obj, obj.visible_shadow, obj.visible_diffuse))
+            obj.visible_shadow = False
+            obj.visible_diffuse = False
     # Les plafonniers sont remplacés par leurs lampes (comme dans le jeu) : leur surface
     # émissive ne doit pas éclairer une seconde fois. Tout matériau `sh_light*` (variantes de
     # teinte, M8) ; les bandeaux émissifs (`sh_band_*`) éclairent, eux, dans le bake.
@@ -316,7 +352,9 @@ def bake_cells(cells: dict, out_dir: str, lamps_coll) -> dict:
             obj.visible_diffuse = obj.visible_glossy = obj.visible_transmission = False
             obj.visible_volume_scatter = False
             emitters.append(obj)
-    lamps = spawn_lamps([m for cell in cells.values() for m in cell["marks"]], lamps_coll)
+    if optional:
+        print(f"bake : {len(optional)} maillages amovibles (décor optionnel, objets ramassables) sans ombre ni rebond")
+    lamps = spawn_lamps([m for cell in cells.values() for m in cell["marks"]], lamps_coll, max_detail=0)
 
     results = {}
     for cell_id, cell in cells.items():
@@ -353,6 +391,10 @@ def bake_cells(cells: dict, out_dir: str, lamps_coll) -> dict:
     for obj in emitters:
         obj.visible_diffuse = obj.visible_glossy = obj.visible_transmission = True
         obj.visible_volume_scatter = True
+    # Après les plafonniers : l'état noté est celui d'avant le bake.
+    for obj, shadow, diffuse in optional:
+        obj.visible_shadow = shadow
+        obj.visible_diffuse = diffuse
     for lamp in lamps:
         data = lamp.data
         bpy.data.objects.remove(lamp, do_unlink=True)
