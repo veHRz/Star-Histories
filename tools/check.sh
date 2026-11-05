@@ -13,6 +13,20 @@ if ! command -v cargo >/dev/null 2>&1; then
     export PATH="$HOME/.cargo/bin:$PATH"
 fi
 
+# Arbre vérifié : le contenu du dossier de travail (fichiers ignorés exclus), pris au départ et noté
+# dans target/check-ok.txt si tout est vert. L'orchestrateur (/orchestrateur) le compare à HEAD pour
+# ne pas relancer ce script sur un état déjà vérifié sur ce poste. Index temporaire copié du vrai :
+# seuls les fichiers modifiés sont relus.
+checked_tree=""
+if index=$(git rev-parse --git-path index 2>/dev/null) && [ -f "$index" ]; then
+    tmp_index="$index.check"
+    cp "$index" "$tmp_index"
+    if GIT_INDEX_FILE="$tmp_index" git add -A 2>/dev/null; then
+        checked_tree=$(GIT_INDEX_FILE="$tmp_index" git write-tree)
+    fi
+    rm -f "$tmp_index"
+fi
+
 cyan=$'\e[36m'; red=$'\e[31m'; green=$'\e[32m'; reset=$'\e[0m'
 
 step() {
@@ -102,4 +116,8 @@ step "scénario firefight" \
 step "scénario firefight_lose" \
     run_game "ERROR|panicked|combat . pied" SH_START=sector:player_ship SH_SPAWN=soute SH_BOARDING=3 SH_SCENARIO=firefight_lose
 
+if [ -n "$checked_tree" ]; then
+    printf 'tree=%s\ncommit=%s\ndate=%s\n' "$checked_tree" "$(git rev-parse HEAD)" \
+        "$(date '+%Y-%m-%d %H:%M')" > target/check-ok.txt
+fi
 echo "${green}Tout est vert.${reset}"

@@ -11,6 +11,22 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
     $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
 }
 
+# Arbre vérifié : le contenu du dossier de travail (fichiers ignorés exclus), pris au départ et noté
+# dans target/check-ok.txt si tout est vert. L'orchestrateur (/orchestrateur) le compare à HEAD pour
+# ne pas relancer ce script sur un état déjà vérifié sur ce poste. Index temporaire copié du vrai :
+# seuls les fichiers modifiés sont relus.
+$checkedTree = $null
+$index = git rev-parse --git-path index
+if ($LASTEXITCODE -eq 0 -and (Test-Path $index)) {
+    $tmpIndex = "$index.check"
+    Copy-Item $index $tmpIndex -Force
+    $env:GIT_INDEX_FILE = $tmpIndex
+    git add -A 2>$null
+    if ($LASTEXITCODE -eq 0) { $checkedTree = git write-tree }
+    Remove-Item Env:GIT_INDEX_FILE
+    Remove-Item $tmpIndex -ErrorAction SilentlyContinue
+}
+
 function Step([string]$Name, [scriptblock]$Command) {
     Write-Host "== $Name" -ForegroundColor Cyan
     & $Command
@@ -229,4 +245,8 @@ Step "scénario firefight_lose" {
     $global:LASTEXITCODE = $code
 }
 
+if ($checkedTree) {
+    @("tree=$checkedTree", "commit=$(git rev-parse HEAD)", "date=$(Get-Date -Format 'yyyy-MM-dd HH:mm')") |
+        Set-Content -Encoding ascii target/check-ok.txt
+}
 Write-Host "Tout est vert." -ForegroundColor Green
