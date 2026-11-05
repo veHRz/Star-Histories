@@ -98,9 +98,22 @@ impl Containers {
 }
 
 /// Les objets posés dans le monde qu'on a déjà ramassés, par identifiant stable du point de
-/// ramassage (choisi par le lot L3) : ils ne reviennent plus.
+/// ramassage (`sector::gltf::pickup_id` : `<secteur>/<cellule>/<nœud sans INTERACT_>`, par
+/// exemple `player_ship/quartiers/quartiers_pickup_datapad`) : ils ne reviennent plus, la
+/// cellule qui se charge les retire (`sector::gltf`). Sauvegardé (`save`).
 #[derive(Resource, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PickedUp(pub BTreeSet<String>);
+
+impl PickedUp {
+    pub fn contains(&self, id: &str) -> bool {
+        self.0.contains(id)
+    }
+
+    /// Note un point de ramassage vidé ; faux s'il l'était déjà.
+    pub fn insert(&mut self, id: impl Into<String>) -> bool {
+        self.0.insert(id.into())
+    }
+}
 
 /// L'équipement porté : emplacement → identifiant d'objet du catalogue.
 #[derive(Resource, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -120,13 +133,16 @@ impl Equipment {
 // --- Messages ----------------------------------------------------------------------------------
 
 /// Ouvrir un conteneur (casier), par son identifiant : l'écran de rangement (L5) l'affiche à côté
-/// de l'inventaire.
+/// de l'inventaire. Envoyé par `interaction` quand le joueur utilise un `INTERACT_*` de genre
+/// `locker` ; le contenu se lit et se modifie dans [`Containers`] (`contents`, `add`, `remove`),
+/// et l'inventaire dans [`Inventory`] : les deux sont sauvegardés.
 #[derive(Message, Clone, Debug, PartialEq, Eq)]
 pub struct OpenContainer(pub String);
 
 /// Parler à un PNJ de comptoir (`interact: "npc"`, docs/m9-retours.md §3.4) : la conversation
 /// (L4) ouvre les services de son rôle (`contracts`, `bank`, `market`, `shipyard`, `bar`…) ;
-/// `variant` (`a`, `b`, `c`) est celle de son modèle.
+/// `variant` (`a`, `b`, `c`) est celle de son modèle. Envoyé par `interaction` quand le joueur
+/// vise le PNJ (ou son comptoir) et appuie sur la touche d'interaction.
 #[derive(Message, Clone, Debug, PartialEq, Eq)]
 pub struct TalkTo {
     pub role: String,
@@ -221,6 +237,15 @@ mod tests {
         assert_eq!(containers.remove("ailleurs", "ration", 1), 0);
         // Vidé, le casier reste connu : son contenu de départ ne revient pas.
         assert_eq!(containers.contents("casier"), Some(&BTreeMap::new()));
+    }
+
+    #[test]
+    fn un_objet_pris_le_reste() {
+        let mut picked = PickedUp::default();
+        assert!(picked.insert("player_ship/quartiers/tablette"));
+        assert!(!picked.insert("player_ship/quartiers/tablette"));
+        assert!(picked.contains("player_ship/quartiers/tablette"));
+        assert!(!picked.contains("player_ship/soute/tablette"));
     }
 
     #[test]

@@ -4,10 +4,15 @@
 //! - à chaque caméra du monde ([`WorldCamera`]) : HDR, bloom, anticrénelage, pas de MSAA ;
 //! - à la lumière directionnelle : ombres, cascades, taille de la carte d'ombre ;
 //! - à l'échelle de rendu : sous 1, la scène 3D est rendue dans une image plus petite, affichée
-//!   en plein écran sous l'interface, qui reste à pleine résolution.
+//!   en plein écran sous l'interface, qui reste à pleine résolution ;
+//! - au décor par niveau (M9, docs/m9-retours.md §3.2) : un nœud glTF de décor optionnel
+//!   ([`DecorDetail`], extra `detail`) est caché avec ses enfants si son niveau dépasse
+//!   `decor_detail` ; un changement de préréglage s'applique en direct, sans recharger la cellule
+//!   (le réglage à l'arrivée d'un modèle est fait par `sector::gltf`).
 
 use bevy::anti_alias::fxaa::Fxaa;
 use bevy::anti_alias::smaa::Smaa;
+use bevy::camera::visibility::VisibilitySystems;
 use bevy::camera::{CameraOutputMode, Hdr, RenderTarget};
 use bevy::light::cluster::GlobalClusterSettings;
 use bevy::light::{CascadeShadowConfigBuilder, DirectionalLightShadowMap, ShadowFilteringMethod};
@@ -19,29 +24,38 @@ use bevy::window::PrimaryWindow;
 use sh_data::{AntiAliasing, GraphicsPreset, PresetLevel, ShadowFilter};
 
 use crate::data::Data;
+use crate::sector::gltf::{DecorDetail, decor_visibility};
 use crate::ui::UiCamera;
 
 pub struct GraphicsPlugin;
 
 impl Plugin for GraphicsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, cpu_light_clustering).add_systems(
-            PostUpdate,
-            (
-                init_settings.run_if(resource_added::<Data>),
+        app.add_systems(Startup, cpu_light_clustering)
+            .add_systems(
+                PostUpdate,
                 (
-                    configure_cameras,
-                    configure_directional_lights,
-                    update_render_scale,
-                    sync_ui_clear,
-                    budget_point_shadows,
+                    init_settings.run_if(resource_added::<Data>),
+                    (
+                        configure_cameras,
+                        configure_directional_lights,
+                        update_render_scale,
+                        sync_ui_clear,
+                        budget_point_shadows,
+                    )
+                        .chain()
+                        .run_if(resource_exists::<GraphicsSettings>),
                 )
                     .chain()
-                    .run_if(resource_exists::<GraphicsSettings>),
+                    .before(TransformSystems::Propagate),
             )
-                .chain()
-                .before(TransformSystems::Propagate),
-        );
+            // Ne tourne que le frame où le réglage change : rien à payer sinon.
+            .add_systems(
+                PostUpdate,
+                apply_decor_detail
+                    .run_if(resource_exists_and_changed::<GraphicsSettings>)
+                    .before(VisibilitySystems::VisibilityPropagate),
+            );
     }
 }
 
@@ -305,5 +319,87 @@ pub(crate) fn budget_point_shadows(
         if light.shadow_maps_enabled != wanted {
             light.shadow_maps_enabled = wanted;
         }
+    }
+}
+
+/// Le préréglage a changé (options) : chaque décor optionnel déjà instancié est montré ou caché
+/// selon le nouveau niveau. Seuls les nœuds dont la visibilité change sont touchés.
+pub(crate) fn apply_decor_detail(
+    settings: Res<GraphicsSettings>,
+    mut decor: Query<(&DecorDetail, &mut Visibility)>,
+) {
+    for (detail, mut visibility) in &mut decor {
+        visibility.set_if_neq(decor_visibility(settings.preset.shows_detail(detail.0)));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sh_data::GraphicsPresets;
+
+    fn presets() -> GraphicsPresets {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../assets/data")
+            .join(sh_data::paths::GRAPHICS);
+        sh_data::read_ron(&path).unwrap_or_else(|err| panic!("{err}"))
+    }
+
+    fn settings(presets: &GraphicsPresets, level: PresetLevel) -> GraphicsSettings {
+        GraphicsSettings {
+            level,
+            preset: presets.get(level).clone(),
+        }
+    }
+
+    #[test]
+    fn niveaux_de_decor_par_prereglage() {
+        let presets = presets();
+        let shown = |level| {
+            (0..=GraphicsPreset::MAX_DECOR_DETAIL)
+                .filter(|d| presets.get(level).shows_detail(*d))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(shown(PresetLevel::Low), [0]);
+        assert_eq!(shown(PresetLevel::Medium), [0, 1]);
+        assert_eq!(shown(PresetLevel::High), [0, 1, 2]);
+    }
+
+    #[test]
+    fn le_decor_suit_le_prereglage_en_direct() {
+        let presets = presets();
+        let mut app = App::new();
+        app.add_systems(
+            Update,
+            apply_decor_detail.run_if(resource_exists_and_changed::<GraphicsSettings>),
+        );
+        let medium = app
+            .world_mut()
+            .spawn((DecorDetail(1), Visibility::Inherited))
+            .id();
+        let high = app
+            .world_mut()
+            .spawn((DecorDetail(2), Visibility::Inherited))
+            .id();
+        let visibility = |app: &App, e: Entity| app.world().get::<Visibility>(e).copied();
+
+        app.insert_resource(settings(&presets, PresetLevel::Low));
+        app.update();
+        assert_eq!(visibility(&app, medium), Some(Visibility::Hidden));
+        assert_eq!(visibility(&app, high), Some(Visibility::Hidden));
+
+        app.insert_resource(settings(&presets, PresetLevel::Medium));
+        app.update();
+        assert_eq!(visibility(&app, medium), Some(Visibility::Inherited));
+        assert_eq!(visibility(&app, high), Some(Visibility::Hidden));
+
+        app.insert_resource(settings(&presets, PresetLevel::High));
+        app.update();
+        assert_eq!(visibility(&app, high), Some(Visibility::Inherited));
+
+        // Sans changement de réglage, le système ne repasse pas sur les nœuds.
+        app.world_mut().entity_mut(high).insert(Visibility::Hidden);
+        app.update();
+        assert_eq!(visibility(&app, high), Some(Visibility::Hidden));
     }
 }

@@ -18,6 +18,16 @@
     "interact.seat.leave_helm": "[KeyF]: Stand up",
     "interact.pickup": "[KeyE]: Take {item}",
     "interact.ladder": "[KeyE]: Climb",
+    "interact.locker": "[KeyE]: Open locker",
+    "interact.npc": "[KeyE]: Talk",
+    "interact.npc.with": "[KeyE]: Talk to the {role}",
+    // PNJ de comptoir (paramètre `role` d'un `INTERACT_*` de genre `npc`) : anonymes et
+    // génériques, en minuscules (ils se glissent dans l'invite).
+    "npc.role.contracts": "contracts clerk",
+    "npc.role.bank": "Bank clerk",
+    "npc.role.market": "trader",
+    "npc.role.shipyard": "shipyard agent",
+    "npc.role.bar": "barkeep",
     "notice.picked_up": "Picked up: {item}",
     "notice.ladder": "The ladder is not usable yet.",
     "item.spare_parts": "spare parts",

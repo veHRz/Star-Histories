@@ -1,8 +1,12 @@
 //! Interactions à la première personne : un rayon de visée et une touche.
 //!
 //! Le rayon part de l'œil du joueur ; il est arrêté par les murs et les portes, si bien qu'on
-//! n'interagit jamais à travers une cloison. La cible visée affiche une invite ; la touche
-//! d'interaction (ou l'autopilote, via [`InteractRequest`]) déclenche l'action.
+//! n'interagit jamais à travers une cloison. La cible visée (le capteur d'un `INTERACT_*`, un pavé
+//! qui couvre l'objet quand le modèle donne ses `half_extents` : on s'assoit en visant la chaise)
+//! affiche une invite ; la touche d'interaction (ou l'autopilote, via [`InteractRequest`])
+//! déclenche l'action : porte, console, siège, ramassage (l'objet entre dans l'[`Inventory`] et
+//! son point de ramassage dans `items::PickedUp` : il ne revient plus), casier
+//! (`items::OpenContainer`), PNJ de comptoir (`items::TalkTo`), échelle.
 
 use std::collections::BTreeMap;
 
@@ -12,9 +16,10 @@ use bevy_enhanced_input::prelude::*;
 
 use crate::data::Texts;
 use crate::input::Interact;
+use crate::items::{OpenContainer, PickedUp, TalkTo};
 use crate::player::{Player, PlayerCamera, PlayerController, PlayerMode};
 use crate::sector::doors::Door;
-use crate::sector::gltf::{Interactable, Socket};
+use crate::sector::gltf::{Interactable, PickupId, Socket};
 use crate::sector::{ActiveSector, Docked, Layer};
 use crate::state::ControlMode;
 use crate::ui::hud::{Notice, Prompt};
@@ -24,16 +29,22 @@ pub struct InteractionPlugin;
 
 impl Plugin for InteractionPlugin {
     fn build(&self, app: &mut App) {
+        // Une condition par système (AGENTS.md §4) : celle d'un groupe chaîné n'est évaluée
+        // qu'une fois, avant le premier.
+        let in_sector = resource_exists::<ActiveSector>;
         app.init_resource::<Focus>()
             .init_resource::<Inventory>()
             .add_message::<InteractRequest>()
             .add_observer(on_interact_key)
             .add_systems(
                 Update,
-                (find_focus, update_prompt, perform)
+                (
+                    find_focus.run_if(in_sector),
+                    update_prompt.run_if(in_sector),
+                    perform.run_if(in_sector),
+                )
                     .chain()
-                    .after(crate::player::PlayerSystems)
-                    .run_if(resource_exists::<ActiveSector>),
+                    .after(crate::player::PlayerSystems),
             );
     }
 }
@@ -165,6 +176,16 @@ fn update_prompt(
             "interact.pickup",
             &[("item", &texts.get(&format!("item.{item}")))],
         ),
+        Interactable::Locker { .. } => texts.get("interact.locker"),
+        Interactable::Npc { role, .. } => {
+            // Le libellé du rôle s'il est connu ; un rôle sans texte n'affiche pas sa clé.
+            let role_key = format!("npc.role.{role}");
+            if texts.has(&role_key) {
+                texts.format("interact.npc.with", &[("role", &texts.get(&role_key))])
+            } else {
+                texts.get("interact.npc")
+            }
+        }
         Interactable::Ladder => texts.get("interact.ladder"),
     });
     if prompt.0 != text {
@@ -277,6 +298,12 @@ fn perform(
         Option<Res<Docked>>,
         MessageWriter<OpenTerminal>,
     ),
+    (mut picked, pickup_ids, mut containers, mut talks): (
+        Option<ResMut<PickedUp>>,
+        Query<&PickupId>,
+        MessageWriter<OpenContainer>,
+        MessageWriter<TalkTo>,
+    ),
 ) {
     let living = living.as_ref().map(|(w, k)| (&**w, &**k));
     if requests.read().count() == 0 {
@@ -343,11 +370,28 @@ fn perform(
         },
         Interactable::Pickup { item } => {
             *inventory.items.entry(item.clone()).or_default() += 1;
+            // Pris pour de bon : son point de ramassage reste vide, même après un chargement.
+            if let (Ok(id), Some(picked)) = (pickup_ids.get(target.entity), picked.as_mut()) {
+                picked.insert(id.0.clone());
+            }
             notices.write(Notice(texts.format(
                 "notice.picked_up",
                 &[("item", &texts.get(&format!("item.{item}")))],
             )));
             commands.entity(target.entity).despawn();
+        }
+        Interactable::Locker { container } => {
+            if container.is_empty() {
+                warn!("casier sans identifiant de conteneur (paramètre container)");
+            } else {
+                containers.write(OpenContainer(container.clone()));
+            }
+        }
+        Interactable::Npc { role, variant } => {
+            talks.write(TalkTo {
+                role: role.clone(),
+                variant: variant.clone(),
+            });
         }
         Interactable::Ladder => {
             notices.write(Notice(texts.get("notice.ladder")));

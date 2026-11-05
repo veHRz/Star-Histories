@@ -2,10 +2,15 @@
 //!
 //! Une sauvegarde est un fichier RON versionné ([`FORMAT_VERSION`]) du dossier du joueur
 //! ([`user_dir`]) : le monde simulé sans ses constantes (reconstruites depuis les données), la
-//! fiche du capitaine, l'horloge, le lieu. On sauvegarde à quai ou en vol, jamais en combat ni
+//! fiche du capitaine, l'horloge, le lieu, les objets (inventaire, casiers, objets pris dans le
+//! monde, équipement : [`SavedItems`]). On sauvegarde à quai ou en vol, jamais en combat ni
 //! pendant une manœuvre. Charger passe par le menu principal : quitter la partie l'efface
-//! (`state::forget_game`), puis les ressources de la sauvegarde remplacent celles qu'une
-//! nouvelle partie aurait créées (monde, horloge et carrière ne se recréent que s'ils manquent).
+//! (`state::forget_game`, `items::forget_items`), puis les ressources de la sauvegarde remplacent
+//! celles qu'une nouvelle partie aurait créées (monde, horloge, carrière et objets ne se recréent
+//! que s'ils manquent).
+//!
+//! Le format ne change de version que si une ancienne sauvegarde ne peut plus se relire : un
+//! champ ajouté a une valeur par défaut (`#[serde(default)]`) et la version reste la même.
 //!
 //! Homme de fer : une seule sauvegarde, écrite automatiquement (à quai, à l'arrivée, en quittant)
 //! et effacée à la mort.
@@ -27,6 +32,7 @@ use crate::combat::{Death, Raid};
 use crate::data::{Data, Texts};
 use crate::input::{QuickLoad, QuickSave};
 use crate::interaction::Inventory;
+use crate::items::{Containers, Equipment, PickedUp};
 use crate::living::{LivingWorld, PlayerKnowledge};
 use crate::sector::{ActiveSector, Docked};
 use crate::space::{SpacePosition, SpaceRotation};
@@ -136,6 +142,48 @@ pub struct SaveFile {
     /// n'impose pas le début du jeu à une partie déjà avancée.
     #[serde(default = "Tutorial::finished")]
     pub tutorial: Tutorial,
+    /// Casiers, objets pris dans le monde, équipement porté (M9). Absent d'une sauvegarde plus
+    /// ancienne : rien n'a été pris, casiers et équipement repartent du catalogue.
+    #[serde(default)]
+    pub items: SavedItems,
+}
+
+/// Les objets d'une partie hors inventaire (`items`). Casiers et équipement sont facultatifs :
+/// absents, l'entrée en jeu les tire du catalogue (`items::start_items`) au lieu de les laisser
+/// vides.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedItems {
+    #[serde(default)]
+    pub containers: Option<Containers>,
+    #[serde(default)]
+    pub picked_up: PickedUp,
+    #[serde(default)]
+    pub equipment: Option<Equipment>,
+}
+
+impl SavedItems {
+    fn capture(world: &World) -> Self {
+        SavedItems {
+            containers: world.get_resource::<Containers>().cloned(),
+            picked_up: world
+                .get_resource::<PickedUp>()
+                .cloned()
+                .unwrap_or_default(),
+            equipment: world.get_resource::<Equipment>().cloned(),
+        }
+    }
+
+    /// Installe les objets avant l'entrée en jeu : `items::start_items` ne crée que ce qui
+    /// manque.
+    fn install(self, world: &mut World) {
+        if let Some(containers) = self.containers {
+            world.insert_resource(containers);
+        }
+        world.insert_resource(self.picked_up);
+        if let Some(equipment) = self.equipment {
+            world.insert_resource(equipment);
+        }
+    }
 }
 
 /// Une sauvegarde à charger : appliquée au menu principal, une fois la partie quittée.
@@ -343,18 +391,25 @@ fn capture(world: &World, kind: SaveKind) -> Result<SaveFile, &'static str> {
             .get_resource::<Tutorial>()
             .cloned()
             .unwrap_or_else(Tutorial::finished),
+        items: SavedItems::capture(world),
     })
 }
 
 /// Sauvegarde maintenant et l'annonce. En Homme de fer, seules les sauvegardes automatiques
 /// s'écrivent, toujours dans le même fichier.
 pub fn save_now(world: &mut World, kind: SaveKind) {
+    write_save(world, kind);
+}
+
+/// Comme [`save_now`], et rend le fichier écrit (l'autopilote recharge exactement celui-là :
+/// une sauvegarde automatique de la même seconde ne s'y substitue pas).
+pub fn write_save(world: &mut World, kind: SaveKind) -> Option<PathBuf> {
     let ironman = world.get_resource::<GameMode>().is_some_and(|m| m.ironman);
     let kind = match (ironman, kind) {
         (true, SaveKind::Auto) => SaveKind::Ironman,
         (true, _) => {
             notify(world, "save.refused.ironman", &[]);
-            return;
+            return None;
         }
         (false, kind) => kind,
     };
@@ -365,7 +420,7 @@ pub fn save_now(world: &mut World, kind: SaveKind) {
             if kind != SaveKind::Auto && kind != SaveKind::Ironman {
                 notify(world, key, &[]);
             }
-            return;
+            return None;
         }
     };
     let path = saves_dir().join(file_name(kind, save.meta.saved_at));
@@ -378,10 +433,12 @@ pub fn save_now(world: &mut World, kind: SaveKind) {
                 _ => "save.done",
             };
             notify(world, key, &[]);
+            Some(path)
         }
         Err(err) => {
             error!("sauvegarde impossible : {err}");
             notify(world, "save.failed", &[("error", &err.to_string())]);
+            None
         }
     }
 }
@@ -502,6 +559,7 @@ fn install(world: &mut World, save: SaveFile) {
     world.insert_resource(save.codex);
     world.insert_resource(save.tips);
     world.insert_resource(save.tutorial);
+    save.items.install(world);
     world.insert_resource(Location {
         system: system.clone(),
     });
@@ -536,6 +594,36 @@ fn install(world: &mut World, save: SaveFile) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn les_objets_se_sauvegardent_et_les_anciennes_sauvegardes_se_relisent() {
+        let mut containers = Containers::default();
+        containers.add("corvette_chambre_casier_1", "ration", 2);
+        let mut picked_up = PickedUp::default();
+        picked_up.insert("player_ship/quartiers/quartiers_pickup_datapad");
+        let mut equipment = Equipment::default();
+        equipment
+            .0
+            .insert(sh_data::EquipSlot::Weapon, "mag_pistol".to_owned());
+        let items = SavedItems {
+            containers: Some(containers),
+            picked_up,
+            equipment: Some(equipment),
+        };
+        // Écrit comme une sauvegarde, relu comme une sauvegarde.
+        let path = std::env::temp_dir().join(format!("sh-objets-{}.ron", std::process::id()));
+        sh_data::write_ron(&path, &items).expect("écriture");
+        let text = std::fs::read_to_string(&path).expect("lecture");
+        let _ = std::fs::remove_file(&path);
+        let back: SavedItems = sh_data::ron_options().from_str(&text).expect("relecture");
+        assert_eq!(back, items);
+        // Une sauvegarde d'avant M9 n'a pas ces champs : rien de pris, le reste du catalogue.
+        let old: SavedItems = sh_data::ron_options()
+            .from_str("()")
+            .expect("ancien format");
+        assert_eq!(old, SavedItems::default());
+        assert!(old.containers.is_none() && old.equipment.is_none());
+    }
 
     #[test]
     fn noms_des_fichiers() {
