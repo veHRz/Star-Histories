@@ -156,6 +156,20 @@ But : un jeu beau et compréhensible dès la première minute, sans rien perdre 
 
 ---
 
+## M9 — Retours de l'auteur après M8
+
+But : traiter la liste de l'auteur du 05/11/2026 (interface, options et touches, carte, objets et inventaire, vaisseau type et hangar, PNJ de comptoir, décor selon la qualité, Hexis, tutoriel). Plan, conventions entre lots, tableau des lots et avancement : `docs/m9-retours.md`.
+
+- [ ] L0 : branchement (langue par domaine, schémas et types partagés, actions nouvelles).
+- [ ] Vague 1 : kit (A), PNJ (E), objets et icônes (F), options et touches (L1), interface en jeu (L2), objets et interactions (L3).
+- [ ] Vague 2 : intérieur type `corvette` (B), spatioport par défaut avec hangar (D), bornes et conversation (L4), écran du personnage (L5), Hexis (L6), carte galactique (L8).
+- [ ] Vague 3 : coque de la corvette (C), secteurs types et arrivée au hangar (L7), tutoriel dans la chambre (L9) ; bakes finals.
+- [ ] Intégration et tests par l'orchestrateur à chaque vague : `tools/check.ps1`, captures avant / après, `tools/perf.ps1 -Preset low -Window fullscreen`.
+
+**Fini quand** : chaque point de la liste est traité ou tranché avec l'auteur ; `tools/check.ps1` vert ; ≥ 60 i/s en Bas 1080p sur la machine de référence ; l'auteur valide les captures avant / après.
+
+---
+
 ## Après la v1 (non planifié, à décider avec l'auteur)
 
 Débuts multiples (`_context/futur.md`), nouveaux systèmes et royaumes à mesure que le canon grandit, commandement de flottes, personnages non humains, magie, histoires écrites de la Trame Actuelle.

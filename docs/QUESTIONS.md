@@ -5,6 +5,15 @@
 
 ## Ouvertes
 
+16. **Boucliers sur le schéma de la coque (M9).** Tu demandes un schéma de « l'état des boucliers et de la coque ». Or le jeu n'a jamais de boucliers énergétiques (règle du projet, P26 : seul le blindage protège). Le schéma doit-il montrer autre chose à leur place ?
+   → *Hypothèse en attendant* : le schéma montre le **blindage de chaque section** (proue, poupe, bâbord, tribord) et l'état du cœur, sans bouclier.
+
+17. **Hexis « planète-ville » (M9).** Le canon (§3.3) décrit Hexis comme un « monde-usine et place forte », un ancien monde industriel ravagé de ≈ 1,5 Md d'habitants, sans dire « planète-ville ». Faut-il une écuménopole entière, ou un monde-usine très urbanisé ?
+   → *Hypothèse en attendant* : monde-usine très urbanisé : nappes de villes et de complexes industriels visibles de jour, lumières des villes côté nuit, zones ravagées encore visibles.
+
+18. **Voyage vers les mondes isolés (M9).** Les astres hors système (§3.4) deviennent des destinations par l'hyperespace (ils n'ont pas de Portail). Myrth (« on n'y atterrit pas sans invitation ») et Vashyra (« refuse tout contact prolongé ») : jusqu'où le joueur peut-il aller ?
+   → *Hypothèse en attendant* : arrivée en orbite seulement, pour tous (aucun n'a de spatioport) ; les astres secrets restent hors de la carte.
+
 ## Tranchées
 
 1. **Départ de la v1.** Capitaine indépendant à Hexis, endetté auprès de la Banque (P1) : ça te va ?
