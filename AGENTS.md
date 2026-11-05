@@ -49,7 +49,8 @@
 | `docs/prompt-initial.md` | Le prompt qui a lancé le projet | — |
 | `docs/refonte-visuelle.md` | Plan de M8 : direction artistique « futur usé », contraintes, lots et méthode orchestrateur + sous-agents | Toi |
 | `docs/prompt-m8.md` | Le prompt qui lance M8 dans une nouvelle conversation | — |
-| `.claude/agents/` | Définitions des sous-agents (`artiste-blender`, `dev-jeu`) : règles de travail en parallèle | Toi, avec prudence |
+| `.claude/agents/` | Définitions des sous-agents (`artiste-blender` pour la 3D, `dev-jeu` pour tout le reste) : règles de travail en parallèle | Toi, avec prudence |
+| `.claude/skills/orchestrateur/SKILL.md` | Le mode orchestrateur (`/orchestrateur <jalon \| fichier \| tâches>`) : découpage en lots, sous-agents, intégration et tests par vague (§12.5) | Toi, avec prudence |
 | `.reference/bevy-0.20.1/` | Clone en lecture seule de Bevy v0.20.1 (exemples, sources, guides de migration). Ignoré par Git | Personne |
 | `assets/` | Tout ce que le jeu charge à l'exécution | Toi |
 | `art/` | Fichiers sources `.blend` (Git LFS) | Toi via Blender |
@@ -148,7 +149,7 @@ Le jeu lit des variables d'environnement (`crates/sh_game/src/dev.rs`) :
 | `SH_TUTORIAL=1`, `SH_TUTORIAL_STEP=N` | Le tutoriel guidé (coupé par défaut quand l'autopilote pilote, comme les conseils) ; démarrer à l'étape N (captures du panneau) |
 | `SH_SCENARIO=tutorial` | Avec `SH_START=new SH_TUTORIAL=1 SH_RAID=0 SH_USER_DIR=…` : joue tout le tutoriel (commandes, amarrage, bureau, contrat, écrans, départ, carte, Portail, livraison, sauvegarde), captures `target/shots/m8-tuto-*.png` (critère de M8) |
 
-À la sortie, le jeu journalise toujours le **temps de frame moyen et maximal** et le nombre de frames au-dessus de 33 ms (hors chargement). `tools/check.ps1` (Windows) et `tools/check.sh` (Linux) lancent un test de fumée de chaque point d'entrée ; ces deux scripts font la même chose, modifie-les **ensemble**. Les **mesures de performance** passent par `tools/perf.ps1` / `tools/perf.sh` (même règle) : build release, puis chaque scénario qui porte un critère de performance (`walk_ship` avec et sans lightmaps, `fly_ship`, `port_loop`, `raid_win`, `firefight`, `firefight_lose`), résumé dans `target/perf/` (exemple : `powershell -ExecutionPolicy Bypass -File tools/perf.ps1 -Preset low -Window fullscreen`, le préréglage de la cible ; `-Preset medium` pour comparer). Le jeu occupe l'écran pendant les mesures : préviens l'auteur.
+À la sortie, le jeu journalise toujours le **temps de frame moyen et maximal** et le nombre de frames au-dessus de 33 ms (hors chargement). `tools/check.ps1` (Windows) et `tools/check.sh` (Linux) lancent un test de fumée de chaque point d'entrée ; ces deux scripts font la même chose, modifie-les **ensemble**. Quand tout est vert, ils notent dans `target/check-ok.txt` (propre au poste) l'arbre vérifié (`tree=`, contenu du dossier de travail au départ du script) : s'il vaut `git rev-parse "HEAD^{tree}"`, l'état courant a déjà passé le contrôle sur ce poste. Les **mesures de performance** passent par `tools/perf.ps1` / `tools/perf.sh` (même règle) : build release, puis chaque scénario qui porte un critère de performance (`walk_ship` avec et sans lightmaps, `fly_ship`, `port_loop`, `raid_win`, `firefight`, `firefight_lose`), résumé dans `target/perf/` (exemple : `powershell -ExecutionPolicy Bypass -File tools/perf.ps1 -Preset low -Window fullscreen`, le préréglage de la cible ; `-Preset medium` pour comparer). Le jeu occupe l'écran pendant les mesures : préviens l'auteur.
 
 Exemple (PowerShell) :
 
@@ -450,11 +451,12 @@ Détails dans `docs/GDD.md`. Les piliers :
 - Lance les commandes longues (première compilation, build release) en arrière-plan.
 - Si tu bloques sur une API plus de deux essais : lis l'exemple Bevy correspondant plutôt que de deviner.
 
-### 12.5 Travail en parallèle avec des sous-agents (M8)
+### 12.5 Travail en parallèle avec des sous-agents (mode orchestrateur)
 
-- Un **orchestrateur** répartit le travail en lots (`docs/refonte-visuelle.md` §4) et lance un sous-agent par lot (`.claude/agents/artiste-blender.md` pour les assets, `.claude/agents/dev-jeu.md` pour le code). Il garde pour lui l'intégration, les tests, les commits et les échanges avec l'auteur.
-- **Un fichier, un propriétaire** : deux sous-agents ne touchent jamais le même fichier. Le code partagé, les fichiers de langue (sauf le lot qui en reçoit une partie), `AGENTS.md` et `docs/` restent à l'orchestrateur.
-- **Les sous-agents ne testent pas le jeu** : ni `cargo t`, ni le jeu, ni `tools/check.*`, ni `tools/perf.*`, ni `git`. Les artistes lancent Blender en arrière-plan (un processus chacun, jamais le Blender ouvert ni le MCP) et regardent leurs propres rendus ; le développeur peut lancer `cargo lint`. L'orchestrateur intègre et teste **une fois par vague**, puis commite lot par lot.
+- L'auteur lance le mode par **`/orchestrateur <jalon | fichier | liste de tâches>`** (`.claude/skills/orchestrateur/SKILL.md`, la méthode complète). L'**orchestrateur** ne produit rien lui-même, pas même une correction d'une ligne : il découpe le travail en lots et lance un sous-agent par lot (`.claude/agents/artiste-blender.md` pour la 3D, `.claude/agents/dev-jeu.md` pour le code, les données et les outils). Il garde pour lui l'intégration (dont l'export complet et le bake final d'une carte que plusieurs lots touchent), les tests, les commits, les docs et les échanges avec l'auteur. Exemple vécu : le plan de M8 (`docs/refonte-visuelle.md` §4 et §7).
+- **Un fichier, un propriétaire** : deux sous-agents ne touchent jamais le même fichier. Les fichiers carrefours (`lib.rs`, `dev.rs`, fichiers de langue, `common.py`, `lightmap.py`, scripts de `tools/`) vont à un seul lot par vague ; `AGENTS.md` et `docs/` restent à l'orchestrateur.
+- **Un seul `dev-jeu` à la fois dans le dossier du dépôt** : `cargo lint` compile tout le workspace, deux développeurs se cassent la compilation (vécu en M8). Le second travaille dans un arbre de travail séparé, que l'orchestrateur fusionne.
+- **Les sous-agents ne testent pas le jeu** : ni `cargo t`, ni le jeu, ni `tools/check.*`, `tools/perf.*`, `tools/captures.*`, ni `git`, ni sous-agent. Les artistes lancent Blender en arrière-plan (un processus chacun, jamais le Blender ouvert ni le MCP) et regardent leurs propres rendus ; le développeur peut lancer `cargo lint`. L'orchestrateur intègre et teste **une fois par vague**, puis commite lot par lot.
 - Pas plus de deux bakes Cycles en même temps sur une machine ; les compilations Rust se partagent le dossier `target/` (verrou).
 
 ---
