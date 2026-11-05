@@ -4,10 +4,18 @@
 Un petit marchand indépendant de taille corvette (P12), vu de dehors : utilitaire, robuste,
 rapiécé, peinture sable passée, plaques de réparation olive et apprêt, traces de chauffe à
 l'arrière, pochoirs génériques de la trim sheet, aucun insigne ni inscription. Silhouette
-originale : un corps large et plat (« brique » de cargo), une cabine avancée qui porte la
-verrière, un menton bas sous l'allège, une taille de guêpe à l'arrière flanquée de deux nacelles
-de propulsion, une troisième tuyère au centre, une dorsale basse avec radiateurs et parabole.
-Pas de bouclier, pas d'arme.
+originale : un corps large et plat (« brique » de cargo), une proue en coin qui porte la
+verrière, une taille de guêpe à l'arrière flanquée de deux nacelles de propulsion, une troisième
+tuyère au centre, une dorsale basse avec radiateurs et parabole. Pas de bouclier, pas d'arme.
+
+Proue (M10, lot C, retour 11 de l'auteur : « trop carrée ») : un seul volume convexe à facettes.
+Les épaules se resserrent en coin (≈ 28° par flanc, bouchains sombres, prises d'air sur les
+joues) jusqu'aux joues chanfreinées du cockpit ; le toit descend vers une visière blindée qui
+déborde en pointe au-dessus d'une verrière inclinée vers l'arrière (≈ 17°) ; le ventre remonte vers
+une étrave basse (phares, capteurs). Les ouvertures sont des trapèzes (verrière plus étroite en
+haut, vitres latérales au bord avant incliné) ; embrasures et cadres épousent la peau (`Skin`,
+lancers de rayons). Le vitrage reste celui de l'intérieur (plan vertical à y = 20,6) : la coque ne
+fait que l'encadrer.
 
 Repère : celui du secteur `corvette` (Blender : X tribord, Y avant, Z haut ; pont à z = 0). Le jeu
 pose la coque au même repère que l'intérieur (dans le berceau du hangar). Cotes tenues (vérifiées
@@ -16,14 +24,17 @@ par le script, qui s'arrête en erreur sinon) :
   z ∈ [−22,1 ; 27,7]) ; le point le plus bas (patins repliés, à plat) est à z = −1,7 ;
 - aucune face à moins de 0,2 m des cellules (cloisons comprises), sauf les embrasures de la
   verrière et le tunnel du sas, qui viennent à 1 cm de la paroi (faces perpendiculaires) ;
-- coque creuse : le corps et la cabine sont évidés (booléen) de l'enveloppe des cellules + 0,2 m,
+- coque pleine autour des cellules (`check_enclosed` : rien ne perce la peau) ;
+- coque creuse : le corps et la proue sont évidés (booléen) de l'enveloppe des cellules + 0,2 m,
   et percés aux fenêtres du cockpit et au tunnel : de dehors, on ne voit l'intérieur que par le
   sas et la verrière ;
 - tunnel du sas : 1,4 × 2,2 m, de la peau du module d'embarquement (x = −9,3) à la porte
   `sas__@dock` (x = −7,8), centré y = −3,0 ; sol laissé vide (la passerelle du hangar le fournit ;
   caniveau à z = −0,5 sous ses longerons) ;
-- vue du pilote (`SOCKET_cockpit_pilot_eye`) dégagée : embrasures évasées, menton sous la ligne
-  de visée, casquette hors du champ vertical (75°).
+- vue du pilote (`SOCKET_cockpit_pilot_eye`) dégagée : embrasures évasées, étrave sous la ligne
+  de visée, visière au-dessus du champ vertical (75°) ; seuls les rayons rasants restent arrêtés
+  (bord gauche de la verrière à ≈ 51° de lacet, haut et coin arrière de la vitre bâbord, dont
+  l'embrasure est profonde : les flancs en coin s'écartent du vitrage), voir `check_pilot_view`.
 
 Matériaux (8) : peinture de coque (`hull_corvette`, texture neuve cuite par ce script : 2K,
 tuile de 4 m, plaques sable, olive et apprêt, écaillures, coulures), tôle de réparation olive
@@ -39,7 +50,8 @@ boîtiers. Fusion par matériau et par niveau (`common.join_by_material`). Pas d
 
 Sorties :
 - assets/models/ships/corvette_hull/corvette_hull.gltf (+ .bin) : maillages fusionnés, colliders
-  `corvette_hull_<partie>_col` (pavés de l'enveloppe, tunnel libre) et
+  `corvette_hull_<partie>_col` (pavés de l'enveloppe, tunnel libre ; étrave `bow` et joues
+  `cheek_port` / `cheek_starboard` en morceaux convexes de la proue) et
   `corvette_hull_tunnel_<partie>_col` (parois et plafond du tunnel) ;
 - assets/models/ships/corvette_hull/corvette_hull_lod.gltf : version lointaine (≤ 3 000 triangles) ;
 - assets/textures/materials/hull_corvette_{color,normal,orm}.png (cuites si absentes, ou
@@ -49,9 +61,9 @@ Sorties :
     blender --background --factory-startup --python tools/blender/ships/corvette_hull.py -- [options]
 
 Options : `--textures` (recuire la texture de coque), `--previews` (aperçus Cycles dans
-target/art-previews/m9-lotC/), `--only a,b` (prises de vue), `--samples N`, `--res LxH`. Les
-aperçus importent l'intérieur depuis la copie figée `target/art-previews/m9-lotC/ref/corvette/`
-si elle existe, sinon depuis `assets/models/ships/corvette/`.
+target/art-previews/C/), `--only a,b` (prises de vue), `--samples N`, `--res LxH`. Les aperçus
+importent l'intérieur depuis la copie figée `target/art-previews/m9-lotC/ref/corvette/` si elle
+existe, sinon depuis `assets/models/ships/corvette/`.
 """
 
 from __future__ import annotations
@@ -80,8 +92,8 @@ from warships import IDENTITY, Rot, Sec, T  # noqa: E402
 NAME = "corvette_hull"
 OUT = "assets/models/ships/corvette_hull"
 BLEND = "art/ships/corvette_hull.blend"
-PREVIEWS = c.ROOT / "target" / "art-previews" / "m9-lotC"
-REF_DIRS = (PREVIEWS / "ref" / "corvette", c.ROOT / "assets" / "models" / "ships" / "corvette")
+PREVIEWS = c.ROOT / "target" / "art-previews" / "C"
+REF_DIRS = (c.ROOT / "target" / "art-previews" / "m9-lotC" / "ref" / "corvette", c.ROOT / "assets" / "models" / "ships" / "corvette")
 
 # --- Cotes de l'intérieur (lot B, `ships/corvette.py`), repère Blender, cloisons comprises -------
 
@@ -107,14 +119,17 @@ SKIN_X = -9.3  # peau du module d'embarquement
 CHANNEL_Z = -0.5  # fond du caniveau sous la passerelle (longerons jusqu'à −0,26)
 WALL_GAP = 0.01  # les embrasures s'arrêtent à 1 cm des cloisons
 
-# Verrière : (nom, axe de la normale, plan du vitrage + 1 cm, plan de la peau, rectangle intérieur
-# (u0, u1, v0, v1) = vitrage, rectangle extérieur (évasé : la vue du pilote passe sans toucher)).
-# Axe "y" : u = x, v = z ; axe "x" : u = y, v = z.
+# Verrière : (nom, axe de la normale, sens de la normale, plan du vitrage + 1 cm, rectangle du
+# vitrage (u0, u1, v0, v1), trapèze de l'ouverture dans la peau (u0 bas, u1 bas, u0 haut, u1 haut,
+# v0, v1 : évasé là où regarde le pilote, resserré en haut pour la ligne de la verrière), coupures
+# des bords haut et bas, en fraction de la largeur : le pli du V de la verrière).
+# Axe "y" : u = x, v = z ; axe "x" : u = y, v = z. Le vitrage est celui de l'intérieur (lot B).
 WINDOWS = [
-    ("front", "y", 20.6 + WALL_GAP, 21.0, (-3.5, 3.5, 0.85, 2.7), (-4.0, 4.0, 0.65, 3.25)),
-    ("port", "x", -4.2 - WALL_GAP, -4.8, (18.6, 20.0, 0.85, 2.7), (18.3, 20.4, 0.65, 3.0)),
-    ("starboard", "x", 4.2 + WALL_GAP, 4.8, (18.6, 20.0, 0.85, 2.7), (18.3, 20.4, 0.65, 3.0)),
+    ("front", "y", 1.0, 20.6 + WALL_GAP, (-3.5, 3.5, 0.85, 2.7), (-4.2, 4.2, -3.6, 3.6, 0.42, 3.26), (0.25, 0.5, 0.75)),
+    ("port", "x", -1.0, -4.2 - WALL_GAP, (18.6, 20.0, 0.85, 2.7), (17.85, 20.45, 18.0, 20.2, 0.62, 3.4), (0.5,)),
+    ("starboard", "x", 1.0, 4.2 + WALL_GAP, (18.6, 20.0, 0.85, 2.7), (17.85, 20.45, 18.0, 20.2, 0.62, 3.4), (0.5,)),
 ]
+FRAME_W = 0.12  # largeur des cadres de la verrière, sur la peau
 
 # --- Formes (sections à pans coupés : Sec(y, demi-largeur, haut, bas, chanfrein haut, cx, cz,
 # chanfrein bas)) ; chaque section est vérifiée contre les cellules par `check_clearance`. --------
@@ -124,20 +139,48 @@ BODY = [
     Sec(-15.2, 6.0, 4.4, 1.1, 0.9, 0.0, 0.0, 0.8),
     Sec(-13.9, 9.0, 4.6, 1.3, 1.5, 0.0, 0.0, 1.6),  # épaules : soute, sas ; carène biseautée
     Sec(10.0, 9.0, 4.6, 1.3, 1.5, 0.0, 0.0, 1.6),
-    Sec(12.5, 8.8, 4.1, 1.25, 1.2, 0.0, 0.0, 1.45),  # pont avant abaissé (chambre, carré)
-    Sec(14.7, 8.6, 3.9, 1.2, 1.2, 0.0, 0.0, 1.2),
-    Sec(16.4, 6.2, 3.5, 0.9, 1.0, 0.0, 0.0, 0.6),  # front des épaules
 ]
-CAB = [  # cabine du cockpit, avancée devant les épaules
-    Sec(13.6, 4.8, 3.8, 0.7, 0.5, 0.0, 0.0, 0.35),
-    Sec(20.7, 4.8, 3.8, 0.7, 0.5, 0.0, 0.0, 0.35),
-    Sec(21.0, 4.7, 3.7, 0.65, 0.45, 0.0, 0.0, 0.3),
-]
-CHIN = [  # menton sous l'allège : sous la ligne de visée du pilote
-    Sec(20.85, 4.4, 0.62, 0.6, 0.3, 0.0, 0.0, 0.3),
-    Sec(21.6, 3.9, 0.48, 0.5, 0.25, 0.0, 0.0, 0.25),
-    Sec(22.1, 2.9, 0.28, 0.2, 0.15, 0.0, 0.0, 0.12),
-]
+FORE_Y = 10.0  # le corps s'arrête ici ; la proue commence (raccord exact sur sa section)
+
+# Proue : un seul volume convexe à facettes (enveloppe des points ci-dessous, x ≥ 0, miroir
+# automatique), vérifié contre les cellules par `check_enclosed`.
+# - épaules : la section du corps (18 m) jusqu'à y = 12,9, puis les flancs se resserrent en coin
+#   (≈ 28°) jusqu'aux joues (9,4 m) : la chambre (bâbord, jusqu'à y = 14,2) reste dedans ;
+# - toit qui descend doucement, puis visière (brow) qui plonge vers la verrière ;
+# - verrière plane inclinée vers l'arrière (`WS_*`), sous une visière blindée en V ;
+# - étrave sous la verrière, ventre qui remonte ;
+# - le cockpit (x ±4,4, y ≤ 20,8, z −0,4 → 3,4, jeu compris) tient dans les joues.
+SHOULDER = [(0.0, 12.9, 4.6), (7.45, 12.9, 4.56), (9.0, 12.9, 3.52), (9.0, 12.9, -0.6), (7.7, 12.9, -1.28), (0.0, 12.9, -1.28)]
+CHEEK = ((4.7, 20.95, 3.55), (4.7, 20.95, -0.6))  # arêtes avant des flancs (haut, bas)
+BROW = ((0.0, 19.4, 3.98), (3.7, 19.3, 3.95))  # début de la visière (faîte, arête)
+# Verrière plane, inclinée de ≈ 17° : son arête haute frôle l'angle avant-haut du cockpit, ce qui
+# interdit un V (la pointe est reportée sur la visière blindée, `VISOR_TIP`).
+WS_TOP = ((0.0, 20.98, 3.56), (4.4, 20.98, 3.54))  # arête haute de la verrière (milieu, coin)
+WS_BOT = (0.0, 22.0, 0.22)  # arête basse, au milieu ; le coin s'en déduit (verrière plane)
+VISOR_TIP = (22.0, 3.47)  # pointe de la visière blindée (y, z)
+CHIN = (0.0, 21.98, -0.22)  # bas de l'étrave, au milieu
+CHIN_W = 3.0  # demi-largeur du bas de l'étrave : grandes joues basses chanfreinées de part et d'autre
+BELLY = ((0.0, 20.2, -0.88), (3.7, 20.35, -0.84))  # avant du ventre
+
+
+def ws_corners() -> tuple[Vector, Vector, Vector, Vector]:
+    """Coins de la moitié tribord de la verrière : haut (faîte, coin), bas (faîte, coin)."""
+    t0, t1 = Vector(WS_TOP[0]), Vector(WS_TOP[1])
+    b0 = Vector(WS_BOT)
+    return t0, t1, b0, t1 + (b0 - t0)  # parallélogramme : plan
+
+
+def fore_points() -> list[tuple]:
+    """Demi-proue (x ≥ 0)."""
+    t0, t1, b0, b1 = ws_corners()
+    chin0 = Vector(CHIN)
+    chin1 = chin0 + (b1 - b0) * (CHIN_W / b1.x)  # étrave plane sous la verrière, plus étroite
+    body = [(0.0, FORE_Y, 4.6), (7.5, FORE_Y, 4.6), (9.0, FORE_Y, 3.1), (9.0, FORE_Y, 0.3), (7.4, FORE_Y, -1.3), (0.0, FORE_Y, -1.3)]
+    pts = body + SHOULDER + list(CHEEK) + list(BROW) + list(BELLY)
+    pts += [tuple(t0), tuple(t1), tuple(b0), tuple(b1), tuple(chin0), tuple(chin1)]
+    return pts
+
+
 SPINE = [  # dorsale basse
     Sec(-25.8, 1.4, 0.3, 0.3, 0.25, 0.0, 4.5),
     Sec(-23.5, 2.3, 0.4, 0.4, 0.35, 0.0, 4.5),
@@ -380,18 +423,20 @@ class Hull:
         prof = [(0, -r), (r * 0.7, -r * 0.7), (r, 0), (r * 0.7, r * 0.7), (0, r)]
         return self.lathe(mat, prof, M @ T(*at), seg=8, swatch=swatch)
 
-    def sleeve(self, mat, inner, outer, **kw):
-        """Embrasure ouverte : quatre quadrilatères du rectangle `inner` au rectangle `outer`
-        (coins dans le même ordre), faces tournées vers l'axe de l'ouverture (vues de dehors comme
-        du dedans de l'ouverture)."""
+    def sleeve(self, mat, inner, outer, axis=None, **kw):
+        """Embrasure ouverte : un quadrilatère par côté, de la boucle `inner` à la boucle `outer`
+        (même nombre de points, dans le même ordre), faces tournées vers l'axe de l'ouverture
+        (vues de dehors comme du dedans de l'ouverture). `axis` : axe de l'ouverture (par défaut,
+        du centre de `inner` vers celui de `outer`)."""
         bm = bmesh.new()
+        n = len(inner)
         vi = [bm.verts.new(p) for p in inner]
         vo = [bm.verts.new(p) for p in outer]
-        ci = sum((Vector(p) for p in inner), Vector()) / 4
-        co = sum((Vector(p) for p in outer), Vector()) / 4
-        axis = (co - ci).normalized()
-        for i in range(4):
-            j = (i + 1) % 4
+        ci = sum((Vector(p) for p in inner), Vector()) / n
+        co = sum((Vector(p) for p in outer), Vector()) / n
+        axis = Vector(axis).normalized() if axis is not None else (co - ci).normalized()
+        for i in range(n):
+            j = (i + 1) % n
             f = bm.faces.new((vi[i], vi[j], vo[j], vo[i]))
             f.normal_update()
             cen = f.calc_center_median()
@@ -399,6 +444,104 @@ class Hull:
             if f.normal.dot(on_axis - cen) < 0:
                 f.normal_flip()
         return self.add(bm, mat, near_wall=True, **kw)
+
+
+# --- Volumes à facettes et peau ------------------------------------------------------------------
+
+
+def mirrored(half) -> list[tuple]:
+    """Points d'une demi-coque (x ≥ 0) et leurs symétriques (x < 0)."""
+    out = []
+    for p in half:
+        out.append(tuple(p))
+        if abs(p[0]) > 1e-6:
+            out.append((-p[0], p[1], p[2]))
+    return out
+
+
+def bm_hull(points) -> bmesh.types.BMesh:
+    """Enveloppe convexe des points : facettes planes (triangles coplanaires fusionnés), normales
+    vers l'extérieur."""
+    bm = bmesh.new()
+    verts = [bm.verts.new(p) for p in points]
+    bmesh.ops.remove_doubles(bm, verts=verts, dist=1e-5)
+    res = bmesh.ops.convex_hull(bm, input=bm.verts[:], use_existing_faces=False)
+    junk = [g for g in list(res["geom_interior"]) + list(res["geom_unused"]) if isinstance(g, bmesh.types.BMVert)]
+    if junk:
+        bmesh.ops.delete(bm, geom=list(set(junk)), context="VERTS")
+    bmesh.ops.dissolve_limit(bm, angle_limit=math.radians(0.3), verts=bm.verts[:], edges=bm.edges[:])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return bm
+
+
+def hull_points_clipped(points, planes) -> list[tuple]:
+    """Sommets de l'enveloppe convexe de `points` coupée par des demi-espaces (point du plan,
+    normale sortante : on garde ce qui est derrière) ; l'enveloppe de ces sommets est le morceau
+    coupé (colliders, membrures)."""
+    bm = bm_hull(points)
+    for co, no in planes:
+        geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
+        bmesh.ops.bisect_plane(bm, geom=geom, plane_co=tuple(co), plane_no=tuple(no), dist=1e-6, clear_outer=True)
+    pts = [tuple(v.co) for v in bm.verts]
+    bm.free()
+    return pts
+
+
+def hull_points_between(points, lo: Vector, hi: Vector) -> list[tuple]:
+    """Morceau de l'enveloppe convexe de `points` dans le pavé [lo, hi]."""
+    planes = []
+    for axis in range(3):
+        for value, sign in ((hi[axis], 1.0), (lo[axis], -1.0)):
+            co = [0.0, 0.0, 0.0]
+            co[axis] = value
+            no = [0.0, 0.0, 0.0]
+            no[axis] = sign
+            planes.append((co, no))
+    return hull_points_clipped(points, planes)
+
+
+def grown(points, grow: float, zc: float) -> list[tuple]:
+    """Points écartés de `grow` dans leur section (autour de l'axe x = 0, z = zc) : une membrure
+    qui ceinture un volume convexe."""
+    out = []
+    for x, y, z in points:
+        d = Vector((x, 0.0, z - zc))
+        d = d.normalized() if d.length > 1e-6 else Vector((0.0, 0.0, 1.0))
+        out.append((x + d.x * grow, y, z + d.z * grow))
+    return out
+
+
+class Skin:
+    """Peau extérieure de la coque (avant l'évidement) : points et normales par lancer de rayon,
+    repères tangents pour poser du décor sur des facettes inclinées."""
+
+    def __init__(self, objs):
+        self.tree = _bvh(objs)
+
+    def hit(self, origin, direction, dist: float = 40.0) -> tuple[Vector, Vector]:
+        o, d = Vector(origin), Vector(direction).normalized()
+        loc, nor, _, _ = self.tree.ray_cast(o, d, dist)
+        if loc is None:
+            raise RuntimeError(f"peau introuvable depuis {tuple(round(v, 2) for v in o)} vers {tuple(round(v, 2) for v in d)}")
+        return loc, nor.normalized()
+
+    @staticmethod
+    def frame(p: Vector, n: Vector) -> Matrix:
+        """Repère local : Z = normale, X horizontal le long de la facette (ou X du vaisseau sur une
+        facette presque horizontale), Y = Z × X."""
+        n = Vector(n).normalized()
+        if abs(n.z) > 0.92:
+            u = Vector((1.0, 0.0, 0.0))
+            u = (u - n * u.dot(n)).normalized()
+        else:
+            u = Vector((0.0, 0.0, 1.0)).cross(n).normalized()
+        v = n.cross(u)
+        M = Matrix((u, v, n)).transposed().to_4x4()
+        M.translation = p
+        return M
+
+    def at(self, origin, direction) -> Matrix:
+        return self.frame(*self.hit(origin, direction))
 
 
 # --- Sous-ensembles ------------------------------------------------------------------------------
@@ -433,36 +576,109 @@ def nav_light(h: Hull, swatch: str, at, normal, size=0.2) -> None:
     h.light(swatch, tuple(p), size)
 
 
-def windows(h: Hull, cutters) -> None:
-    """Embrasures évasées, cadres, casquette et coupes des trois vitrages du cockpit."""
+def quad_loop(q, breaks) -> list[tuple[float, float]]:
+    """Contour d'un trapèze (u0 bas, u1 bas, u0 haut, u1 haut, v0, v1) : bas (gauche → droite, avec
+    les coupures en fraction de la largeur), droite, haut (droite → gauche), gauche. Les coupures
+    tombent sur les plis de la peau (V de la verrière) : embrasure et cadre les suivent."""
+    u0b, u1b, u0t, u1t, v0, v1 = q
+    ts = [0.0] + list(breaks)
+    out = [(u0b + (u1b - u0b) * t, v0) for t in ts]
+    out += [(u1b, v0), (u1t, v1)]
+    out += [(u0t + (u1t - u0t) * t, v1) for t in reversed(ts[1:])]
+    out.append((u0t, v1))
+    return out
 
-    def P(axis, w, u, v):
-        return (u, w, v) if axis == "y" else (w, u, v)
 
-    for name, axis, w_in, w_out, (iu0, iu1, iv0, iv1), (ou0, ou1, ov0, ov1) in WINDOWS:
-        s = 1.0 if w_out > w_in else -1.0
-        inner = [P(axis, w_in, iu0, iv0), P(axis, w_in, iu1, iv0), P(axis, w_in, iu1, iv1), P(axis, w_in, iu0, iv1)]
-        outer = [P(axis, w_out, ou0, ov0), P(axis, w_out, ou1, ov0), P(axis, w_out, ou1, ov1), P(axis, w_out, ou0, ov1)]
-        h.sleeve("dark", inner, outer)
-        # Coupe : du cœur (évidé) jusqu'au-delà de la peau.
-        e = 0.02
-        a = P(axis, w_in + s * 0.05, ou0 - e, ov0 - e)
-        b = P(axis, w_out + s * 0.4, ou1 + e, ov1 + e)
-        lo = tuple(min(p, q) for p, q in zip(a, b))
-        hi = tuple(max(p, q) for p, q in zip(a, b))
-        c.box(f"cut_window_{name}", tuple(q - p for p, q in zip(lo, hi)), tuple((p + q) / 2 for p, q in zip(lo, hi)),
-              None, cutters)
-        # Cadre sombre, en saillie de 6 cm sur la peau.
-        fw = 0.14
-        w0, w1 = w_out - s * 0.03, w_out + s * 0.06
-        for (u0, u1, v0, v1) in ((ou0 - fw, ou1 + fw, ov0 - fw, ov0), (ou0 - fw, ou1 + fw, ov1, ov1 + fw),
-                                 (ou0 - fw, ou0, ov0, ov1), (ou1, ou1 + fw, ov0, ov1)):
-            a, b = P(axis, w0, u0, v0), P(axis, w1, u1, v1)
-            h.aabox("dark", tuple(map(min, a, b)), tuple(map(max, a, b)))
-    # Casquette au-dessus du vitrage frontal (hors du champ vertical du pilote).
-    h.aabox("dark", (-4.15, 20.95, 3.37), (4.15, 21.3, 3.55), bevel=0.03)
-    for x in (-2.0, 0.0, 2.0):
-        h.aabox("dark", (x - 0.06, 20.9, 3.25), (x + 0.06, 21.25, 3.39))  # goussets
+def rect_quad(r) -> tuple:
+    u0, u1, v0, v1 = r
+    return (u0, u1, u0, u1, v0, v1)
+
+
+def grow_quad(q, d: float) -> tuple:
+    """Trapèze agrandi de `d` sur chaque bord (bords obliques décalés perpendiculairement)."""
+    u0b, u1b, u0t, u1t, v0, v1 = q
+    h = v1 - v0
+
+    def side(ub, ut, sign):  # bord oblique décalé vers l'extérieur (sign : −1 gauche, +1 droite)
+        du = ut - ub
+        shift = d * math.hypot(du, h) / h  # décalage horizontal d'une droite décalée de d
+        u_at = lambda v: ub + du * (v - v0) / h + sign * shift  # noqa: E731
+        return u_at(v0 - d), u_at(v1 + d)
+
+    lb, lt = side(u0b, u0t, -1.0)
+    rb, rt = side(u1b, u1t, 1.0)
+    return (lb, rb, lt, rt, v0 - d, v1 + d)
+
+
+def window_loops(skin: Skin) -> list[dict]:
+    """Pour chaque vitrage : contour du vitrage (plan intérieur), contour de l'ouverture et contour
+    extérieur du cadre, posés sur la peau par des rayons tirés le long de l'axe du vitrage."""
+    out = []
+    for name, axis, sgn, w_in, inner, outer, breaks in WINDOWS:
+        d = Vector((0.0, sgn, 0.0)) if axis == "y" else Vector((sgn, 0.0, 0.0))
+
+        def P(w, u, v, axis=axis):
+            return Vector((u, w, v)) if axis == "y" else Vector((w, u, v))
+
+        def on_skin(q, P=P, d=d, w_in=w_in, sgn=sgn, breaks=breaks):
+            hits = [skin.hit(P(w_in + sgn * 0.05, u, v), d) for u, v in quad_loop(q, breaks)]
+            return [p for p, _ in hits], [n for _, n in hits]
+
+        a, na = on_skin(outer)
+        b, nb = on_skin(grow_quad(outer, FRAME_W))
+        out.append({"name": name, "axis": axis, "sgn": sgn, "d": d, "w_in": w_in, "outer": outer, "P": P,
+                    "inner": [P(w_in, u, v) for u, v in quad_loop(rect_quad(inner), breaks)], "a": a, "na": na, "b": b, "nb": nb})
+    return out
+
+
+def conform_frame(h: Hull, a, na, b, nb, axis: Vector, mat: str = "dark", rise: float = 0.06, sink: float = 0.04,
+                  lip: float = 0.06):
+    """Cadre posé sur la peau entre le contour de l'ouverture `a` et le contour extérieur `b`
+    (normales de la peau `na`, `nb`) : dessus à `rise` de la peau, rebord extérieur enfoncé de
+    `sink`, rebord intérieur qui plonge de `lip` dans l'ouverture (il cache la coupe)."""
+    bm = bmesh.new()
+    at = [bm.verts.new(p + n * rise) for p, n in zip(a, na)]
+    bt = [bm.verts.new(p + n * rise) for p, n in zip(b, nb)]
+    bb = [bm.verts.new(p - n * sink) for p, n in zip(b, nb)]
+    ai = [bm.verts.new(p - axis * lip) for p in a]
+    center = sum(a, Vector()) / len(a)
+    count = len(a)
+
+    def radial(m: Vector) -> Vector:
+        r = m - center
+        return r - axis * r.dot(axis)
+
+    for i in range(count):
+        j = (i + 1) % count
+        n_skin = (na[i] + na[j] + nb[i] + nb[j]).normalized()
+        for quad, want in (((at[i], at[j], bt[j], bt[i]), "skin"), ((bt[i], bt[j], bb[j], bb[i]), "out"),
+                           ((ai[i], ai[j], at[j], at[i]), "in")):
+            f = bm.faces.new(quad)
+            f.normal_update()
+            m = f.calc_center_median()
+            ref = n_skin if want == "skin" else (radial(m) if want == "out" else -radial(m))
+            if f.normal.dot(ref) < 0:
+                f.normal_flip()
+    return h.add(bm, mat, near_wall=True)
+
+
+def windows(h: Hull, cutters, skin: Skin) -> None:
+    """Embrasures évasées (métal nu devant, sombre sur les flancs, plus profonds), cadres et coupes
+    des trois vitrages du cockpit, posés sur la peau."""
+    for w in window_loops(skin):
+        d, sgn, P = w["d"], w["sgn"], w["P"]
+        h.sleeve("bare" if w["axis"] == "y" else "dark", w["inner"], w["a"], axis=d)
+        conform_frame(h, w["a"], w["na"], w["b"], w["nb"], d)
+        # Coupe : prisme du trapèze (agrandi de 2 cm), du cœur (évidé) jusqu'au-delà de la peau.
+        far = max(p.dot(d) for p in w["a"] + w["b"]) + 0.4
+        q = grow_quad(w["outer"], 0.02)
+        corners = [(q[0], q[4]), (q[1], q[4]), (q[3], q[5]), (q[2], q[5])]
+        pts = [tuple(P(w["w_in"] + sgn * 0.05, u, v)) for u, v in corners] + [tuple(P(sgn * far, u, v)) for u, v in corners]
+        bm = bm_hull(pts)
+        me = bpy.data.meshes.new(f"cut_window_{w['name']}")
+        bm.to_mesh(me)
+        bm.free()
+        cutters.objects.link(bpy.data.objects.new(me.name, me))
 
 
 def boarding_module(h: Hull, cutters, cols) -> None:
@@ -618,20 +834,15 @@ def skids(h: Hull) -> None:
     h.light("beacon_amber", (0.0, -2.0, -1.4), 0.2)
 
 
-def side_details(h: Hull) -> None:
+def side_details(h: Hull, skin: Skin) -> None:
     """Membrures, feux de navigation, pochoirs, tuyaux, câbles, trappes et grilles."""
     for y0, y1 in ((-13.6, -13.1), (0.6, 1.2), (7.2, 7.7), (-25.2, -24.7), (-19.4, -18.9)):
         h.loft("dark", ws.shell(BODY, y0, y1, 0.1), cut=True)  # anneau évidé : ses bouts traversent les cellules
-    h.loft("dark", ws.shell(CAB, 16.9, 17.3, 0.08), cut=True)
     # Feux de navigation : rouge à bâbord, vert à tribord (épaules et nacelles), blanc à la poupe.
     for sx, sw in ((-1, "nav_red"), (1, "nav_green")):
-        nav_light(h, sw, (sx * 9.1, 11.5, 2.0), (sx, 0, 0))
+        p, n = skin.hit((sx * 12.0, 11.2, 2.0), (-sx, 0, 0))
+        nav_light(h, sw, tuple(p + n * 0.1), tuple(n))
         nav_light(h, sw, (sx * POD_X, -25.6, POD_Z + POD_R + 0.12), (0, 0, 1))
-    # Phares d'atterrissage dans le menton, fenêtre de capteur.
-    for x in (-1.7, 1.7):
-        h.aabox("dark", (x - 0.22, 22.0, -0.08), (x + 0.22, 22.08, 0.16))
-        h.aabox("lights", (x - 0.16, 22.07, -0.04), (x + 0.16, 22.1, 0.12), swatch="nav_white")
-    h.aabox("lights", (-0.8, 22.07, -0.02), (0.8, 22.1, 0.1), swatch="window_dark")
     # Grilles et trappes du dessus (niveau 0).
     for x, y in ((-6.2, -9.5), (6.2, -9.5), (-6.2, 3.5), (6.0, 4.5)):
         h.box("trim", (1.2, 2.0, 0.05), (x, y, 4.62), trim="vent", mpt=2.0)
@@ -639,7 +850,7 @@ def side_details(h: Hull) -> None:
         h.aabox("dark", (x - 0.6, y - 0.6, 4.58), (x + 0.6, y + 0.6, 4.64))
     # Bandes de danger le long des épaules (garde-corps de maintenance), niveau 0.
     for sx in (-1, 1):
-        h.box("trim", (0.08, 3.0, 0.2), (sx * 9.03, 9.0, 3.1), trim="warning_red", mpt=1.0)
+        h.box("trim", (0.08, 3.0, 0.2), (sx * 9.03, 8.4, 3.1), trim="warning_red", mpt=1.0)
     with h.level(1):
         # Tuyaux le long des flancs (brides), supports.
         for sx, spans in ((-1, ((0.6, 9.5), (-13.2, -6.4))), (1, ((-2.8, 9.5), (-13.2, -12.2)))):
@@ -653,8 +864,7 @@ def side_details(h: Hull) -> None:
                     y = ya + 0.3 + i * (yb - ya - 0.6) / max(k, 1)
                     h.aabox("dark", (min(x, sx * 8.95), y - 0.06, 0.43), (max(x, sx * 8.95), y + 0.06, 0.75))
         # Pochoirs génériques (bande de la trim sheet).
-        for lo, hi in (((-9.03, 2.0, 2.3), (-8.98, 3.0, 2.6)), ((8.98, 0.5, 2.3), (9.03, 1.5, 2.6)),
-                       ((-4.83, 15.0, 2.2), (-4.78, 16.0, 2.5)), ((4.78, 15.0, 2.2), (4.83, 16.0, 2.5))):
+        for lo, hi in (((-9.03, 2.0, 2.3), (-8.98, 3.0, 2.6)), ((8.98, 0.5, 2.3), (9.03, 1.5, 2.6))):
             h.aabox("trim", lo, hi, trim="stencils", mpt=2.0)
         h.box("trim", (1.0, 0.04, 0.28), (0.0, STERN - 0.1, 3.35), trim="stencils", mpt=2.0)
     with h.level(2):
@@ -683,8 +893,9 @@ def side_details(h: Hull) -> None:
 
 
 def extra_details(h: Hull) -> None:
-    """Trappes de visite, dôme de capteurs, points d'amarrage, blocs de manœuvre (niveau 0) ;
-    rambardes du pont (niveau 1) ; réservoirs, conduites et boîtiers (niveau 2)."""
+    """Trappes de visite, points d'amarrage, blocs de manœuvre arrière (niveau 0) ; rambardes du
+    pont (niveau 1) ; réservoirs, conduites et boîtiers (niveau 2). La proue a les siens
+    (`nose_details`)."""
     # Trappes de visite sur les flancs (cadre sombre, tôle olive, poignée).
     for sx, ys in ((-1, (-11.0, 5.0)), (1, (-1.0, 6.5))):
         for y in ys:
@@ -692,19 +903,15 @@ def extra_details(h: Hull) -> None:
             h.aabox("dark", (min(x - sx * 0.04, x + sx * 0.06), y - 0.75, 1.0), (max(x - sx * 0.04, x + sx * 0.06), y + 0.75, 2.3), bevel=0.02)
             h.aabox("accent", (min(x, x + sx * 0.09), y - 0.62, 1.12), (max(x, x + sx * 0.09), y + 0.62, 2.18))
             h.aabox("trim", (min(x, x + sx * 0.1), y - 0.4, 1.9), (max(x, x + sx * 0.1), y + 0.4, 2.05), trim="warning_red", mpt=1.0)
-    # Dôme de capteurs sur le toit de la cabine.
-    h.lathe("bare", [(0.0, 0.0), (0.42, 0.0), (0.4, 0.12), (0.3, 0.3), (0.16, 0.4), (0.0, 0.43)],
-            T(2.2, 18.2, 3.78) @ Rot(90, "X"), seg=16, smooth=40.0)
-    h.aabox("dark", (1.7, 17.7, 3.74), (2.7, 18.7, 3.84))
     # Points d'amarrage du dessus (blocs sombres, bande de danger).
     for x, y in ((-6.0, -12.5), (6.0, -12.5), (-6.0, 8.8), (6.0, 8.8)):
         h.aabox("dark", (x - 0.45, y - 0.45, 4.56), (x + 0.45, y + 0.45, 4.82), bevel=0.04)
         h.aabox("bare", (x - 0.18, y - 0.18, 4.8), (x + 0.18, y + 0.18, 4.92))
         h.aabox("trim", (x - 0.45, y - 0.47, 4.6), (x + 0.45, y - 0.44, 4.78), trim="hazard", mpt=1.0)
-    # Blocs de manœuvre aux angles (tuyères de contrôle d'attitude, éteintes).
+    # Blocs de manœuvre aux angles arrière (tuyères de contrôle d'attitude, éteintes).
     for sx in (-1, 1):
-        for y, z, face in ((15.2, 3.0, 1), (-25.4, 3.9, -1)):
-            x = sx * (8.0 if y > 0 else 5.85)
+        for y, z in ((-25.4, 3.9),):
+            x = sx * 5.85
             h.aabox("dark", (x - 0.35, y - 0.35, z - 0.3), (x + 0.35, y + 0.35, z + 0.3), bevel=0.03)
             h.cyl("bare", 0.09, 0.14, T(x + sx * 0.38, y, z) @ Rot(90, "Z"), seg=8)
             h.cyl("bare", 0.09, 0.14, T(x, y, z + 0.37) @ Rot(90, "X"), seg=8)
@@ -716,8 +923,6 @@ def extra_details(h: Hull) -> None:
             for k in range(12):
                 y = -12.6 + k * 22.0 / 11
                 h.rod("bare", (x, y, 4.58), (x, y, 4.97), 0.022, seg=4)
-        for x in (-1.8, 1.8):
-            h.rod("bare", (x, 16.8, 3.78), (x, 16.8, 4.4), 0.02, seg=4)
     with h.level(2):
         # Réservoirs couchés sur le pont avant, à tribord.
         for x in (5.6, 6.5):
@@ -775,20 +980,199 @@ def repair_patches(h: Hull) -> None:
         ws.patches(h, BODY, -26.0, -15.8, 6, [("accent", 0.5), ("paint", 0.5)], skip=occupied, weld=0.5, faces=("top",))
 
 
-def build(h: Hull, cutters, cols) -> None:
-    h.loft("paint", BODY, cut=True)
-    h.loft("paint", CAB, cut=True)
-    h.loft("paint", CHIN)
-    h.aabox("dark", (-2.6, 21.7, -0.22), (2.6, 22.02, -0.14))  # lèvre sous le menton
-    windows(h, cutters)
+def skin_box(h: Hull, skin: Skin, mat: str, origin, direction, size, at=(0.0, 0.0), sink: float = 0.015,
+             spin: float = 0.0, **kw):
+    """Pavé posé à plat sur la peau (dans le repère de la facette touchée par le rayon) : `size` =
+    (le long de la facette, en travers, épaisseur), `at` décale le long de la facette."""
+    M = skin.at(origin, direction)
+    return h.box(mat, size, (at[0], at[1], size[2] / 2 - sink), M=M, rot=Rot(spin, "Z"), **kw)
+
+
+def slab(h: Hull, mat: str, pts, normal: Vector, top: float, bottom: float = 0.02, **kw):
+    """Plaque plane épaisse : polygone `pts` (plan de normale `normal`), de −`bottom` à +`top`."""
+    n = Vector(normal).normalized()
+    cloud = [tuple(Vector(p) + n * top) for p in pts] + [tuple(Vector(p) - n * bottom) for p in pts]
+    return h.add(bm_hull(cloud), mat, **kw)
+
+
+def intake(h: Hull, skin: Skin, origin, direction, length: float = 1.7, height: float = 0.75) -> None:
+    """Prise d'air plaquée sur une joue : caisson sombre, capot en visière, lames inclinées."""
+    M = skin.at(origin, direction)
+    h.box("dark", (length, height, 0.3), (0.0, 0.0, 0.13), M=M, bevel=0.03)
+    h.box("accent", (length + 0.16, 0.1, 0.42), (0.0, height / 2 + 0.03, 0.19), M=M, bevel=0.02)  # capot
+    h.box("bare", (length - 0.2, height - 0.16, 0.02), (0.0, 0.0, 0.26), M=M)  # fond clair (grille vue de biais)
+    for k in range(5):
+        v = -height / 2 + 0.14 + k * (height - 0.28) / 4
+        h.box("dark", (length - 0.22, 0.05, 0.16), (0.0, v, 0.33), M=M, rot=Rot(35, "X"))
+
+
+def nose_details(h: Hull, skin: Skin) -> None:
+    """Proue : visière blindée, membrures, prises d'air, capteurs, phares, blocs de manœuvre
+    (niveau 0) ; antennes, sondes, poignées (niveau 1) ; plaques soudées, boîtiers (niveau 2)."""
+    fore = mirrored(fore_points())
+    # Membrures : à l'épaulement et au milieu du coin.
+    big = 50.0
+    for y0, y1, grow, zc in ((12.45, 12.85, 0.08, 1.6), (16.9, 17.25, 0.07, 1.5)):
+        ring = hull_points_between(fore, Vector((-big, y0, -big)), Vector((big, y1, big)))
+        h.add(bm_hull(grown(ring, grow, zc)), "dark", cut=True)
+
+    # Bouchains : corniche sombre le long de l'arête basse des flancs en coin.
+    for sx in (-1, 1):
+        a = Vector((sx * SHOULDER[3][0], SHOULDER[3][1], SHOULDER[3][2]))
+        b = Vector((sx * CHEEK[1][0], CHEEK[1][1], CHEEK[1][2]))
+        along = (b - a).normalized()
+        out = Vector((along.y, -along.x, 0.0)).normalized()
+        if out.x * sx < 0:
+            out = -out
+        a, b = a + along * 0.2, b - along * 0.3
+        slab(h, "dark", [a - out * 0.06, b - out * 0.06, b + out * 0.18, a + out * 0.18], Vector((0.0, 0.0, 1.0)), 0.06, 0.06)
+
+    # Visière blindée en V : plaque posée sur le haut de la visière, dont la pointe déborde de
+    # 0,75 m au-dessus de la verrière (au-dessus du champ vertical du pilote, 37,5°).
+    t0, t1, _, _ = ws_corners()
+    tip = Vector((0.0, VISOR_TIP[0], VISOR_TIP[1]))
+
+    def back(x: float) -> Vector:
+        return skin.hit((x, 19.8, 9.0), (0.0, 0.0, -1.0))[0]
+
+    def front(x: float) -> Vector:  # bord avant de la visière (pointe → coin)
+        corner = Vector((math.copysign(t1.x - 0.2, x) if x else t1.x - 0.2, t1.y + 0.14, t1.z + 0.03))
+        k = abs(x) / (t1.x - 0.2)
+        return Vector((x, tip.y + (corner.y - tip.y) * k, tip.z + (corner.z - tip.z) * k))
+
+    for sx in (-1, 1):
+        xe = sx * (t1.x - 0.2)
+        quad = [back(0.0), back(xe), front(xe), front(0.0)]
+        n = (quad[1] - quad[0]).cross(quad[3] - quad[0]).normalized()
+        if n.z < 0:
+            n = -n
+        slab(h, "dark", quad, n, 0.09, 0.03)
+        for x in (1.2, 2.5):  # nervures le long de la pente
+            bk, fr = back(sx * x), front(sx * x)
+            w = Vector((0.025, 0.0, 0.0))
+            slab(h, "bare", [bk - w + n * 0.08, bk + w + n * 0.08, fr + w + n * 0.08, fr - w + n * 0.08], n, 0.05, 0.0)
+        # Gousset sous la pointe, contre la verrière (il porte le débord).
+        g0 = front(sx * 0.9) - n * 0.03
+        slab(h, "dark", [g0, g0 + Vector((0.0, -0.6, 0.0)), g0 + Vector((0.0, -0.6, -0.22))], Vector((1.0, 0.0, 0.0)), 0.03, 0.03)
+    bk, fr = back(0.0), front(0.0)  # couvre-joint du faîte
+    w = Vector((0.07, 0.0, 0.0))
+    n0 = (fr - bk).cross(Vector((1.0, 0.0, 0.0))).normalized()
+    if n0.z < 0:
+        n0 = -n0
+    slab(h, "bare", [bk - w, bk + w, fr + w, fr - w], n0, 0.14, 0.02)
+
+    # Arête dorsale de la proue : couvre-joint sombre du faîte, de l'épaulement à la visière.
+    ridge = [skin.hit((0.0, y, 9.0), (0.0, 0.0, -1.0))[0] for y in (12.95, 15.0, 17.2, 19.75)]
+    for p0, p1 in zip(ridge, ridge[1:]):
+        w = Vector((0.28, 0.0, 0.0))
+        n = (p1 - p0).cross(Vector((1.0, 0.0, 0.0))).normalized()
+        if n.z < 0:
+            n = -n
+        slab(h, "dark", [p0 - w, p0 + w, p1 + w, p1 - w], n, 0.1, 0.03)
+
+    # Prises d'air sur les joues du cou (dièdre entre les épaules et le module du cockpit).
+    for sx in (-1, 1):
+        intake(h, skin, (sx * 12.0, 15.9, 1.55), (-sx, 0.0, 0.0))
+        # Grille basse et trappe sur la même joue.
+        skin_box(h, skin, "dark", (sx * 12.0, 15.6, -0.15), (-sx, 0.0, 0.0), (1.3, 0.42, 0.05), sink=0.02)
+        skin_box(h, skin, "trim", (sx * 12.0, 15.6, -0.15), (-sx, 0.0, 0.0), (1.1, 0.26, 0.07), trim="vent", mpt=2.0)
+
+    # Blocs de manœuvre sur les arêtes hautes du cou (tuyères de contrôle d'attitude, éteintes).
+    for sx in (-1, 1):
+        M = skin.at((sx * 12.0, 12.2, 7.0), (-sx, 0.0, -1.0))
+        h.box("dark", (0.75, 0.75, 0.42), (0.0, 0.0, 0.18), M=M, bevel=0.04)
+        h.cyl("bare", 0.1, 0.16, M @ T(0.0, 0.0, 0.46) @ Rot(90, "X"), seg=8)
+        h.cyl("bare", 0.1, 0.16, M @ T(0.0, 0.43, 0.2), seg=8)
+        h.cyl("bare", 0.1, 0.16, M @ T(0.0, -0.43, 0.2), seg=8)
+
+    # Toit du module : dôme de capteurs, lame d'antenne, trappe d'accès, grilles du cou.
+    M = skin.at((2.3, 18.5, 9.0), (0.0, 0.0, -1.0))
+    h.box("dark", (1.0, 1.0, 0.12), (0.0, 0.0, 0.04), M=M, bevel=0.02)
+    h.lathe("bare", [(0.0, 0.0), (0.42, 0.0), (0.4, 0.12), (0.3, 0.3), (0.16, 0.4), (0.0, 0.43)],
+            M @ T(0.0, 0.0, 0.1) @ Rot(90, "X"), seg=16, smooth=40.0)
+    skin_box(h, skin, "dark", (-1.3, 18.4, 9.0), (0.0, 0.0, -1.0), (0.06, 0.9, 0.36), sink=0.02)  # lame d'antenne
+    skin_box(h, skin, "accent", (-2.6, 18.2, 9.0), (0.0, 0.0, -1.0), (1.0, 1.2, 0.05), sink=0.02, spin=3.0)  # trappe
+    for x in (-3.0, 3.0):
+        skin_box(h, skin, "trim", (x, 11.6, 9.0), (0.0, 0.0, -1.0), (1.2, 1.6, 0.05), sink=0.02, trim="vent", mpt=2.0)
+
+    # Étrave : phares d'atterrissage et fenêtre de capteur dans la facette sous la verrière ;
+    # tourelle de capteurs sous le ventre.
+    for x in (-2.3, 2.3):
+        M = skin.at((x, 25.0, -0.02), (0.0, -1.0, 0.0))
+        h.box("dark", (0.5, 0.3, 0.08), (0.0, 0.0, 0.025), M=M)
+        h.box("lights", (0.36, 0.18, 0.02), (0.0, 0.0, 0.07), M=M, swatch="nav_white")
+    M = skin.at((0.0, 25.0, -0.02), (0.0, -1.0, 0.0))
+    h.box("dark", (1.3, 0.28, 0.06), (0.0, 0.0, 0.02), M=M)
+    h.box("lights", (1.1, 0.14, 0.02), (0.0, 0.0, 0.055), M=M, swatch="window_dark")
+    M = skin.at((0.0, 20.9, -6.0), (0.0, 0.0, 1.0))
+    h.box("dark", (0.8, 0.8, 0.14), (0.0, 0.0, 0.05), M=M, bevel=0.02)
+    h.lathe("bare", [(0.0, 0.0), (0.34, 0.0), (0.32, 0.1), (0.24, 0.24), (0.12, 0.32), (0.0, 0.34)],
+            M @ T(0.0, 0.0, 0.1) @ Rot(90, "X"), seg=12, smooth=40.0)
+    h.box("lights", (0.16, 0.05, 0.1), (0.0, 0.29, 0.3), M=M, swatch="window_dark")
+
+    # Plaques de réparation (niveau 0 : quelques grandes tôles olive et à nu).
+    for mat, origin, direction, size, spin in (
+        ("accent", (-12.0, 14.4, 2.7), (1.0, 0.0, 0.0), (1.6, 0.9, 0.06), 4.0),
+        ("bare", (12.0, 16.7, 0.4), (-1.0, 0.0, 0.0), (1.1, 0.7, 0.05), -6.0),
+        ("accent", (7.0, 19.0, -0.05), (-1.0, 0.0, 0.0), (1.5, 0.5, 0.05), 2.0),
+        ("accent", (-3.0, 16.4, 9.0), (0.0, 0.0, -1.0), (1.4, 1.1, 0.05), -5.0),
+        ("bare", (2.8, 18.6, -6.0), (0.0, 0.0, 1.0), (1.3, 1.0, 0.05), 7.0),
+    ):
+        skin_box(h, skin, mat, origin, direction, size, sink=0.02, spin=spin)
+
+    with h.level(1):
+        # Antennes fouet sur le toit, sondes aux coins bas de la verrière, poignées de la joue.
+        for x, y, height in ((-2.0, 17.9, 0.8), (-3.0, 17.9, 0.55)):
+            p, n = skin.hit((x, y, 9.0), (0.0, 0.0, -1.0))
+            h.rod("bare", tuple(p - n * 0.02), tuple(p + n * height), 0.018, seg=4)
+            h.box("dark", (0.14, 0.14, 0.1), tuple(p + n * 0.03))
+        for sx in (-1, 1):
+            p, n = skin.hit((sx * 4.62, 25.0, 0.15), (0.0, -1.0, 0.0))
+            h.rod("bare", tuple(p - Vector((0, 0.05, 0))), (p.x, min(p.y + 0.45, 22.08), p.z), 0.025, seg=6)
+            h.box("dark", (0.12, 0.12, 0.12), tuple(p))
+        for sx in (-1, 1):
+            M = skin.at((sx * 12.0, 17.1, 2.6), (-sx, 0.0, 0.0))
+            h.rod("bare", tuple(M @ Vector((-0.3, 0.0, 0.09))), tuple(M @ Vector((0.3, 0.0, 0.09))), 0.022, seg=4)
+            for u in (-0.3, 0.3):
+                h.box("dark", (0.06, 0.06, 0.1), (u, 0.0, 0.04), M=M)
+
+    with h.level(2):
+        # Tôles soudées en relief, cordons, boîtiers sur la proue.
+        for mat, origin, direction, size, spin in (
+            ("paint", (-12.0, 12.0, 0.6), (1.0, 0.0, 0.0), (1.3, 0.8, 0.08), -3.0),
+            ("accent", (12.0, 13.0, 2.2), (-1.0, 0.0, 0.0), (1.0, 0.6, 0.08), 5.0),
+            ("dark", (-7.0, 18.0, -0.1), (1.0, 0.0, 0.0), (0.6, 0.4, 0.1), 0.0),
+            ("paint", (1.5, 15.5, 9.0), (0.0, 0.0, -1.0), (1.2, 0.9, 0.07), 8.0),
+            ("accent", (-1.6, 19.6, -6.0), (0.0, 0.0, 1.0), (1.0, 0.8, 0.07), -4.0),
+            ("dark", (12.0, 18.0, 2.9), (-1.0, 0.0, -0.3), (0.5, 0.35, 0.12), 0.0),
+            ("bare", (-3.4, 12.6, 9.0), (0.0, 0.0, -1.0), (0.7, 0.5, 0.12), 0.0),
+        ):
+            skin_box(h, skin, mat, origin, direction, size, sink=0.02, spin=spin)
+        for origin, direction, length in (((-12.0, 14.4, 2.25), (1.0, 0.0, 0.0), 1.5), ((-3.0, 15.85, 9.0), (0.0, 0.0, -1.0), 1.2)):
+            skin_box(h, skin, "bare", origin, direction, (length, 0.07, 0.1), sink=0.03)
+
+
+def build(h: Hull, cutters, cols) -> tuple[list, Skin]:
+    """Assemble la coque ; renvoie les volumes pleins (corps, cou, module du cockpit, avant
+    l'évidement) et la peau."""
+    body = h.loft("paint", BODY, cut=True)
+    fore = h.add(bm_hull(mirrored(fore_points())), "paint", cut=True)
+    shells = [body, fore]
+    skin = Skin(shells)
+    enclosed = check_enclosed(shells)
+    if enclosed:
+        raise RuntimeError("cellules hors de la coque pleine (la peau serait percée) :\n  " + "\n  ".join(enclosed[:20]))
+    windows(h, cutters, skin)
+    nose_details(h, skin)
     boarding_module(h, cutters, cols)
     cargo_door(h)
     engines(h)
     dorsal(h)
     skids(h)
-    side_details(h)
+    side_details(h, skin)
     extra_details(h)
     repair_patches(h)
+    return shells, skin
 
 
 def core_cutters(cutters) -> None:
@@ -817,32 +1201,60 @@ def hollow(objs, cutters) -> None:
         mesh.name = obj.name
 
 
+def collider_hull(name: str, points, coll) -> bpy.types.Object:
+    """Collider convexe (le jeu prend l'enveloppe convexe du maillage)."""
+    bm = bm_hull(points)
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    obj = bpy.data.objects.new(name, me)
+    coll.objects.link(obj)
+    obj.display_type = "WIRE"
+    obj.hide_render = True
+    return obj
+
+
 def envelope_colliders(coll, cols) -> None:
     """Pavés de l'enveloppe (couche de coque entre l'enveloppe et les cellules + 0,2 m), tunnel
-    libre : aucun n'entre dans une cellule, le joueur à bord n'en touche aucun."""
+    libre, et morceaux convexes de la proue (étrave, joues du cou et du module) : aucun n'entre
+    dans une cellule, le joueur à bord n'en touche aucun."""
     (x0, y0, z0), (x1, y1, z1) = ENVELOPE
     k = HATCH_W / 2 + 0.5
+    neck_y = SHOULDER[0][1]  # épaulement : la proue commence à se resserrer
     boxes = {
         "port_aft": ((x0, y0, -1.3), (-8.0, HATCH_Y - k, 4.0)),
-        "port_fwd": ((x0, HATCH_Y + k, -1.3), (-8.0, 14.7, 4.0)),
-        "starboard": ((8.0, y0, -1.3), (x1, 14.7, 4.0)),
-        "bow": ((-4.8, 20.8, -0.7), (4.8, y1, 3.8)),
+        "port_fwd": ((x0, HATCH_Y + k, -1.3), (-8.0, neck_y, 4.0)),
+        "starboard": ((8.0, y0, -1.3), (x1, neck_y, 4.0)),
         "stern": ((-8.0, y0, -1.3), (8.0, -26.4, 4.6)),
         "bottom": ((x0, y0, z0), (x1, y1, -0.4)),
     }
     for part, (lo, hi) in boxes.items():
         cols.append(c.collider_box(f"{NAME}_{part}_col", tuple(b - a for a, b in zip(lo, hi)),
                                    tuple((a + b) / 2 for a, b in zip(lo, hi)), coll))
+    big = 50.0
+    fore = mirrored(fore_points())
+    bow_y = 20.85  # vitrage frontal (20,6) + 0,25 m
+    cols.append(collider_hull(f"{NAME}_bow_col", hull_points_between(fore, Vector((-big, bow_y, -big)), Vector((big, big, big))), coll))
+    # Joues : une tranche de 0,22 m sous la peau des flancs en coin, de l'épaulement aux vitrages.
+    sh, ck = Vector(SHOULDER[2]), Vector(CHEEK[0])
+    for sx, side in ((-1, "port"), (1, "starboard")):
+        a2, b2 = Vector((sx * sh.x, sh.y, 0.0)), Vector((sx * ck.x, ck.y, 0.0))
+        out = Vector((b2.y - a2.y, -(b2.x - a2.x), 0.0)).normalized()
+        if out.x * sx < 0:
+            out = -out
+        planes = [((0.0, sh.y, 0.0), (0.0, -1.0, 0.0)), ((0.0, bow_y, 0.0), (0.0, 1.0, 0.0)), (a2 - out * 0.22, -out)]
+        cols.append(collider_hull(f"{NAME}_cheek_{side}_col", hull_points_clipped(fore, planes), coll))
 
 
 # --- Version lointaine ---------------------------------------------------------------------------
 
 
 def build_lod(h: Hull) -> None:
-    """≤ 3 000 triangles : volumes, nacelles, tuyères allumées, vitrages, feux ; aucun évidement."""
-    h.loft("paint", BODY)
-    h.loft("paint", CAB)
-    h.loft("paint", CHIN)
+    """≤ 3 000 triangles : volumes (dont la proue à facettes), nacelles, tuyères allumées, vitrages
+    (éventails posés sur la peau), feux ; aucun évidement."""
+    body = h.loft("paint", BODY)
+    fore = h.add(bm_hull(mirrored(fore_points())), "paint")
+    skin = Skin([body, fore])
     h.loft("paint", SPINE)
     h.aabox("accent", (-9.22, -6.0, -0.8), (-8.5, 0.0, 3.3))
     h.aabox("dark", (-9.28, HATCH_Y - 0.94, CHANNEL_Z), (-9.18, HATCH_Y + 0.94, HATCH_H + 0.24))
@@ -857,13 +1269,28 @@ def build_lod(h: Hull) -> None:
         h.aabox("dark", (sx * SKID_X - 0.3, -20.0, -1.7), (sx * SKID_X + 0.3, 13.0, -1.3))
     h.aabox("heat", (-5.2, STERN - 0.09, -0.6), (5.2, STERN + 0.05, 3.8))
     h.lathe("glow", [(0, -0.05), (0.75, -0.05), (0.75, 0.0), (0, 0.0)], T(0, STERN - 0.4, 1.7), seg=12, swatch="engine_blue")
-    for name, axis, w_in, w_out, _, (ou0, ou1, ov0, ov1) in WINDOWS:
-        s = 1.0 if w_out > w_in else -1.0
-        a = (ou0, w_out - s * 0.02, ov0) if axis == "y" else (w_out - s * 0.02, ou0, ov0)
-        b = (ou1, w_out + s * 0.02, ov1) if axis == "y" else (w_out + s * 0.02, ou1, ov1)
-        h.aabox("lights", tuple(map(min, a, b)), tuple(map(max, a, b)), swatch="window_cool")
+    # Visière : une plaque sombre par moitié, de la visière à la pointe.
+    tip = Vector((0.0, VISOR_TIP[0], VISOR_TIP[1]))
+    t1 = ws_corners()[1]
+    for sx in (-1, 1):
+        b0 = skin.hit((0.0, 19.8, 9.0), (0.0, 0.0, -1.0))[0]
+        b1 = skin.hit((sx * (t1.x - 0.2), 19.8, 9.0), (0.0, 0.0, -1.0))[0]
+        f1 = Vector((sx * (t1.x - 0.2), t1.y + 0.14, t1.z + 0.03))
+        slab(h, "dark", [b0, b1, f1, tip], Vector((0.0, 0.3, 1.0)), 0.09, 0.03)
+    # Vitrages : éventail posé sur la peau, au contour du cadre (lueur froide du cockpit, ≈ 1,5).
+    for w in window_loops(skin):
+        bm = bmesh.new()
+        ring = [bm.verts.new(p + n * 0.03) for p, n in zip(w["b"], w["nb"])]
+        mid = bm.verts.new(sum((v.co for v in ring), Vector()) / len(ring) + w["d"] * 0.02)
+        for i in range(len(ring)):
+            f = bm.faces.new((ring[i], ring[(i + 1) % len(ring)], mid))
+            f.normal_update()
+            if f.normal.dot(w["d"]) < 0:
+                f.normal_flip()
+        h.add(bm, "glow", swatch="window_cool")
     for sx, sw in ((-1, "nav_red"), (1, "nav_green")):
-        h.aabox("lights", (sx * 9.1 - 0.1, 11.4, 1.9), (sx * 9.1 + 0.1, 11.6, 2.1), swatch=sw)
+        p, n = skin.hit((sx * 12.0, 11.2, 2.0), (-sx, 0, 0))
+        h.box("lights", (0.2, 0.2, 0.2), tuple(p + n * 0.05), swatch=sw)
     h.aabox("lights", (-0.1, -26.05, 4.62), (0.1, -25.85, 4.82), swatch="nav_white")
 
 
@@ -934,6 +1361,48 @@ def _bvh(objs) -> BVHTree:
     return tree
 
 
+def check_enclosed(shells, margin: float = 0.06, step: float = 0.3) -> list[str]:
+    """Les cellules agrandies du jeu (`CLEARANCE`) + `margin` restent dans la coque pleine (union
+    des volumes `shells`), sauf aux vitrages et au tunnel : sinon l'évidement percerait la peau
+    (un trou que `check_clearance` ne voit pas)."""
+    trees = [_bvh([o]) for o in shells]
+
+    def inside(p: Vector) -> bool:
+        for tree in trees:
+            loc, nor, _, _ = tree.find_nearest(p)
+            if loc is not None and (p - loc).dot(nor) < 0.0:
+                return True
+        return False
+
+    def exempt(p: Vector) -> bool:
+        # Vitrages : dans le rectangle de l'ouverture (élargi), du côté de la peau.
+        for _, axis, sgn, w_in, _, q, _ in WINDOWS:
+            u0, u1, v0, v1 = min(q[0], q[2]), max(q[1], q[3]), q[4], q[5]
+            w, u = (p.y, p.x) if axis == "y" else (p.x, p.y)
+            if sgn * (w - w_in) > -0.3 and u0 - 0.2 <= u <= u1 + 0.2 and v0 - 0.2 <= p.z <= v1 + 0.2:
+                return True
+        # Tunnel du sas.
+        return p.x < HATCH_WALL and abs(p.y - HATCH_Y) <= HATCH_W / 2 + 0.3 and p.z <= HATCH_H + 0.3
+
+    bad = []
+    grow = CLEARANCE + margin
+    for name, (lo, hi) in CELL_BOXES.items():
+        lo = [v - grow for v in lo]
+        hi = [v + grow for v in hi]
+        n = [max(1, int(math.ceil((hi[i] - lo[i]) / step))) for i in range(3)]
+        for i in range(n[0] + 1):
+            for j in range(n[1] + 1):
+                for k in range(n[2] + 1):
+                    on_face = i in (0, n[0]) or j in (0, n[1]) or k in (0, n[2])
+                    if not on_face:
+                        continue
+                    p = Vector((lo[0] + (hi[0] - lo[0]) * i / n[0], lo[1] + (hi[1] - lo[1]) * j / n[1],
+                                lo[2] + (hi[2] - lo[2]) * k / n[2]))
+                    if not exempt(p) and not inside(p):
+                        bad.append(f"{name} : {tuple(round(v, 2) for v in p)}")
+    return bad
+
+
 def check_pilot_view(objs) -> list[str]:
     """Rayons de l'œil du pilote vers une grille de points du vitrage : aucun ne doit toucher la
     coque avant d'avoir franchi la peau (on accepte les rayons qui sortent du champ du jeu :
@@ -941,16 +1410,15 @@ def check_pilot_view(objs) -> list[str]:
     tree = _bvh(objs)
     eye = Vector(PILOT_EYE)
     out = []
-    for name, axis, w_in, w_out, (iu0, iu1, iv0, iv1), _ in WINDOWS:
-        s = 1.0 if w_out > w_in else -1.0
-        normal = Vector((0, s, 0)) if axis == "y" else Vector((s, 0, 0))
+    for name, axis, sgn, w_in, (iu0, iu1, iv0, iv1), _, _ in WINDOWS:
+        normal = Vector((0, sgn, 0)) if axis == "y" else Vector((sgn, 0, 0))
         total = blocked = in_field = 0
-        worst = 90.0
+        where = []
         for i in range(21):
             for j in range(11):
                 u = iu0 + 0.02 + (iu1 - iu0 - 0.04) * i / 20
                 v = iv0 + 0.02 + (iv1 - iv0 - 0.04) * j / 10
-                p = Vector((u, w_in - 0.005 * s, v)) if axis == "y" else Vector((w_in - 0.005 * s, u, v))
+                p = Vector((u, w_in - 0.005 * sgn, v)) if axis == "y" else Vector((w_in - 0.005 * sgn, u, v))
                 d = (p - eye).normalized()
                 total += 1
                 hit = tree.ray_cast(eye + d * ((p - eye).length + 0.001), d, 6.0)
@@ -961,11 +1429,12 @@ def check_pilot_view(objs) -> list[str]:
                 flat = d - Vector((0, 0, d.z))
                 yaw = math.degrees(flat.angle(normal)) if flat.length > 1e-6 else 0.0
                 pitch = math.degrees(math.asin(max(-1.0, min(1.0, d.z))))
-                worst = min(worst, max(yaw / 55.0, abs(pitch) / 37.5) * 37.5)
                 if yaw <= 55.0 and abs(pitch) <= 37.5:
                     in_field += 1
+                    where.append(f"({u:.2f}, {v:.2f}) → {tuple(round(q, 2) for q in hit[0])}")
         out.append(f"{name} : {blocked}/{total} rayons arrêtés par la coque dans les 6 m, dont {in_field} dans le champ "
-                   f"du jeu (lacet ≤ 55°, tangage ≤ 37,5° autour de la normale du vitrage)")
+                   f"du jeu (lacet ≤ 55°, tangage ≤ 37,5° autour de la normale du vitrage)"
+                   + (" ; vitrage (u, v) → impact : " + ", ".join(where[:6]) if where else ""))
     return out
 
 
@@ -1053,6 +1522,7 @@ def _camera(eye, target, fov=None, lens=35.0, ortho=None, clip=0.05, roll=None):
     data.clip_start, data.clip_end = clip, 500.0
     if ortho:
         data.type = "ORTHO"
+        data.sensor_fit = "AUTO"  # sinon le cadrage dépend de la prise de vue précédente (champ vertical)
         data.ortho_scale = ortho
     else:
         data.type = "PERSP"
@@ -1082,6 +1552,10 @@ def shots() -> dict:
         "dessous": (dict(eye=(-14.0, 30.0, -16.0), target=(0.0, -3.0, -1.0), lens=35.0), (2,), ("hull", "interior")),
         "pres_sas": (dict(eye=(-19.0, 4.0, 4.5), target=(-9.0, -3.0, 1.0), lens=35.0), (0, 2), ("hull", "interior")),
         "pres_nez": (dict(eye=(-9.0, 30.0, 4.5), target=(0.0, 20.0, 1.2), lens=32.0), (2,), ("hull", "interior")),
+        "face": (dict(eye=(0.0, 45.0, 3.0), target=(0.0, 15.0, 1.6), lens=50.0), (2,), ("hull", "interior")),
+        "quai_nez": (dict(eye=(-11.5, 26.0, 1.9), target=(-2.0, 18.0, 1.2), fov=70.0), (2,), ("hull", "interior", "props")),
+        "verriere": (dict(eye=(-4.5, 27.0, 2.6), target=(0.0, 20.0, 1.8), lens=30.0), (2,), ("hull", "interior")),
+        "nez_dessous": (dict(eye=(9.0, 31.0, -6.0), target=(0.0, 17.0, 0.5), lens=35.0), (2,), ("hull", "interior")),
         "quai": (dict(eye=(-16.0, -0.6, 1.7), target=(-8.0, -3.0, 1.1), fov=75.0), (0, 2), ("hull", "interior", "props")),
         "pilote": (dict(eye=(ex, ey, ez), target=(ex, ey + 5.0, ez - 0.25), fov=75.0, clip=0.02), (2,), ("hull", "interior")),
         "pilote_gauche": (dict(eye=(ex, ey, ez), target=(ex - 4.0, ey + 1.2, ez - 0.2), fov=75.0, clip=0.02), (2,),
@@ -1145,16 +1619,17 @@ def main(argv) -> None:
     cols: list[bpy.types.Object] = []
     h = Hull(mats, parts_coll, seed=7731)
     core_cutters(cutters)
-    build(h, cutters, cols)
+    shells, _skin = build(h, cutters, cols)
     envelope_colliders(export_coll, cols)
     for o in cutters.objects:
         o.display_type = "WIRE"
         o.hide_render = True
     hollow(h.cut, cutters)
-    # Livrée : biseaux hauts du corps et de la cabine en olive, ventre en métal sombre.
-    for obj in h.cut[:2]:
+    # Livrée : biseaux hauts du corps, du cou et du module du cockpit en olive, ventre en métal sombre.
+    for obj in shells:
         h.split(obj, lambda n: 0.3 < n.z < 0.95 and abs(n.x) > 0.3, "accent")
         h.split(obj, lambda n: n.z < -0.95, "dark")
+        h.split(obj, lambda n: n.y > 0.55, "accent")  # façade de la proue : verrière, joues, étrave
     h.finish_cut()
     bad = ws.inverted_parts(h.parts)
     if bad:
