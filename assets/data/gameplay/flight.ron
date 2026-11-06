@@ -9,11 +9,21 @@
     steer_sensitivity: 3.0,
     ships: {
         "corvette": (
-            max_speed: 250.0,
+            // Poussée : 1 km/s (P33, demande de l'auteur du 06/11/2026 ; 250 m/s jusqu'à M10).
+            max_speed: 1000.0,
+            // Vitesse de combat (hypothèse de M11, Q19) : l'ancienne poussée maximale, tant que
+            // des hostiles interdisent la croisière (`CruiseLock`) ; les combats de M6 restent
+            // ceux qui ont été réglés (pillards à 260–320 m/s, `combat.ron`).
+            combat_max_speed: 250.0,
+            // Accélérations jusqu'à la vitesse de combat : inchangées (finesse à l'amarrage et
+            // au combat).
             accel_forward: 45.0,
             accel_backward: 25.0,
             accel_lateral: 20.0,
             accel_vertical: 20.0,
+            // ×3 au-delà de la vitesse de combat (M11) : de 0 à 1 km/s en ≈ 11 s au lieu de 22 ;
+            // arrêt depuis 1 km/s en ≈ 20 s sur ≈ 7,5 km, au lieu de 40 s sur 20 km.
+            fast_accel_factor: 3.0,
             pitch_rate_deg: 40.0,
             yaw_rate_deg: 30.0,
             roll_rate_deg: 80.0,

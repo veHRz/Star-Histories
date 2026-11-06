@@ -11,7 +11,9 @@
 //! (`sh_data::scene::generic_hub`, P32), où l'on arrive ; toute structure est un point de
 //! livraison ([`CargoPoint`]). Les ports d'amarrage ont la station orbitale à hangars (P31) et
 //! son niveau de détail ([`LodRange`]). Astres, stations, structures et ports portent une
-//! [`NavTarget`] (l'autopilote, `crate::ship`).
+//! [`NavTarget`] (l'autopilote, `crate::ship`). **M11** : une cible de navigation a son repère
+//! aux commandes (`ui::flight_hud`), sans étiquette de nom en plus ; seul ce qui n'est pas une
+//! cible (une étoile que le canon ne nomme pas) garde son [`WorldLabel`].
 //!
 //! Le joueur est **à bord de son vaisseau** (départ de partie) : le secteur du vaisseau est
 //! chargé ([`crate::sector`]), sa racine reçoit la pose d'arrivée et devient le référentiel de
@@ -401,10 +403,17 @@ fn spawn_global(
         commands
             .entity(entity)
             .insert((Name::new(name.clone()), SCOPE, SpacePosition(p.pos)));
-        if let Some(target) = id.as_deref().and_then(nav_target) {
-            commands.entity(entity).insert(target);
+        // Une cible de navigation a son repère aux commandes (`ui::flight_hud`, M11) : pas
+        // d'étiquette en plus (le nom serait en double) ; les autres (une étoile que le canon ne
+        // nomme pas) gardent la leur.
+        match id.as_deref().and_then(nav_target) {
+            Some(target) => {
+                commands.entity(entity).insert(target);
+            }
+            None => {
+                commands.spawn(label(&fonts, &name, entity));
+            }
         }
-        commands.spawn(label(&fonts, &name, entity));
     }
 
     // Structures sans fiche canon (hub de Portails, chantiers, dépôt) : mise en scène proposée,
@@ -434,9 +443,14 @@ fn spawn_global(
             SpacePosition(pos),
             SpaceRotation(facing(facing_dir)),
         ));
-        if let Some(target) = nav_target(&st.id) {
-            entity.insert(target);
-        }
+        // Le repère d'une cible de navigation (`ui::flight_hud`) remplace son étiquette.
+        let labelled = match nav_target(&st.id) {
+            Some(target) => {
+                entity.insert(target);
+                false
+            }
+            None => true,
+        };
         // Un modèle pas encore livré (le dépôt a celui de la station orbitale) : un bloc gris
         // en attendant, plutôt qu'un point de livraison invisible.
         if assets_dir().join(&st.model).is_file() {
@@ -451,7 +465,9 @@ fn spawn_global(
             ));
         }
         let entity = entity.id();
-        commands.spawn(label(&fonts, &name, entity));
+        if labelled {
+            commands.spawn(label(&fonts, &name, entity));
+        }
         anchors.push((st.id.clone(), pos));
         ports.push(pos);
     }
@@ -484,9 +500,14 @@ fn spawn_global(
             Transform::default(),
             Visibility::default(),
         ));
-        if let Some(target) = nav_target(&dock.id) {
-            beacon.insert(target);
-        }
+        // Le repère d'une cible de navigation (`ui::flight_hud`) remplace son étiquette.
+        let labelled = match nav_target(&dock.id) {
+            Some(target) => {
+                beacon.insert(target);
+                false
+            }
+            None => true,
+        };
         let model = dock.model_path();
         if assets_dir().join(model).is_file() {
             // Les cotes de la bouche ne valent que pour la station par défaut ; un modèle propre
@@ -540,7 +561,9 @@ fn spawn_global(
             ));
         }
         let entity = beacon.id();
-        commands.spawn(label(&fonts, &name, entity));
+        if labelled {
+            commands.spawn(label(&fonts, &name, entity));
+        }
         anchors.push((dock.id.clone(), pos));
     }
 

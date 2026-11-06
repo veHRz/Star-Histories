@@ -11,6 +11,11 @@
 //!   **croisière** (`Boost` : la vitesse suit la limite de l'échelle P2, qui croît avec la
 //!   distance à la surface la plus proche). La rotation suit toujours la commande, dans les
 //!   limites du maniement (`gameplay/flight.ron`).
+//! - **Vitesses de M11** (P33, Q19) : la poussée va jusqu'à 1 km/s, avec des accélérations
+//!   renforcées au-delà de la vitesse de combat (la finesse à basse vitesse ne change pas) ;
+//!   tant que des hostiles proches interdisent la croisière (`CruiseLock`), la poussée reste
+//!   bornée à la **vitesse de combat** ([`PilotIntent::speed_cap`]) : plus vite, le vaisseau
+//!   ralentit comme au sortir de la croisière. Les combats de M6 restent ceux qui ont été réglés.
 //!
 //! Les commandes passent par [`PilotIntent`], que remplissent les actions du contexte Pilotage
 //! ou un scénario de l'autopilote.
@@ -21,6 +26,8 @@
 //! s'arrête à la distance d'arrêt de la cible ([`approach`], logique pure, la même que celle du
 //! pilote des scénarios). Toute commande du joueur, la bascule du vol assisté ou le lever du
 //! siège le désengagent ; la croisière reste interdite près des hostiles (`CruiseLock`).
+//! L'approche finale se fait en croisière bridée ([`PilotIntent::cruise_cap`]), plus rapide que
+//! toute poussée : la poussée ne sert qu'au combat, sous la vitesse de combat.
 
 use bevy::math::DVec3;
 use bevy::prelude::*;
@@ -124,14 +131,14 @@ pub struct Approach {
     pub arrived: bool,
 }
 
-/// Distance (m) pour s'arrêter en vol assisté depuis `speed` : la décroissance de la croisière
-/// jusqu'à la vitesse de manœuvre, puis le freinage (marche arrière).
-pub fn braking_distance(speed: f64, handling: &Handling) -> f64 {
-    let brake = |v: f64| v * v / (2.0 * handling.accel_backward.max(1e-3));
-    if speed > handling.max_speed {
-        handling.cruise_spool_down * (speed - handling.max_speed) + brake(handling.max_speed)
+/// Distance (m) pour s'arrêter en vol assisté depuis `speed`, la poussée bornée à `limit`
+/// (m/s) : la décroissance jusqu'à `limit` (sortie de croisière, vitesse de combat), puis le
+/// freinage en marche arrière ([`Handling::brake_distance`]).
+pub fn braking_distance(speed: f64, handling: &Handling, limit: f64) -> f64 {
+    if speed > limit {
+        handling.cruise_spool_down * (speed - limit) + handling.brake_distance(limit)
     } else {
-        brake(speed)
+        handling.brake_distance(speed)
     }
 }
 
@@ -139,8 +146,8 @@ pub fn braking_distance(speed: f64, handling: &Handling) -> f64 {
 /// aligné, la croisière avec une consigne de vitesse qui décroît avec le reste du chemin
 /// ([`APPROACH_SECONDS`], [`PilotIntent::cruise_cap`]) : loin, la limite de croisière ; près,
 /// un ralentissement continu jusqu'à l'arrêt, sans dépasser la cible. Croisière interdite
-/// (`cruise_allowed` faux, hostiles proches) : poussée de manœuvre, coupée quand il ne reste
-/// que la distance de freinage. Logique pure (jeu et scénarios).
+/// (`cruise_allowed` faux, hostiles proches) : poussée, bornée à la vitesse de combat, coupée
+/// quand il ne reste que la distance de freinage. Logique pure (jeu et scénarios).
 pub fn approach(
     pos: SpacePos,
     rotation: Quat,
@@ -181,7 +188,9 @@ pub fn approach(
     if aligned && cruise_allowed {
         intent.cruise = true;
         intent.cruise_cap = Some((remaining / APPROACH_SECONDS).max(FINAL_SPEED));
-    } else if aligned && remaining > braking_distance(speed, handling) {
+    } else if aligned
+        && remaining > braking_distance(speed, handling, handling.thrust_limit(!cruise_allowed))
+    {
         intent.thrust = Vec3::NEG_Z;
     }
     Approach {
@@ -225,6 +234,11 @@ pub struct PilotIntent {
     /// Consigne de vitesse de croisière plus basse que la limite (m/s) : l'autopilote ralentit
     /// ainsi à l'approche. Jamais posée par le pilotage manuel.
     pub cruise_cap: Option<f64>,
+    /// Plafond de la poussée plus bas que la vitesse maximale du maniement (m/s) : la vitesse
+    /// de combat, posée par le vol ([`fly`]) tant que des hostiles interdisent la croisière ; un
+    /// scénario peut en poser un plus bas (le pilotage manuel, jamais). Au-delà, le vaisseau
+    /// ralentit comme au sortir de la croisière (`cruise_spool_down`).
+    pub speed_cap: Option<f64>,
 }
 
 /// Sensibilité de la souris en pilotage : pixels par frame pour une rotation à pleine vitesse.
@@ -274,28 +288,38 @@ pub fn step(
         return orientation;
     }
 
+    // La vitesse permise en poussée : celle du maniement, ou la vitesse de combat.
+    let cap = intent
+        .speed_cap
+        .map_or(handling.max_speed, |c| c.clamp(0.0, handling.max_speed));
     let speed = motion.velocity.length();
-    if speed > handling.max_speed * 1.01 {
-        // Retour de croisière : décélération exponentielle jusqu'à la vitesse de manœuvre.
+    if speed > cap * 1.01 {
+        // Retour de croisière, ou vitesse de combat imposée : décélération exponentielle jusqu'à
+        // la vitesse permise (en douceur : pas de cassure de la vitesse d'un frame à l'autre).
         let decay = (-dt / handling.cruise_spool_down).exp();
-        motion.velocity *= (decay).max(handling.max_speed / speed);
+        motion.velocity *= (decay).max(cap / speed);
         return orientation;
     }
 
     let local = to_world.inverse() * motion.velocity;
     let thrust = intent.thrust.clamp(Vec3::splat(-1.0), Vec3::ONE).as_dvec3();
-    // Accélération maximale par axe et par sens (−z : avant).
-    let accel = |axis: usize, sign: f64| match axis {
-        0 => handling.accel_lateral,
-        1 => handling.accel_vertical,
-        _ if sign < 0.0 => handling.accel_forward,
-        _ => handling.accel_backward,
+    // Accélération maximale par axe et par sens (−z : avant), renforcée au-delà de la vitesse
+    // de combat.
+    let factor = handling.accel_factor(speed);
+    let accel = |axis: usize, sign: f64| {
+        factor
+            * match axis {
+                0 => handling.accel_lateral,
+                1 => handling.accel_vertical,
+                _ if sign < 0.0 => handling.accel_forward,
+                _ => handling.accel_backward,
+            }
     };
     let mut next = local;
     for axis in 0..3 {
         match motion.mode {
             FlightMode::Assisted => {
-                let target = thrust[axis] * handling.max_speed;
+                let target = thrust[axis] * cap;
                 let delta = target - local[axis];
                 let limit = accel(axis, delta) * dt;
                 next[axis] = local[axis] + delta.clamp(-limit, limit);
@@ -306,8 +330,8 @@ pub fn step(
         }
     }
     motion.velocity = to_world * next;
-    if motion.velocity.length() > handling.max_speed {
-        motion.velocity = motion.velocity.normalize() * handling.max_speed;
+    if motion.velocity.length() > cap {
+        motion.velocity = motion.velocity.normalize_or_zero() * cap;
     }
     orientation
 }
@@ -416,6 +440,7 @@ fn read_pilot_input(
         roll: ***roll,
         cruise: ***boost,
         cruise_cap: None,
+        speed_cap: None,
     };
     // Le joueur reprend la main : l'autopilote se désengage. Une touche suffit ; la souris doit
     // bouger plusieurs frames de suite (un saut isolé du curseur, à la prise de la souris par la
@@ -641,10 +666,20 @@ fn fly(
         .as_ref()
         .and_then(|c| c.captain.hull.as_ref())
         .map_or(1.0, |h| h.thrust_factor()) as f32;
+    // Hostiles trop proches : pas de croisière, et la poussée bornée à la vitesse de combat (sous
+    // un plafond déjà posé par la commande, s'il est plus bas : un scénario peut en poser un).
+    let combat = lock.is_some_and(|l| l.0);
+    let speed_cap = match (
+        intent.speed_cap,
+        combat.then_some(handling.combat_max_speed),
+    ) {
+        (Some(asked), Some(combat)) => Some(asked.min(combat)),
+        (asked, combat) => asked.or(combat),
+    };
     let intent = PilotIntent {
         thrust: intent.thrust * thrust,
-        // Hostiles trop proches : pas de croisière.
-        cruise: intent.cruise && !lock.is_some_and(|l| l.0),
+        cruise: intent.cruise && !combat,
+        speed_cap,
         ..intent.clone()
     };
     rotation.0 = step(
@@ -662,8 +697,10 @@ fn fly(
 
 /// Un astre dont la surface passe à moins de cette marge (en rayons) de la ligne droite vers la
 /// cible fait obstacle ; on le contourne par un point à `DETOUR_RADII` rayons de son centre.
-/// Au large : sous 1 rayon d'altitude, la croisière (0,15 × la distance à la surface) devient
-/// lente ; le détour garde ≈ 1,4 rayon d'altitude.
+/// Au large : sous 1 rayon d'altitude, la croisière (`cruise_rate` × la distance à la surface)
+/// devient lente ; le détour garde ≈ 1,4 rayon d'altitude. Un détour plus large ne gagne presque
+/// rien (simulation du trajet de `deliver_vorrh`, M11 : 4 rayons au lieu de 2,4, ≈ 1 %), et
+/// `OBSTACLE_RADII` doit rester sous l'altitude des cibles (2,5 rayons du centre).
 const OBSTACLE_RADII: f64 = 2.0;
 const DETOUR_RADII: f64 = 2.4;
 
@@ -738,13 +775,16 @@ pub fn nearest_surface(at: SpacePos, bodies: impl Iterator<Item = (SpacePos, f64
 mod tests {
     use super::*;
 
+    /// Le maniement de la corvette (`flight.ron`, M11).
     fn handling() -> Handling {
         Handling {
-            max_speed: 250.0,
+            max_speed: 1000.0,
+            combat_max_speed: 250.0,
             accel_forward: 45.0,
             accel_backward: 25.0,
             accel_lateral: 20.0,
             accel_vertical: 20.0,
+            fast_accel_factor: 3.0,
             pitch_rate_deg: 40.0,
             yaw_rate_deg: 30.0,
             roll_rate_deg: 80.0,
@@ -753,6 +793,7 @@ mod tests {
         }
     }
 
+    /// L'échelle de `space.ron` (M11 : croisière plus lente).
     fn scale() -> SystemScale {
         SystemScale {
             au: 1.496e9,
@@ -764,16 +805,17 @@ mod tests {
             moon_radius: 1.7e5,
             moon_orbit_radii: 12.0,
             parking_orbit_radii: 1.5,
-            cruise_rate: 0.15,
+            cruise_rate: 0.10,
             cruise_min_speed: 2000.0,
-            cruise_max_speed: 3.0e7,
-            manoeuvre_max_speed: 300.0,
+            cruise_max_speed: 1.5e7,
+            manoeuvre_max_speed: 1000.0,
         }
     }
 
+    /// Vole `seconds` secondes à 60 i/s (au frame près), l'avant tourné vers −Z au départ.
     fn run(motion: &mut ShipMotion, intent: &PilotIntent, seconds: f64, surface: f64) -> Quat {
         let mut q = Quat::IDENTITY;
-        for _ in 0..(seconds * 60.0) as usize {
+        for _ in 0..(seconds * 60.0).round() as usize {
             q = step(
                 motion,
                 q,
@@ -794,11 +836,68 @@ mod tests {
             thrust: Vec3::NEG_Z,
             ..default()
         };
-        run(&mut m, &forward, 7.0, 1e6);
-        assert!((m.velocity.z + 250.0).abs() < 1.0, "{:?}", m.velocity);
-        // 250 m/s à 25 m/s² en marche arrière : 10 s pour s'arrêter.
-        run(&mut m, &PilotIntent::default(), 11.0, 1e6);
+        // Sous la vitesse de combat, l'accélération de toujours (45 m/s²) : la finesse ne
+        // change pas.
+        run(&mut m, &forward, 5.0, 1e6);
+        assert!((m.velocity.z + 225.0).abs() < 1.0, "{:?}", m.velocity);
+        // Puis ×3 : 1 km/s en ≈ 11 s en tout.
+        run(&mut m, &forward, 6.5, 1e6);
+        assert!((m.velocity.z + 1000.0).abs() < 1.0, "{:?}", m.velocity);
+        // Freinage : 1 000 → 250 m/s à 75 m/s², puis 250 → 0 à 25 m/s² ; ≈ 20 s.
+        run(&mut m, &PilotIntent::default(), 9.0, 1e6);
+        assert!(m.velocity.length() > 250.0, "{:?}", m.velocity);
+        run(&mut m, &PilotIntent::default(), 12.0, 1e6);
         assert!(m.velocity.length() < 0.5, "{:?}", m.velocity);
+    }
+
+    #[test]
+    fn la_vitesse_de_combat_ralentit_en_douceur_et_borne_la_poussee() {
+        let mut m = ShipMotion::default();
+        let forward = PilotIntent {
+            thrust: Vec3::NEG_Z,
+            ..default()
+        };
+        run(&mut m, &forward, 12.0, 1e6);
+        assert!((m.velocity.length() - 1000.0).abs() < 1.0);
+        // Les hostiles arrivent : la poussée est bornée à 250 m/s (comme `fly`).
+        let combat = PilotIntent {
+            speed_cap: Some(handling().combat_max_speed),
+            ..forward.clone()
+        };
+        let speeds: Vec<f64> = (0..240)
+            .map(|_| {
+                run(&mut m, &combat, 1.0 / 60.0, 1e6);
+                m.velocity.length()
+            })
+            .collect();
+        // Pas de cassure : au plus ≈ 1 % de moins par frame ; à la vitesse de combat en ≈ 2 s.
+        let mut previous = 1000.0;
+        for &v in &speeds[..30] {
+            assert!(
+                v >= previous * 0.985 && v <= previous + 1e-9,
+                "{previous} → {v}"
+            );
+            previous = v;
+        }
+        assert!(speeds[150] <= 250.0 + 1e-6, "{}", speeds[150]);
+        // Pleine poussée sous le verrou : elle reste à la vitesse de combat.
+        run(&mut m, &combat, 5.0, 1e6);
+        let v = m.velocity.length();
+        assert!((245.0..=250.0 + 1e-6).contains(&v), "{v}");
+        // Verrou levé : la poussée repart vers 1 km/s.
+        run(&mut m, &forward, 3.0, 1e6);
+        assert!(m.velocity.length() > 600.0, "{}", m.velocity.length());
+    }
+
+    #[test]
+    fn la_distance_de_freinage_compte_la_vitesse_permise() {
+        let h = handling();
+        // Sous la vitesse permise : le freinage seul.
+        assert!((braking_distance(250.0, &h, 1000.0) - 1250.0).abs() < 1e-6);
+        // Au-dessus (sortie de croisière ou vitesse de combat) : la décroissance d'abord.
+        let combat = braking_distance(600.0, &h, 250.0);
+        assert!((combat - (1.5 * 350.0 + 1250.0)).abs() < 1e-6, "{combat}");
+        assert!(braking_distance(600.0, &h, 1000.0) > combat);
     }
 
     #[test]
@@ -885,8 +984,9 @@ mod tests {
                 return (Some(frame as f64 * dt), pos.distance(target), closest);
             }
             assert!(surface > 0.0, "dans la planète à {pos:?}");
-            // Comme `fly` sous `CruiseLock`.
+            // Comme `fly` sous `CruiseLock` : ni croisière, ni plus que la vitesse de combat.
             a.intent.cruise &= cruise_allowed;
+            a.intent.speed_cap = (!cruise_allowed).then_some(h.combat_max_speed);
             rot = step(&mut motion, rot, &a.intent, &h, &s, surface, dt);
             let d = motion.velocity * dt;
             pos += SpacePos::new(d.x, d.y, d.z);
@@ -940,7 +1040,7 @@ mod tests {
 
     #[test]
     fn loin_de_toute_surface_la_croisiere_ne_fait_pas_depasser() {
-        // Croisière permise jusqu'à 30 000 km/s : une cible à 60 km ne doit pas être dépassée.
+        // Croisière permise jusqu'à 15 000 km/s : une cible à 60 km ne doit pas être dépassée.
         let (time, distance, closest) = autopilot_flight(
             SpacePos::ZERO,
             Quat::IDENTITY,
@@ -1087,15 +1187,34 @@ mod tests {
             cruise: true,
             ..default()
         };
-        // À 10 000 km d'une surface : limite à 1 500 km/s.
+        // À 10 000 km d'une surface : limite à 1 000 km/s.
         run(&mut m, &cruise, 5.0, 1.0e7);
         let speed = m.velocity.length();
-        assert!(speed > 1.4e6, "{speed}");
-        run(&mut m, &PilotIntent::default(), 30.0, 1.0e7);
+        assert!(speed > 0.99e6, "{speed}");
+        // Retour à la poussée maximale en ≈ 10 s (1,5 × ln 1 000), puis le freinage (≈ 20 s).
+        run(&mut m, &PilotIntent::default(), 12.0, 1.0e7);
         assert!(
-            m.velocity.length() <= 250.0 + 1e-6,
+            m.velocity.length() <= handling().max_speed + 1e-6,
             "{}",
             m.velocity.length()
         );
+        run(&mut m, &PilotIntent::default(), 22.0, 1.0e7);
+        assert!(m.velocity.length() < 0.5, "{}", m.velocity.length());
+    }
+
+    #[test]
+    fn la_croisiere_part_toujours_au_dessus_de_la_poussee() {
+        // Le bandeau (et le tutoriel, au-delà d'une fois et demie la poussée maximale)
+        // reconnaissent la croisière à sa vitesse : même au ras d'une surface, elle va plus vite
+        // que les moteurs seuls.
+        let (h, s) = (handling(), scale());
+        assert!(s.cruise_speed_limit(0.0) > 1.5 * h.max_speed);
+        let mut m = ShipMotion::default();
+        let cruise = PilotIntent {
+            cruise: true,
+            ..default()
+        };
+        run(&mut m, &cruise, 1.0, 100.0);
+        assert!(m.velocity.length() > 1.5 * h.max_speed);
     }
 }

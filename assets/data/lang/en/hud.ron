@@ -1,8 +1,8 @@
 // Interface en jeu (M9, lot L2) : bandeau du lieu, encart des touches (ui/keys_panel.rs),
 // schéma du vaisseau (ui/combat_hud.rs), HUD de vol, conseils de première fois (tips.rs),
-// arme absente au combat à pied (combat/foot.rs).
-// Les `view.*.hint` ne s'affichent plus (les commandes sont dans l'encart des touches) ; gardés
-// tant que des appelants de `views::view_banner` les citent.
+// arme absente au combat à pied (combat/foot.rs). M11 : mode « combat » du bandeau de vol ;
+// `view.global.hint` et `view.sector.hint` retirés (les commandes sont dans l'encart des
+// touches, `views::view_banner` ne lit plus la clé qu'on lui passe).
 {
     "combat.hud.title": "Hull",
     "combat.section.bow": "Bow",
@@ -61,17 +61,16 @@
     "tips.foot": "You are walking in your ship: [KeyE] opens doors and uses consoles. The pilot's seat is in the cockpit, at the front.",
     "tips.map": "The map: click a system to plot a route, then [Digit1] to leave by Portals or [Digit2] by hyperspace. [KeyM]: back to the helm.",
     "tips.contract": "Your contract is in the log ([KeyJ]). Deliver in orbit at the destination: [KeyG] near the Portal hub or the shipyards.",
-    "tips.raid": "Combat! Left click: cannons, right click: missile at the target, [KeyX]: decoys. No cruise within 8 km of a hostile: move away to flee.",
+    "tips.raid": "Combat! Left click: cannons, right click: missile at the target, [KeyX]: decoys. Within 8 km of a hostile, no cruise, and thrust is held to combat speed: move away to flee.",
     "tips.boarding": "Boarders! Left click: shoot, [KeyR]: reload, [ControlLeft]: crouch behind cover.",
     "combat.foot.unarmed": "No weapon equipped: [KeyI] for the inventory.",
     "combat.foot.hud_unarmed": "Health {health}   ·   unarmed",
-    "view.global.hint": "At the helm: [KeyW][KeyA][KeyS][KeyD], [Space]/[ControlLeft]: thrust   ·   Mouse: steer   ·   [KeyQ]/[KeyE]: roll   ·   [ShiftLeft]: cruise   ·   [KeyZ]: flight assist   ·   [KeyG]: dock   ·   [KeyF]: stand up   ·   [KeyI]: character   ·   [KeyJ]: log   ·   [KeyK]: codex   ·   [Escape]: pause",
-    "view.sector.hint": "[KeyW][KeyA][KeyS][KeyD]: move   ·   Mouse: look   ·   [ShiftLeft]: run   ·   [KeyI]: character   ·   [KeyJ]: log   ·   [KeyK]: codex   ·   [Escape]: pause",
     "hud.flight.dock": "[KeyG]: Request docking — {name}, {distance} km",
     "hud.flight.speed_ms": "{value} m/s",
     "hud.flight.speed_kms": "{value} km/s",
     "hud.flight.mode.assisted": "Flight assist",
     "hud.flight.mode.decoupled": "Decoupled",
     "hud.flight.mode.cruise": "Cruise",
+    "hud.flight.mode.combat": "{mode} · combat",
     "hud.flight.nearest": "{name}: {distance} km",
 }

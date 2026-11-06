@@ -544,6 +544,13 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
         "space.ron",
         "échelle des systèmes : orbit_ratio > 1 et cruise_max_speed > cruise_min_speed",
     );
+    // La croisière va toujours plus vite que la poussée : le bandeau de pilotage et le tutoriel
+    // la reconnaissent à sa vitesse (M11).
+    c.check(
+        sc.cruise_min_speed > sc.manoeuvre_max_speed,
+        "space.ron",
+        "échelle des systèmes : cruise_min_speed doit dépasser manoeuvre_max_speed",
+    );
     c.check(
         sc.moon_radius < sc.planet_radius
             && sc.planet_radius < sc.gas_giant_radius
@@ -731,10 +738,12 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
         );
         let values = [
             h.max_speed,
+            h.combat_max_speed,
             h.accel_forward,
             h.accel_backward,
             h.accel_lateral,
             h.accel_vertical,
+            h.fast_accel_factor,
             h.pitch_rate_deg,
             h.yaw_rate_deg,
             h.roll_rate_deg,
@@ -750,6 +759,16 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
             h.max_speed <= data.space.scale.manoeuvre_max_speed,
             &ctx,
             "max_speed au-delà de la vitesse de manœuvre de l'échelle (space.ron)",
+        );
+        c.check(
+            h.combat_max_speed <= h.max_speed,
+            &ctx,
+            "combat_max_speed au-delà de max_speed",
+        );
+        c.check(
+            h.fast_accel_factor >= 1.0,
+            &ctx,
+            "fast_accel_factor doit valoir au moins 1",
         );
     }
     // Le maniement est celui de l'intérieur type (la classe du vaisseau), pas du départ.

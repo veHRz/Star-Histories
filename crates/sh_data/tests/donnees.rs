@@ -384,8 +384,8 @@ fn hexis_a_le_spatioport_par_defaut() {
     assert_eq!(banque.map(|d| d.id.as_str()), Some("hexis_bank"));
 }
 
-/// L'échelle des systèmes (P2) tient sa cible de jeu : quelques minutes entre planètes voisines,
-/// moins d'une minute et demie pour un trajet local.
+/// L'échelle des systèmes (P2, croisière plus lente de M11) tient sa cible de jeu : de une à
+/// quatre minutes entre planètes voisines, moins de deux minutes pour un trajet local.
 #[test]
 fn l_echelle_des_systemes_donne_des_trajets_de_quelques_minutes() {
     let sc = donnees().space.scale;
@@ -394,14 +394,14 @@ fn l_echelle_des_systemes_donne_des_trajets_de_quelques_minutes() {
         let length = sc.orbit_radius(rank + 1) - sc.orbit_radius(rank);
         let t = sc.cruise_time(length, parking, parking);
         assert!(
-            (45.0..=180.0).contains(&t),
+            (60.0..=240.0).contains(&t),
             "rang {rank} → {} : {t:.0} s",
             rank + 1
         );
     }
     let to_station = sc.cruise_time(2.0e7, parking, 0.0);
     assert!(
-        to_station <= 90.0,
+        to_station <= 120.0,
         "orbite → station à 20 000 km : {to_station:.0} s"
     );
     let to_moon = sc.cruise_time(
@@ -413,6 +413,39 @@ fn l_echelle_des_systemes_donne_des_trajets_de_quelques_minutes() {
     // Le système compressé reste précis en f64 : ulp < 0,1 mm à la dixième orbite.
     let far = sc.orbit_radius(10);
     assert!(far * f64::EPSILON < 1e-4, "{far} m");
+}
+
+/// Vitesses de vol de M11 (P33, Q19) : la poussée du joueur reste sous la croisière, et sa
+/// vitesse de combat sous celle des pillards de la Ligue (un raid ne se fuit pas à la poussée :
+/// il faut les distancer hors de portée, puis la croisière, comme en M6).
+#[test]
+fn la_vitesse_de_combat_garde_les_raids_de_m6() {
+    let data = donnees();
+    let sc = &data.space.scale;
+    let corvette = data
+        .flight
+        .ships
+        .get("corvette")
+        .unwrap_or_else(|| panic!("maniement de la corvette absent"));
+    assert!(corvette.max_speed >= 1000.0, "{}", corvette.max_speed);
+    // Le tutoriel reconnaît la croisière au-delà d'une fois et demie la poussée maximale
+    // (`tutorial.rs`, `CRUISE_FACTOR`) : même au ras d'une surface, elle y est.
+    assert!(1.5 * corvette.max_speed < sc.cruise_min_speed);
+    let raiders = &data.combat.raid.attackers;
+    assert!(!raiders.is_empty());
+    for id in raiders {
+        let ship = data
+            .combat
+            .ships
+            .get(id)
+            .unwrap_or_else(|| panic!("coque inconnue : {id}"));
+        assert!(
+            corvette.combat_max_speed < ship.max_speed,
+            "{id} : {} m/s, combat du joueur à {} m/s",
+            ship.max_speed,
+            corvette.combat_max_speed
+        );
+    }
 }
 
 #[test]

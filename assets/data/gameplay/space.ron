@@ -18,9 +18,16 @@
         moon_orbit_radii: 12.0,
         parking_orbit_radii: 1.5, // stations et orbites de stationnement : 1,5 rayon d'altitude
         // Croisière : vitesse limite proportionnelle à la distance de la surface la plus proche.
-        cruise_rate: 0.15,        // 1/s : la vitesse se multiplie par e toutes les 6,7 s
-        cruise_min_speed: 2000.0,
-        cruise_max_speed: 3.0e7,  // 0,1 c
-        manoeuvre_max_speed: 300.0,
+        // M11 (hypothèse, Q19 ; P2 chiffrait 0,15/s et 0,1 c) : plus lente, à la demande de
+        // l'auteur du 06/11/2026. Trajets (`SystemScale::cruise_time`) : ≈ 2 à 3,5 min entre
+        // planètes voisines (1 à 2 avant), ≈ 1,5 min vers une station à 20 000 km (≈ 1), ≈ 40 s
+        // vers une lune (≈ 30). Hub de Vorrhal → chantiers de Vorrh-II à l'autopilote :
+        // ≈ 7 min (≈ 4 avant), dont ≈ 4 min plafonnées à 15 000 km/s.
+        cruise_rate: 0.10,        // 1/s : la vitesse se multiplie par e toutes les 10 s
+        cruise_min_speed: 2000.0, // au-dessus de toute poussée (`manoeuvre_max_speed`)
+        cruise_max_speed: 1.5e7,  // 0,05 c
+        // Poussée maximale de tout vaisseau, hors croisière (P33 : 1 km/s ; 300 m/s jusqu'à
+        // M10). La vitesse de combat est par vaisseau (`flight.ron`).
+        manoeuvre_max_speed: 1000.0,
     ),
 )

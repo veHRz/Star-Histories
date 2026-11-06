@@ -1,8 +1,8 @@
 // Interface en jeu (M9, lot L2) : bandeau du lieu, encart des touches (ui/keys_panel.rs),
 // schéma du vaisseau (ui/combat_hud.rs), HUD de vol, conseils de première fois (tips.rs),
-// arme absente au combat à pied (combat/foot.rs).
-// Les `view.*.hint` ne s'affichent plus (les commandes sont dans l'encart des touches) ; gardés
-// tant que des appelants de `views::view_banner` les citent.
+// arme absente au combat à pied (combat/foot.rs). M11 : mode « combat » du bandeau de vol ;
+// `view.global.hint` et `view.sector.hint` retirés (les commandes sont dans l'encart des
+// touches, `views::view_banner` ne lit plus la clé qu'on lui passe).
 {
     "combat.hud.title": "Coque",
     "combat.section.bow": "Proue",
@@ -61,17 +61,16 @@
     "tips.foot": "Vous marchez dans votre vaisseau : [KeyE] ouvre les portes et utilise les consoles. Le siège du pilote est au cockpit, à l'avant.",
     "tips.map": "La carte : cliquez sur un système pour tracer une route, puis [Digit1] pour partir par les Portails ou [Digit2] par l'hyperespace. [KeyM] : retour aux commandes.",
     "tips.contract": "Votre contrat est au journal ([KeyJ]). Livrez en orbite de la destination : [KeyG] près du hub de Portails ou des chantiers.",
-    "tips.raid": "Combat ! Clic gauche : canons, clic droit : missile sur la cible, [KeyX] : leurres. Pas de croisière à moins de 8 km d'un hostile : éloignez-vous pour fuir.",
+    "tips.raid": "Combat ! Clic gauche : canons, clic droit : missile sur la cible, [KeyX] : leurres. À moins de 8 km d'un hostile, pas de croisière, et la poussée est bridée à la vitesse de combat : éloignez-vous pour fuir.",
     "tips.boarding": "Abordage ! Clic gauche : tirer, [KeyR] : recharger, [ControlLeft] : s'accroupir derrière un abri.",
     "combat.foot.unarmed": "Aucune arme équipée : [KeyI] pour l'inventaire.",
     "combat.foot.hud_unarmed": "Santé {health}   ·   sans arme",
-    "view.global.hint": "Aux commandes : [KeyW][KeyA][KeyS][KeyD], [Space]/[ControlLeft] : poussée   ·   Souris : diriger   ·   [KeyQ]/[KeyE] : roulis   ·   [ShiftLeft] : croisière   ·   [KeyZ] : assistance de vol   ·   [KeyG] : amarrage   ·   [KeyF] : se lever   ·   [KeyI] : personnage   ·   [KeyJ] : journal   ·   [KeyK] : codex   ·   [Escape] : pause",
-    "view.sector.hint": "[KeyW][KeyA][KeyS][KeyD] : se déplacer   ·   Souris : regarder   ·   [ShiftLeft] : courir   ·   [KeyI] : personnage   ·   [KeyJ] : journal   ·   [KeyK] : codex   ·   [Escape] : pause",
     "hud.flight.dock": "[KeyG] : demander l'amarrage — {name}, {distance} km",
     "hud.flight.speed_ms": "{value} m/s",
     "hud.flight.speed_kms": "{value} km/s",
     "hud.flight.mode.assisted": "Vol assisté",
     "hud.flight.mode.decoupled": "Découplé",
     "hud.flight.mode.cruise": "Croisière",
+    "hud.flight.mode.combat": "{mode} · combat",
     "hud.flight.nearest": "{name} : {distance} km",
 }

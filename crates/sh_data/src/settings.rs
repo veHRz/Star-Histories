@@ -142,11 +142,14 @@ pub struct SystemScale {
     /// Altitude des stations et des orbites de stationnement, en rayons de la planète.
     pub parking_orbit_radii: f64,
     /// Croisière : vitesse limite = `cruise_rate` × distance à la surface la plus proche,
-    /// bornée par `cruise_min_speed` et `cruise_max_speed` (m/s).
+    /// bornée par `cruise_min_speed` et `cruise_max_speed` (m/s). `cruise_min_speed` reste
+    /// au-dessus de toute poussée ([`Self::manoeuvre_max_speed`]) : la croisière va toujours plus
+    /// vite que les moteurs seuls (le bandeau et le tutoriel s'en servent pour la reconnaître).
     pub cruise_rate: f64,
     pub cruise_min_speed: f64,
     pub cruise_max_speed: f64,
-    /// Vitesse maximale en vol de manœuvre et de combat, hors croisière (m/s).
+    /// Vitesse maximale en poussée de tout vaisseau, hors croisière (m/s) : le plafond des
+    /// `max_speed` de `flight.ron` (P33).
     pub manoeuvre_max_speed: f64,
 }
 
@@ -192,21 +195,66 @@ pub struct FlightSettings {
 /// Maniement d'un vaisseau (réglage de jeu, pas un fait d'univers).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Handling {
-    /// Vitesse maximale en vol assisté (m/s), hors croisière.
+    /// Vitesse maximale en poussée (m/s), hors croisière (P33 : 1 km/s pour la corvette).
     pub max_speed: f64,
-    /// Accélérations par axe (m/s²).
+    /// Vitesse maximale en poussée tant que la croisière est interdite par des hostiles proches
+    /// (m/s, hypothèse de M11, Q19) : sans elle, un raid se fuirait à la poussée et les combats
+    /// (pillards à 260–320 m/s, tirs) seraient déséquilibrés. Au-dessus, le vaisseau ralentit
+    /// comme au sortir de la croisière ([`Self::cruise_spool_down`]).
+    pub combat_max_speed: f64,
+    /// Accélérations par axe (m/s²), jusqu'à la vitesse de combat.
     pub accel_forward: f64,
     pub accel_backward: f64,
     pub accel_lateral: f64,
     pub accel_vertical: f64,
+    /// Au-delà de la vitesse de combat, les accélérations sont multipliées par ce facteur (≥ 1) :
+    /// la finesse à basse vitesse (amarrage, combat) ne change pas, et l'on atteint la poussée
+    /// maximale, ou l'on s'arrête, sans y passer une demi-minute.
+    pub fast_accel_factor: f64,
     /// Vitesses de rotation maximales (degrés/s).
     pub pitch_rate_deg: f64,
     pub yaw_rate_deg: f64,
     pub roll_rate_deg: f64,
     /// Réactivité de la rotation (1/s) : à quelle vitesse la rotation suit la commande.
     pub turn_response: f64,
-    /// Durée caractéristique (s) du retour de la croisière à la vitesse de manœuvre.
+    /// Durée caractéristique (s) du retour de la croisière à la vitesse de manœuvre (et de la
+    /// poussée à la vitesse de combat).
     pub cruise_spool_down: f64,
+}
+
+impl Handling {
+    /// Vitesse maximale en poussée : celle de combat quand des hostiles interdisent la croisière.
+    pub fn thrust_limit(&self, combat: bool) -> f64 {
+        if combat {
+            self.combat_max_speed.min(self.max_speed)
+        } else {
+            self.max_speed
+        }
+    }
+
+    /// Multiplicateur des accélérations à `speed` m/s ([`Self::fast_accel_factor`] au-delà de la
+    /// vitesse de combat).
+    pub fn accel_factor(&self, speed: f64) -> f64 {
+        if speed > self.combat_max_speed {
+            self.fast_accel_factor.max(1.0)
+        } else {
+            1.0
+        }
+    }
+
+    /// Distance (m) pour s'arrêter en vol assisté depuis `speed` m/s (au plus la poussée
+    /// maximale), en marche arrière : accélération renforcée au-delà de la vitesse de combat.
+    pub fn brake_distance(&self, speed: f64) -> f64 {
+        let brake = self.accel_backward.max(1e-3);
+        let low = self.combat_max_speed.max(0.0);
+        let speed = speed.max(0.0);
+        if speed <= low {
+            speed * speed / (2.0 * brake)
+        } else {
+            let fast = brake * self.accel_factor(speed);
+            (speed * speed - low * low) / (2.0 * fast) + low * low / (2.0 * brake)
+        }
+    }
 }
 
 /// Horloge du monde.
@@ -214,4 +262,65 @@ pub struct Handling {
 pub struct ClockSettings {
     /// Secondes de jeu par seconde réelle hors voyages (×30 : P4, validée par l'auteur).
     pub time_scale: f64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn corvette() -> Handling {
+        Handling {
+            max_speed: 1000.0,
+            combat_max_speed: 250.0,
+            accel_forward: 45.0,
+            accel_backward: 25.0,
+            accel_lateral: 20.0,
+            accel_vertical: 20.0,
+            fast_accel_factor: 3.0,
+            pitch_rate_deg: 40.0,
+            yaw_rate_deg: 30.0,
+            roll_rate_deg: 80.0,
+            turn_response: 3.0,
+            cruise_spool_down: 1.5,
+        }
+    }
+
+    #[test]
+    fn la_vitesse_de_combat_borne_la_poussee() {
+        let h = corvette();
+        assert_eq!(h.thrust_limit(false), 1000.0);
+        assert_eq!(h.thrust_limit(true), 250.0);
+        // Une vitesse de combat au-dessus de la poussée maximale ne la dépasse pas.
+        let odd = Handling {
+            combat_max_speed: 2000.0,
+            ..corvette()
+        };
+        assert_eq!(odd.thrust_limit(true), 1000.0);
+        assert_eq!(h.accel_factor(200.0), 1.0);
+        assert_eq!(h.accel_factor(250.0), 1.0);
+        assert_eq!(h.accel_factor(251.0), 3.0);
+    }
+
+    #[test]
+    fn la_distance_de_freinage_suit_l_integration() {
+        let h = corvette();
+        // Freinage pas à pas, comme le vol assisté (accélération lue au début de chaque pas).
+        for start in [100.0, 250.0, 600.0, 1000.0] {
+            let (mut v, mut d, dt) = (start, 0.0, 1e-3);
+            while v > 0.0 {
+                let a = h.accel_backward * h.accel_factor(v);
+                let next = (v - a * dt).max(0.0);
+                d += 0.5 * (v + next) * dt;
+                v = next;
+            }
+            let closed = h.brake_distance(start);
+            assert!(
+                (d - closed).abs() < 0.01 * closed + 1.0,
+                "{start} m/s : {d} / {closed}"
+            );
+        }
+        // Repères de P33 : de 1 000 m/s, ≈ 7,5 km ; de 250 m/s, 1,25 km comme avant M11.
+        assert!((h.brake_distance(1000.0) - 7500.0).abs() < 1.0);
+        assert!((h.brake_distance(250.0) - 1250.0).abs() < 1e-6);
+    }
 }
