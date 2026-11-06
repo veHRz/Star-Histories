@@ -1,7 +1,6 @@
 // Carte galactique et voyages (M9, lot L8) : carte, itinéraires, légende, écran de voyage.
 {
     "view.galaxy.title": "Astréa",
-    "view.galaxy.hint": "[KeyW][KeyA][KeyS][KeyD] / flèches : déplacer   ·   Molette, [KeyR]/[KeyF] : zoom   ·   Clic : choisir une destination   ·   [Digit1] / [Digit2] : partir   ·   [KeyM] : retour aux commandes",
     "map.here": "Position : {place}",
     "map.fuel": "Carburant lourd : {fuel} jours",
     "map.plan.hint": "Cliquez sur un système ou un monde isolé pour tracer une route ; zoomez sur le vôtre pour l'autopilote.",

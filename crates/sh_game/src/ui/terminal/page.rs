@@ -13,7 +13,7 @@ use sh_core::{Credits, Id, StellarDate};
 use sh_data::Place;
 use sh_data::combat::SectionId;
 use sh_data::dialogue::Effect;
-use sh_sim::{Captain, Contract, ContractKind, ContractState, SimWorld, contract_offers};
+use sh_sim::{Captain, Contract, ContractKind, ContractState, Loan, SimWorld, contract_offers};
 
 use super::{Screen, Terminal};
 use crate::career::{MissionLog, contract_title, money, rank_name};
@@ -827,6 +827,30 @@ fn percent(t: &Texts, f: f64) -> String {
     t.format("term.percent", &[("value", &t.number(f * 100.0, 0))])
 }
 
+/// Ce que coûte la prochaine échéance d'un prêt : l'échéance, sauf la dernière, qui ne dépasse
+/// pas le reste dû (même règle que `sh_sim::Captain::pay_installment`).
+pub fn installment_due(loan: &Loan) -> Credits {
+    if loan.balance.cents < loan.installment.cents {
+        loan.balance
+    } else {
+        loan.installment
+    }
+}
+
+/// Les paramètres qu'une réplique de dialogue peut citer dans son texte de langue, tirés du
+/// capitaine et des données : `{installment}`, le montant de la prochaine échéance (« Payer
+/// l'échéance ({installment}). »). Communs à toutes les conversations, sans cas particulier
+/// par clé : un texte qui ne les cite pas est inchangé. Sans dette, le montant n'a pas de sens
+/// (les réponses qui le citent sont réservées à `HasDebt`) : un tiret.
+fn dialogue_args(ctx: &Ctx) -> Vec<(&'static str, String)> {
+    let installment = ctx
+        .cap
+        .loan
+        .as_ref()
+        .map_or_else(|| "—".to_owned(), |l| money(ctx.texts, installment_due(l)));
+    vec![("installment", installment)]
+}
+
 /// Le contenu d'un écran.
 pub fn page(ctx: &Ctx, term: &Terminal) -> Page {
     let t = ctx.texts;
@@ -897,6 +921,10 @@ fn dialogue_page(ctx: &Ctx, id: &str, node: &str, extra: Option<&str>) -> Page {
         .map(|role| format!("npc.role.{role}"))
         .filter(|key| t.has(key))
         .map(|key| capitalize(&t.get(&key)));
+    // Répliques et réponses peuvent citer l'état du capitaine (le montant de l'échéance) ; la
+    // clé de l'action reste celle du texte (l'autopilote choisit par la clé).
+    let owned = dialogue_args(ctx);
+    let args: Vec<(&str, &str)> = owned.iter().map(|(k, v)| (*k, v.as_str())).collect();
     let choices = n
         .choices
         .iter()
@@ -906,7 +934,7 @@ fn dialogue_page(ctx: &Ctx, id: &str, node: &str, extra: Option<&str>) -> Page {
         })
         .map(|c| {
             Choice::new(
-                t.get(&c.text),
+                t.format(&c.text, &args),
                 Action::Say {
                     key: c.text.clone(),
                     effects: c.effects.clone(),
@@ -924,7 +952,7 @@ fn dialogue_page(ctx: &Ctx, id: &str, node: &str, extra: Option<&str>) -> Page {
         ),
         body: Body::Dialogue {
             speaker,
-            line: t.get(&n.text),
+            line: t.format(&n.text, &args),
             extra: extra.map(str::to_owned),
         },
         choices,
@@ -1196,13 +1224,7 @@ fn bank_page(ctx: &Ctx) -> Page {
         text: vec![(t.get("bank.exchange_note"), Tone::Dim)],
         ..Detail::default()
     };
-    let installment = loan.map(|l| {
-        if l.balance.cents < l.installment.cents {
-            l.balance
-        } else {
-            l.installment
-        }
-    });
+    let installment = loan.map(installment_due);
     let pay = Choice::new(
         t.format(
             "bank.pay",
@@ -1635,5 +1657,73 @@ mod tests {
     fn capitale_accentuee() {
         assert_eq!(capitalize("épave"), "Épave");
         assert_eq!(capitalize(""), "");
+    }
+
+    fn loan(balance: i64, installment: i64) -> Loan {
+        Loan {
+            lender: sh_core::Id::new("hc_finance").unwrap_or_else(|e| panic!("{e}")),
+            balance: Credits::units(balance),
+            installment: Credits::units(installment),
+            next_due: StellarDate::from_day_index(30),
+            missed: 0,
+        }
+    }
+
+    #[test]
+    fn la_derniere_echeance_ne_depasse_pas_le_reste_du() {
+        assert_eq!(installment_due(&loan(45_000, 2_500)), Credits::units(2_500));
+        assert_eq!(installment_due(&loan(1_200, 2_500)), Credits::units(1_200));
+        assert_eq!(installment_due(&loan(2_500, 2_500)), Credits::units(2_500));
+    }
+
+    /// « Payer l'échéance » cite son montant, partout où la Banque le propose (premier contact,
+    /// retour, dossier clos), dans les deux langues ; la clé de l'action ne change pas.
+    #[test]
+    fn la_reponse_de_la_banque_cite_l_echeance() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/data");
+        let game = sh_data::GameData::load(&dir).unwrap_or_else(|e| panic!("{e}"));
+        let data = Data(std::sync::Arc::new(game));
+        let today = StellarDate::from_day_index(0);
+        let cap = Captain::from_start(&data, today);
+        let due = cap
+            .loan
+            .as_ref()
+            .map(installment_due)
+            .unwrap_or_else(|| panic!("le départ de partie est endetté"));
+        let (log, items, codex) = (
+            MissionLog::default(),
+            BTreeMap::new(),
+            crate::codex::Codex::default(),
+        );
+        for code in [sh_data::paths::LANG_CODE, sh_data::paths::LANG_EN_CODE] {
+            let texts = Texts(sh_data::load_lang(&dir, code).unwrap_or_else(|e| panic!("{e}")));
+            let ctx = Ctx {
+                texts: &texts,
+                data: &data,
+                cap: &cap,
+                sim: None,
+                here: None,
+                today,
+                log: &log,
+                items: &items,
+                codex: &codex,
+                fuel: None,
+                fuel_per_day: 1.0,
+            };
+            let amount = money(&texts, due);
+            for node in ["first", "again", "closed"] {
+                let page = dialogue_page(&ctx, "hexis_bank", node, None);
+                let pay = page
+                    .choices
+                    .iter()
+                    .find(|c| matches!(&c.action, Action::Say { key, .. } if key == "dlg.bank.pay"))
+                    .unwrap_or_else(|| panic!("{code} {node} : pas de réponse pour payer"));
+                assert!(
+                    pay.label.contains(&amount) && !pay.label.contains('{'),
+                    "{code} {node} : « {} » sans « {amount} »",
+                    pay.label
+                );
+            }
+        }
     }
 }

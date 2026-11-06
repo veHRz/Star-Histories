@@ -1,7 +1,8 @@
 // Le bureau des contrats d'Hexa-Corp au spatioport d'Hexis : PROPOSITION P25.
 // M9 : le guichetier est aussi le PNJ de comptoir du rôle `contracts` (`role`).
 // M10 (demande de l'auteur) : il ne fait plus la Banque, qui a son propre guichetier
-// (`hexis_bank.ron`) ; à qui parle de son hypothèque, il renvoie poliment vers ce guichet.
+// (`hexis_bank.ron`). M11 (demande de l'auteur) : plus de réponse sur l'hypothèque ici ; le
+// tutoriel mène au guichet de la Banque, qui seul en parle.
 // Canon (§4.4) : la Logistique émet les contrats CT, CR, CRS ; la Banque (division Finance)
 // tient l'hypothèque (CH, saisie automatique) ; le Renseignement et la Flotte Beta traquent
 // les mauvais payeurs. Le guichetier est anonyme ; ses répliques sont proposées.
@@ -29,7 +30,6 @@
             effects: [Remember("met")],
             choices: [
                 (text: "dlg.office.ask_work", next: "work"),
-                (text: "dlg.office.ask_bank", when: [HasDebt], next: "bank"),
                 (text: "dlg.office.bye"),
             ],
         ),
@@ -37,7 +37,6 @@
             text: "dlg.office.again",
             choices: [
                 (text: "dlg.office.ask_work", next: "work"),
-                (text: "dlg.office.ask_bank", when: [HasDebt], next: "bank"),
                 (text: "dlg.office.bye"),
             ],
         ),
@@ -45,7 +44,6 @@
             text: "dlg.office.trusted",
             choices: [
                 (text: "dlg.office.ask_work", next: "work"),
-                (text: "dlg.office.ask_bank", when: [HasDebt], next: "bank"),
                 (text: "dlg.office.bye"),
             ],
         ),
@@ -65,24 +63,9 @@
                 (text: "dlg.office.back", next: "again"),
             ],
         ),
-        // La Banque a son guichet : le guichetier y renvoie.
-        "bank": (
-            text: "dlg.office.bank",
-            choices: [
-                (text: "dlg.office.back", next: "again"),
-                (text: "dlg.office.bye"),
-            ],
-        ),
+        // Le dossier clos : la Banque, elle, attend toujours son argent (à son guichet).
         "closed": (
             text: "dlg.office.closed",
-            choices: [
-                (text: "dlg.office.ask_bank", when: [HasDebt], next: "bank_closed"),
-                (text: "dlg.office.bye"),
-            ],
-        ),
-        // Même au traître : la Banque, elle, encaisse toujours (à son guichet).
-        "bank_closed": (
-            text: "dlg.office.bank_closed",
             choices: [
                 (text: "dlg.office.bye"),
             ],

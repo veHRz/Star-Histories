@@ -57,8 +57,6 @@
     "console.comms.message": "Comms: no new messages.",
     "console.engineering.name": "engineering console",
     "console.engineering.message": "Engineering: reactor nominal, heavy fuel reserves full.",
-    "console.galley.name": "galley terminal",
-    "console.galley.message": "Galley: rations stocked.",
     // Catalogue d'objets (gameplay/items.ron) : `item.<id>` est le nom, en minuscules (il se
     // glisse dans une phrase) ; `item.<id>.description`, la fiche.
     "item.datapad.description": "A shipboard datapad, scratched screen, tired battery. It keeps your notes and readings.",

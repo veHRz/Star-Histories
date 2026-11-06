@@ -1,47 +1,54 @@
 //! Tutoriel guidé des premières minutes (M8, `docs/refonte-visuelle.md` §6 ; M9,
-//! `docs/m9-retours.md` §8.2).
+//! `docs/m9-retours.md` §8.2 ; M11, `docs/m11.md` §2).
 //!
-//! Dix étapes mènent une nouvelle partie de la chambre du vaisseau jusqu'à la première livraison
+//! Onze étapes mènent une nouvelle partie de la chambre du vaisseau jusqu'à la première livraison
 //! et la première sauvegarde : la chambre (un casier, la tablette, l'inventaire), le tour du
 //! vaisseau salle par salle avec le rôle de chacune, puis prendre les commandes, s'amarrer,
-//! descendre à quai (hangar, hall, bureau), prendre un contrat auprès du guichetier, ouvrir le
-//! journal, l'écran du personnage et le codex, partir, livrer, sauvegarder.
+//! descendre à quai (hangar, hall, bureau), prendre un contrat auprès du guichetier, passer au
+//! guichet de la Banque (M11 : la dette du départ, ses échéances, ce que coûte un retard ; ouvrir
+//! son compte suffit, payer n'est pas exigé), ouvrir le journal, l'écran du personnage et le
+//! codex, partir, livrer, sauvegarder.
 //!
 //! - **Un fait observé fait avancer, jamais une minuterie** : chaque étape a ses vérifications
 //!   ([`Check`]), cochées dès que le jeu les constate ([`Facts`]) et gardées une fois cochées.
 //!   Le joueur peut donc les faire dans l'ordre qu'il veut, ou les avoir déjà faites.
 //! - **Les salles se reconnaissent à leur usage**, pas à un identifiant de secteur : la clé de
-//!   nom d'une cellule (`room.cockpit`, `room.contracts_office`…, `sh_data::Cell::name_key`) dit
-//!   ce qu'elle est, et `sector::aboard_cell` si le joueur est dans son propre vaisseau. Un autre
-//!   intérieur type ou un autre spatioport aux salles de même usage suit le même tutoriel.
+//!   nom d'une cellule (`room.cockpit`, `room.contracts_office`, `room.bank`…,
+//!   `sh_data::Cell::name_key`) dit ce qu'elle est, et `sector::aboard_cell` si le joueur est
+//!   dans son propre vaisseau. Un autre intérieur type ou un autre spatioport aux salles de même
+//!   usage suit le même tutoriel.
 //! - Un **panneau d'objectif** (en haut à droite) donne la consigne ; les touches y sont des
 //!   jetons (`[KeyG]`) qui suivent la disposition du clavier et le remappage. Un **repère** à
 //!   l'écran montre où aller quand c'est utile (casier, tablette, balise, poste de pilotage,
-//!   guichetier, hub), ramené au bord de l'écran, avec une flèche, quand la cible est hors champ.
-//!   Vers une salle, il montre la prochaine porte du chemin le plus court ([`path`]).
+//!   guichetier, employé de la Banque, hub), ramené au bord de l'écran, avec une flèche, quand la
+//!   cible est hors champ. Vers une salle, il montre la prochaine porte du chemin le plus court
+//!   ([`path`]).
 //! - Il se coupe dans les options (« Tutoriel ») et se passe à tout moment ([`SkipTutorial`],
 //!   deux appuis : un appui égaré ne le fait pas perdre). Son avancement est sauvegardé par le
-//!   **nom** de l'étape et des vérifications, jamais par leur numéro : une sauvegarde de M8 ou de
-//!   M9 prise en plein tutoriel reprend à la même étape malgré les étapes ajoutées devant ; une
-//!   sauvegarde d'avant M8 le charge comme terminé (on n'impose pas le début à une partie déjà
-//!   avancée).
+//!   **nom** de l'étape et des vérifications, jamais par leur numéro : une sauvegarde de M8 à M10
+//!   prise en plein tutoriel reprend à la même étape malgré les étapes ajoutées (une partie
+//!   sauvegardée au contrat passe ensuite par la Banque ; une partie déjà plus loin ne revient
+//!   pas en arrière) ; une sauvegarde d'avant M8 le charge comme terminé (on n'impose pas le début
+//!   à une partie déjà avancée).
 //! - Pendant qu'il tourne, les conseils de première fois qu'il remplace se taisent
 //!   ([`REPLACED_TIPS`]) ; terminé, il les marque comme vus. Passé, il les laisse venir.
 //!
 //! La logique (étapes, vérifications, avancement, chemin du repère) est pure et testée ; les
 //! systèmes ne font que relever les faits et afficher. L'autopilote le coupe, sauf
-//! `SH_TUTORIAL=1` ; `SH_TUTORIAL_STEP=<n>` démarre à l'étape n (captures du panneau).
+//! `SH_TUTORIAL=1` ; `SH_TUTORIAL_STEP=<n>` démarre à l'étape n, de 1 (la chambre) à 11 (la
+//! sauvegarde), ou terminé avec 12 (captures du panneau, [`Tutorial::at_number`]).
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_enhanced_input::prelude::Start;
 use serde::{Deserialize, Serialize};
+use sh_core::Credits;
 use sh_data::StructureKind;
 use sh_data::dialogue::{Dialogue, Effect, Screen as DialogueScreen};
 use sh_sim::{Captain, Contract, ContractKind, ContractState};
 
-use crate::career::{Career, CargoPoint};
+use crate::career::{Career, CargoPoint, faction_name, money};
 use crate::clock::HudCorner;
 use crate::data::{Data, Texts};
 use crate::graphics::WorldCamera;
@@ -101,7 +108,8 @@ impl Plugin for TutorialPlugin {
 pub const REPLACED_TIPS: [&str; 6] = ["helm", "dock", "port", "foot", "map", "contract"];
 
 /// Une étape du tutoriel, dans l'ordre. Sauvegardée par son nom : on peut en ajouter, en
-/// insérer (M9 : la chambre et le tour du vaisseau, devant) sans changer celle d'une sauvegarde.
+/// insérer (M9 : la chambre et le tour du vaisseau, devant ; M11 : la Banque, après le contrat)
+/// sans changer celle d'une sauvegarde.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Stage {
     /// Dans la chambre : ouvrir un casier, ramasser la tablette, ouvrir l'inventaire.
@@ -117,6 +125,10 @@ pub enum Stage {
     Office,
     /// Parler au guichetier, prendre un contrat de transport.
     Contract,
+    /// Au guichet de la Banque : la dette du départ (l'hypothèque du vaisseau), ses échéances et
+    /// ce que coûte un retard ; parler à l'employé, ouvrir son compte. Payer n'est pas exigé : le
+    /// joueur n'en a peut-être pas encore les moyens (M11).
+    Bank,
     /// Ouvrir le journal, l'écran du personnage, le codex.
     Screens,
     /// Revenir aux commandes, partir, ouvrir la carte, choisir la destination.
@@ -128,20 +140,21 @@ pub enum Stage {
 }
 
 impl Stage {
-    pub const ALL: [Stage; 10] = [
+    pub const ALL: [Stage; 11] = [
         Stage::Cabin,
         Stage::Tour,
         Stage::Flight,
         Stage::Dock,
         Stage::Office,
         Stage::Contract,
+        Stage::Bank,
         Stage::Screens,
         Stage::Departure,
         Stage::Delivery,
         Stage::Save,
     ];
 
-    /// Numéro affiché (1 à 10). Jamais sauvegardé : il change quand on ajoute une étape.
+    /// Numéro affiché (1 à 11). Jamais sauvegardé : il change quand on ajoute une étape.
     pub fn number(self) -> usize {
         Self::ALL
             .iter()
@@ -149,7 +162,7 @@ impl Stage {
             .map_or(0, |i| i + 1)
     }
 
-    /// L'étape de ce numéro (1 à 10).
+    /// L'étape de ce numéro (1 à 11).
     pub fn from_number(n: usize) -> Option<Self> {
         n.checked_sub(1).and_then(|i| Self::ALL.get(i).copied())
     }
@@ -167,6 +180,7 @@ impl Stage {
             Stage::Dock => "dock",
             Stage::Office => "office",
             Stage::Contract => "contract",
+            Stage::Bank => "bank",
             Stage::Screens => "screens",
             Stage::Departure => "departure",
             Stage::Delivery => "delivery",
@@ -191,6 +205,7 @@ impl Stage {
             Stage::Dock => &[Check::Dock],
             Stage::Office => &[Check::Stand, Check::Hangar, Check::Hall, Check::Office],
             Stage::Contract => &[Check::Talk, Check::Contract],
+            Stage::Bank => &[Check::Bank, Check::Teller, Check::Account],
             Stage::Screens => &[Check::Journal, Check::Sheet, Check::Codex],
             Stage::Departure => &[Check::Helm, Check::Undock, Check::Map, Check::Route],
             Stage::Delivery => &[Check::Arrive, Check::Deliver],
@@ -242,11 +257,14 @@ impl Room {
     }
 }
 
-/// Usage de la cellule du bureau des contrats, et du hall par lequel on y arrive (spatioport).
+/// Usage de la cellule du bureau des contrats, du hall par lequel on y arrive, et de la Banque
+/// (spatioport).
 const OFFICE_ROOM: &str = "room.contracts_office";
 const HALL_ROOM: &str = "room.arrivals_hall";
-/// Le rôle du PNJ de comptoir qui donne les contrats (`items::TalkTo`).
+const BANK_ROOM: &str = "room.bank";
+/// Le rôle du PNJ de comptoir qui donne les contrats (`items::TalkTo`), et de celui de la Banque.
 const CONTRACTS_ROLE: &str = "contracts";
+const BANK_ROLE: &str = "bank";
 
 /// La prochaine salle du tour pas encore visitée, dans l'ordre du repère.
 pub fn next_room(ticked: &[Check]) -> Option<Room> {
@@ -316,6 +334,12 @@ pub enum Check {
     Office,
     Talk,
     Contract,
+    /// Dans la salle de la Banque, ou près de son employé.
+    Bank,
+    /// La conversation de l'employé de la Banque (ou son service) à l'écran.
+    Teller,
+    /// Le compte et l'hypothèque à l'écran.
+    Account,
     Journal,
     Sheet,
     Codex,
@@ -353,6 +377,9 @@ impl Check {
             Check::Office => "office",
             Check::Talk => "talk",
             Check::Contract => "contract",
+            Check::Bank => "bank",
+            Check::Teller => "teller",
+            Check::Account => "account",
             Check::Journal => "journal",
             Check::Sheet => "sheet",
             Check::Codex => "codex",
@@ -383,6 +410,9 @@ impl Check {
             Check::Office => f.at_office,
             Check::Talk => f.talking,
             Check::Contract => f.cargo_contract.is_some(),
+            Check::Bank => f.at_bank,
+            Check::Teller => f.talking_bank,
+            Check::Account => f.account,
             Check::Journal => f.journal,
             Check::Sheet => f.sheet,
             Check::Codex => f.codex,
@@ -427,6 +457,12 @@ pub struct Facts {
     pub talking: bool,
     /// Un contrat de livraison actif (transport ou ravitaillement), le plus récent.
     pub cargo_contract: Option<String>,
+    /// Dans la salle de la Banque, ou près de son employé (ou en conversation avec lui).
+    pub at_bank: bool,
+    /// Le terminal montre l'employé de la Banque ou son service.
+    pub talking_bank: bool,
+    /// Le terminal montre le compte et l'hypothèque.
+    pub account: bool,
     pub journal: bool,
     /// L'écran du personnage (inventaire, compétences) ou la fiche de la tablette.
     pub sheet: bool,
@@ -490,6 +526,16 @@ impl Tutorial {
         }
     }
 
+    /// Le tutoriel d'une partie qui commence à l'étape de ce numéro (`SH_TUTORIAL_STEP`) : de 1
+    /// à 11, ou terminé juste après la dernière (12, captures sans panneau) ; `None` au-delà.
+    pub fn at_number(n: usize) -> Option<Self> {
+        match Stage::from_number(n) {
+            Some(stage) => Some(Self::new(stage)),
+            None if n == Stage::ALL.len() + 1 => Some(Self::finished()),
+            None => None,
+        }
+    }
+
     pub fn stage(&self) -> Option<Stage> {
         match self.progress {
             Progress::Running(stage) => Some(stage),
@@ -497,7 +543,8 @@ impl Tutorial {
         }
     }
 
-    /// Numéro de l'étape en cours ; 11 une fois fini ou passé (vérifications de l'autopilote).
+    /// Numéro de l'étape en cours ; 12 (le nombre d'étapes plus un) une fois fini ou passé
+    /// (vérifications de l'autopilote).
     pub fn number(&self) -> usize {
         self.stage().map_or(Stage::ALL.len() + 1, Stage::number)
     }
@@ -565,13 +612,11 @@ pub fn latest_cargo_contract(captain: &Captain) -> Option<&Contract> {
         .find(|c| c.state == ContractState::Active && c.kind != ContractKind::Towing)
 }
 
-/// Le dialogue mène-t-il aux contrats (le guichetier d'un bureau des contrats) ?
-pub fn offers_contracts(dialogue: &Dialogue) -> bool {
-    let opens = |effects: &[Effect]| {
-        effects
-            .iter()
-            .any(|e| matches!(e, Effect::Open(DialogueScreen::Contracts)))
-    };
+/// Le dialogue ouvre-t-il ce service (les contrats d'un guichetier, le compte de la Banque…), à
+/// l'arrivée sur un nœud ou par une réponse ? Un interlocuteur se reconnaît à ce qu'il fait, pas
+/// à son nom.
+pub fn opens_screen(dialogue: &Dialogue, screen: DialogueScreen) -> bool {
+    let opens = |effects: &[Effect]| effects.contains(&Effect::Open(screen));
     dialogue
         .nodes
         .values()
@@ -622,8 +667,9 @@ const LOOK_DEGREES: f32 = 30.0;
 const THRUST_SPEED: f64 = 100.0;
 /// La croisière : au-delà de cette part de la vitesse de manœuvre.
 const CRUISE_FACTOR: f64 = 1.5;
-/// Distance horizontale (m) au guichetier des contrats à laquelle on a « trouvé » le bureau.
-const OFFICE_DISTANCE: f32 = 4.0;
+/// Distance horizontale (m) à un PNJ de comptoir (guichetier des contrats, employé de la
+/// Banque) à laquelle on a « trouvé » son bureau.
+const COUNTER_DISTANCE: f32 = 4.0;
 /// Délai (s) pour confirmer le passage du tutoriel par un second appui.
 const SKIP_CONFIRM_SECONDS: f32 = 5.0;
 
@@ -752,10 +798,27 @@ impl Observed<'_, '_> {
             })
     }
 
-    /// Le guichetier des contrats (PNJ de comptoir), s'il est chargé.
-    fn clerk(&self) -> Option<Vec3> {
-        self.nearest(|i| matches!(i, Interactable::Npc { role, .. } if role == CONTRACTS_ROLE))
+    /// Le PNJ de comptoir de ce rôle le plus proche (guichetier des contrats, employé de la
+    /// Banque), s'il est chargé.
+    fn npc(&self, wanted: &str) -> Option<Vec3> {
+        self.nearest(|i| matches!(i, Interactable::Npc { role, .. } if role == wanted))
             .map(|(_, p)| p)
+    }
+
+    /// Le joueur est-il à portée du PNJ de comptoir de ce rôle ?
+    fn near_npc(&self, role: &str) -> bool {
+        match (self.npc(role), self.player_position()) {
+            (Some(npc), Some(player)) => {
+                Vec2::new(npc.x - player.x, npc.z - player.z).length() < COUNTER_DISTANCE
+            }
+            _ => false,
+        }
+    }
+
+    /// Le joueur est-il dans la cellule de cet usage, hors de son vaisseau (bureau, Banque) ?
+    fn in_room(&self, key: &str) -> bool {
+        let current = self.current_cell();
+        current.is_some() && current == self.cell_of(key, false)
     }
 
     /// Le siège du pilote.
@@ -782,14 +845,15 @@ impl Observed<'_, '_> {
         })
     }
 
-    /// Le terminal montre-t-il le guichetier des contrats (sa conversation, ou ses contrats) ?
-    fn talking_to_office(&self) -> bool {
+    /// Le terminal montre-t-il ce guichet : la conversation d'un PNJ de ce rôle (ou d'un
+    /// interlocuteur qui ouvre ce service), ou le service lui-même (les contrats, le compte) ?
+    fn talking_to(&self, role: &str, service: DialogueScreen) -> bool {
         match self.terminal.as_ref().map(|t| &t.screen) {
             Some(Screen::Dialogue { id, .. }) => self.data.dialogues.iter().any(|d| {
-                &d.id == id && (d.role.as_deref() == Some(CONTRACTS_ROLE) || offers_contracts(d))
+                &d.id == id && (d.role.as_deref() == Some(role) || opens_screen(d, service))
             }),
-            Some(Screen::Contracts) => true,
-            _ => false,
+            Some(screen) => *screen == Screen::from(service),
+            None => false,
         }
     }
 
@@ -802,16 +866,13 @@ impl Observed<'_, '_> {
             .filter(|_| self.flying())
             .map_or(0.0, |(_, m)| m.velocity.length());
         let screen = self.terminal.as_ref().map(|t| &t.screen);
-        let talking = self.talking_to_office();
+        let talking = self.talking_to(CONTRACTS_ROLE, DialogueScreen::Contracts);
+        let talking_bank = self.talking_to(BANK_ROLE, DialogueScreen::Bank);
         let current = self.current_cell();
-        let near_clerk = match (self.clerk(), self.player_position()) {
-            (Some(clerk), Some(player)) => {
-                Vec2::new(clerk.x - player.x, clerk.z - player.z).length() < OFFICE_DISTANCE
-            }
-            _ => false,
-        };
-        let in_office = current.is_some() && current == self.cell_of(OFFICE_ROOM, false);
-        let at_office = docked && (in_office || near_clerk || talking);
+        let at_office =
+            docked && (self.in_room(OFFICE_ROOM) || self.near_npc(CONTRACTS_ROLE) || talking);
+        let at_bank =
+            docked && (self.in_room(BANK_ROOM) || self.near_npc(BANK_ROLE) || talking_bank);
         let in_district = self.in_district();
         let in_hall =
             in_district && (current.and_then(|c| self.room_key(c)) == Some(HALL_ROOM) || at_office);
@@ -836,6 +897,9 @@ impl Observed<'_, '_> {
             at_office,
             talking,
             cargo_contract: latest_cargo_contract(captain).map(|c| c.id.clone()),
+            at_bank,
+            talking_bank,
+            account: matches!(screen, Some(Screen::Bank)),
             journal: matches!(screen, Some(Screen::Journal)),
             // M9 : [KeyC], [KeyI], [KeyO] ouvrent l'écran du personnage ; la fiche de la
             // tablette compte aussi.
@@ -856,13 +920,13 @@ impl Observed<'_, '_> {
 
 /// Une nouvelle partie commence au début du tutoriel (une sauvegarde chargée apporte le sien).
 fn start_tutorial(mut commands: Commands) {
-    let stage = crate::dev::autopilot_active()
+    let tutorial = crate::dev::autopilot_active()
         .then(|| std::env::var("SH_TUTORIAL_STEP").ok())
         .flatten()
         .and_then(|v| v.trim().parse().ok())
-        .and_then(Stage::from_number)
-        .unwrap_or(Stage::ALL[0]);
-    commands.insert_resource(Tutorial::new(stage));
+        .and_then(Tutorial::at_number)
+        .unwrap_or_else(|| Tutorial::new(Stage::ALL[0]));
+    commands.insert_resource(tutorial);
 }
 
 /// Rotation cumulée du vaisseau aux commandes, pour « regarder ».
@@ -1005,6 +1069,30 @@ fn beacon_name(texts: &Texts, data: &Data, location: Option<&Location>) -> Strin
         .map_or_else(String::new, |d| texts.get(&d.name_key))
 }
 
+/// Les chiffres de la dette que cite l'étape de la Banque : la dette du départ de partie, le
+/// prêteur et l'échéance du prêt en cours (à défaut, ceux des règles), la cadence des échéances,
+/// la pénalité de retard et le nombre d'échéances manquées avant la saisie (`career.ron`). Tirés
+/// des données, jamais écrits dans le texte : le panneau dit exactement ce que le jeu applique
+/// (`sh_sim::Captain::tick`, `pay_installment`), même si l'équilibrage change.
+fn debt_args(texts: &Texts, data: &Data, captain: Option<&Captain>) -> Vec<(&'static str, String)> {
+    let rules = &data.career.bank;
+    let loan = captain.and_then(|c| c.loan.as_ref());
+    let lender = loan.map_or(&rules.lender, |l| &l.lender);
+    let installment = loan.map_or(Credits::units(rules.installment), |l| l.installment);
+    let debt = data.start().map_or(0, |s| s.debt);
+    vec![
+        ("debt", money(texts, Credits::units(debt))),
+        ("lender", faction_name(texts, data, lender)),
+        ("installment", money(texts, installment)),
+        ("days", texts.number(f64::from(rules.every_days), 0)),
+        ("penalty", money(texts, Credits::units(rules.late_penalty))),
+        (
+            "limit",
+            texts.number(f64::from(rules.seize_after_missed), 0),
+        ),
+    ]
+}
+
 #[allow(clippy::too_many_arguments)]
 fn panel_content(
     texts: &Texts,
@@ -1024,7 +1112,11 @@ fn panel_content(
     }
     .unwrap_or_default();
     let beacon = beacon_name(texts, data, location);
-    let args = [("place", place.as_str()), ("beacon", beacon.as_str())];
+    let mut owned: Vec<(&str, String)> = vec![("place", place), ("beacon", beacon)];
+    if stage == Stage::Bank {
+        owned.extend(debt_args(texts, data, captain));
+    }
+    let args: Vec<(&str, &str)> = owned.iter().map(|(k, v)| (*k, v.as_str())).collect();
     let body_key = if stage == Stage::Save && ironman {
         "tutorial.save.body_ironman".to_owned()
     } else {
@@ -1049,8 +1141,8 @@ fn panel_content(
                     Check::Visit(room) => texts.get(room.name_key()),
                     _ => String::new(),
                 };
-                let [place, beacon] = args;
-                let args = [place, beacon, ("room", room.as_str())];
+                let mut args = args.clone();
+                args.push(("room", room.as_str()));
                 (
                     tutorial.is_ticked(*c),
                     texts.format(&format!("tutorial.check.{}", c.key()), &args),
@@ -1229,7 +1321,8 @@ const MARKER_WIDTH: f32 = 280.0;
 const MARKER_MARGIN: f32 = 48.0;
 
 /// La cible du repère de l'étape, et son nom. Vers une salle, la prochaine porte du chemin
-/// ([`Observed::door_toward`]) ; dans la salle, ce qu'on y cherche (siège, guichetier).
+/// ([`Observed::door_toward`]) ; dans la salle, ce qu'on y cherche (siège, guichetier, employé
+/// de la Banque).
 fn marker_target(
     texts: &Texts,
     observed: &Observed,
@@ -1277,7 +1370,13 @@ fn marker_target(
         }
         Stage::Office | Stage::Contract if docked => {
             let office = observed.cell_of(OFFICE_ROOM, false);
-            toward(office, observed.clerk()).map(|p| (p, texts.get("tutorial.marker.office")))
+            toward(office, observed.npc(CONTRACTS_ROLE))
+                .map(|p| (p, texts.get("tutorial.marker.office")))
+        }
+        // Du bureau des contrats, par le hall, jusqu'à l'employé derrière son guichet.
+        Stage::Bank if docked => {
+            let bank = observed.cell_of(BANK_ROOM, false);
+            toward(bank, observed.npc(BANK_ROLE)).map(|p| (p, texts.get("tutorial.marker.bank")))
         }
         Stage::Dock if view == Some(ViewLevel::Global) => beacons
             .iter()
@@ -1444,6 +1543,9 @@ mod tests {
                 Check::Office => f.at_office = true,
                 Check::Talk => f.talking = true,
                 Check::Contract => f.cargo_contract = Some("CT-1".into()),
+                Check::Bank => f.at_bank = true,
+                Check::Teller => f.talking_bank = true,
+                Check::Account => f.account = true,
                 Check::Journal => f.journal = true,
                 Check::Sheet => f.sheet = true,
                 Check::Codex => f.codex = true,
@@ -1460,18 +1562,81 @@ mod tests {
     }
 
     #[test]
-    fn dix_etapes_numerotees() {
-        assert_eq!(Stage::ALL.len(), 10);
+    fn onze_etapes_numerotees() {
+        assert_eq!(Stage::ALL.len(), 11);
         for (i, stage) in Stage::ALL.iter().enumerate() {
             assert_eq!(stage.number(), i + 1);
             assert_eq!(Stage::from_number(i + 1), Some(*stage));
             assert!(!stage.checks().is_empty());
         }
         assert_eq!(Stage::from_number(0), None);
-        assert_eq!(Stage::from_number(11), None);
+        assert_eq!(Stage::from_number(12), None);
         assert_eq!(Stage::Save.next(), None);
-        // Une nouvelle partie commence dans la chambre.
+        // Une nouvelle partie commence dans la chambre ; la Banque vient après le contrat.
         assert_eq!(Stage::ALL[0], Stage::Cabin);
+        assert_eq!(Stage::Contract.next(), Some(Stage::Bank));
+        assert_eq!(Stage::Bank.next(), Some(Stage::Screens));
+        // L'ordre de l'énumération est celui du parcours.
+        assert!(Stage::ALL.windows(2).all(|w| w[0] < w[1]));
+    }
+
+    #[test]
+    fn depart_a_une_etape_choisie() {
+        // `SH_TUTORIAL_STEP` : de 1 à 11, puis 12 = terminé (captures sans panneau).
+        assert_eq!(
+            Tutorial::at_number(1).and_then(|t| t.stage()),
+            Some(Stage::Cabin)
+        );
+        assert_eq!(
+            Tutorial::at_number(7).and_then(|t| t.stage()),
+            Some(Stage::Bank)
+        );
+        assert_eq!(
+            Tutorial::at_number(11).and_then(|t| t.stage()),
+            Some(Stage::Save)
+        );
+        let done = Tutorial::at_number(12).expect("terminé");
+        assert_eq!(done.progress, Progress::Finished);
+        assert_eq!(done.number(), 12);
+        assert_eq!(Tutorial::at_number(0), None);
+        assert_eq!(Tutorial::at_number(13), None);
+    }
+
+    #[test]
+    fn la_banque_se_franchit_sans_payer() {
+        let mut t = Tutorial::new(Stage::Bank);
+        // Entré dans la salle de la Banque : une case, pas l'étape.
+        assert_eq!(
+            t.observe(&Facts {
+                at_bank: true,
+                ..default()
+            }),
+            None
+        );
+        // La conversation de l'employé, puis le compte : l'étape est franchie, sans paiement
+        // (aucun fait de paiement n'est demandé).
+        assert_eq!(
+            t.observe(&Facts {
+                talking_bank: true,
+                ..default()
+            }),
+            None
+        );
+        assert_eq!(
+            t.observe(&Facts {
+                account: true,
+                ..default()
+            }),
+            Some(Advance::Stage(Stage::Screens))
+        );
+        // Parler au guichetier des contrats ne compte pas pour la Banque.
+        let mut t = Tutorial::new(Stage::Bank);
+        t.observe(&Facts {
+            at_office: true,
+            talking: true,
+            ..default()
+        });
+        assert!(t.ticked.is_empty());
     }
 
     #[test]
@@ -1558,7 +1723,7 @@ mod tests {
         }
         assert_eq!(seen.last(), Some(&Some(Advance::Finished)));
         assert_eq!(t.progress, Progress::Finished);
-        assert_eq!(t.number(), 11);
+        assert_eq!(t.number(), 12);
         // Une étape par relevé : la 2e n'est pas franchie au même frame que la 1re.
         assert_eq!(seen[0], Some(Advance::Stage(Stage::Tour)));
         assert_eq!(seen[1], Some(Advance::Stage(Stage::Flight)));
@@ -1684,6 +1849,48 @@ mod tests {
             .from_str("(progress: Finished)")
             .expect("relisible");
         assert_eq!(done.stage(), None);
+    }
+
+    #[test]
+    fn sauvegardes_d_avant_l_etape_de_la_banque() {
+        // Une partie de M10 sauvegardée au contrat (guichetier déjà vu) : le contrat pris, elle
+        // passe par la Banque, bien que l'étape n'existât pas quand elle a été sauvegardée.
+        let mut t: Tutorial = sh_data::ron_options()
+            .from_str("(progress: Running(Contract), ticked: [Talk], contract: None)")
+            .expect("relisible");
+        assert_eq!(t.stage(), Some(Stage::Contract));
+        assert_eq!(
+            t.observe(&Facts {
+                cargo_contract: Some("CT-7".into()),
+                ..default()
+            }),
+            Some(Advance::Stage(Stage::Bank))
+        );
+        assert_eq!(t.contract.as_deref(), Some("CT-7"));
+        // Sauvegardée à l'étape de la Banque (par son nom), elle y reprend, cases gardées.
+        t.observe(&Facts {
+            at_bank: true,
+            ..default()
+        });
+        let text = sh_data::ron_options().to_string(&t).expect("sérialisable");
+        assert!(text.contains("Bank"), "{text}");
+        let back: Tutorial = sh_data::ron_options().from_str(&text).expect("relisible");
+        assert_eq!(back, t);
+        assert_eq!(back.stage(), Some(Stage::Bank));
+        assert!(back.is_ticked(Check::Bank));
+        // Une partie déjà aux écrans (ou plus loin) ne revient pas en arrière : la suite est le
+        // départ, jamais la Banque.
+        for (text, stage, next) in [
+            ("Screens", Stage::Screens, Some(Stage::Departure)),
+            ("Departure", Stage::Departure, Some(Stage::Delivery)),
+        ] {
+            let mut t: Tutorial = sh_data::ron_options()
+                .from_str(&format!("(progress: Running({text}))"))
+                .expect("relisible");
+            assert_eq!(t.stage(), Some(stage));
+            assert_eq!(t.observe(&all_of(stage)), next.map(Advance::Stage));
+            assert_ne!(t.stage(), Some(Stage::Bank));
+        }
     }
 
     #[test]

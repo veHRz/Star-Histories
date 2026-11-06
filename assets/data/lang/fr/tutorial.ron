@@ -1,7 +1,10 @@
-// Tutoriel guidé (M8, M9 ; crates/sh_game/src/tutorial.rs). {place} : le système où l'on est,
-// puis la destination du contrat ; {beacon} : la balise d'approche du port ; {room} : le nom
+// Tutoriel guidé (M8, M9, M11 ; crates/sh_game/src/tutorial.rs). {place} : le système où l'on
+// est, puis la destination du contrat ; {beacon} : la balise d'approche du port ; {room} : le nom
 // d'une salle du vaisseau (lang/fr/rooms.ron) ; {item} : le nom d'un objet. Le rôle des salles
-// est celui du jeu tel qu'il est (vérifié dans le code), sans mécanique promise.
+// est celui du jeu tel qu'il est (vérifié dans le code), sans mécanique promise. Étape de la
+// Banque (M11) : {debt} la dette du départ, {lender} le prêteur, {installment} l'échéance,
+// {days} sa cadence, {penalty} la pénalité de retard, {limit} les échéances manquées avant la
+// saisie, tous tirés des données (gameplay/career.ron, départ de partie) : ce que le jeu applique.
 {
     "tutorial.header": "TUTORIEL · ÉTAPE {n} SUR {total}",
     "tutorial.skip_hint": "[KeyH] deux fois : passer le tutoriel. Il se coupe aussi dans les options.",
@@ -14,6 +17,7 @@
     "tutorial.marker.locker": "Casier",
     "tutorial.marker.pickup": "À ramasser : {item}",
     "tutorial.marker.office": "Bureau des contrats",
+    "tutorial.marker.bank": "Guichet de la Banque",
     "tutorial.marker.helm": "Poste de pilotage",
     "tutorial.cabin.title": "Votre chambre",
     "tutorial.cabin.body": "Votre vaisseau est en orbite, et vous voici dans votre chambre : le lit, un bureau, des casiers pour ranger vos affaires. Visez un casier et appuyez sur [KeyE] pour l'ouvrir, ramassez la tablette posée sur le bureau ([KeyE]), puis ouvrez votre inventaire ([KeyI]). [Escape] referme ces écrans.",
@@ -46,6 +50,11 @@
     "tutorial.contract.body": "Visez le guichetier, derrière son comptoir, et appuyez sur [KeyE]. Demandez du travail, puis acceptez un contrat de transport (CT) ou de ravitaillement (CR) : sa cargaison est à livrer dans un autre système.",
     "tutorial.check.talk": "Parler au guichetier ([KeyE])",
     "tutorial.check.contract": "Accepter un contrat de transport",
+    "tutorial.bank.title": "La dette du vaisseau",
+    "tutorial.bank.body": "Votre vaisseau est hypothéqué : vous commencez avec une dette de {debt} envers la Banque ({lender}). Une échéance de {installment} tombe tous les {days} jours ; elle se paie au guichet de la Banque. Chaque échéance manquée ajoute {penalty} de pénalité à la dette, et après {limit} échéances manquées, la Banque se sert sur votre compte. Parlez à l'employé ([KeyE]) et demandez à voir votre compte.",
+    "tutorial.check.bank": "Entrer à la Banque",
+    "tutorial.check.teller": "Parler à l'employé de la Banque ([KeyE])",
+    "tutorial.check.account": "Consulter son compte",
     "tutorial.screens.title": "Garder le fil",
     "tutorial.screens.body": "Votre contrat est noté au journal de missions. Ouvrez le journal ([KeyJ]), la fiche du capitaine ([KeyC] : réputations, emprunts) ou l'écran du personnage ([KeyI] : inventaire, [KeyO] : compétences), et le codex ([KeyK]) ; [Escape] les referme.",
     "tutorial.check.journal": "Journal de missions ([KeyJ])",

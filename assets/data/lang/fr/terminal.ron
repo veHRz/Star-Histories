@@ -179,24 +179,21 @@
     "dlg.office.again": "« Capitaine. » L'employé ne lève pas les yeux. « Un contrat ? »",
     "dlg.office.trusted": "L'employé sourit presque. « Capitaine. Vos livraisons arrivent à l'heure ; ça se remarque, là-haut. Que peut faire la Logistique pour vous ? »",
     "dlg.office.ask_work": "Je cherche du travail.",
-    "dlg.office.ask_bank": "À propos de mon hypothèque.",
     "dlg.office.bye": "Ce sera tout.",
     "dlg.office.back": "Autre chose.",
     "dlg.office.work": "« Transport, ravitaillement, remorquage. La cargaison est à nous, le vaisseau est à vous, le délai est dans le contrat. Vous livrez, vous êtes payé sur-le-champ. »",
     "dlg.office.show_contracts": "Montrez-moi les contrats ouverts.",
     "dlg.office.ask_rules": "Et si quelque chose tourne mal ?",
     "dlg.office.rules": "« Un retard est un échec, et les échecs vont dans votre dossier. Une cargaison vendue ailleurs est une rupture de contrat : chaque caisse est enregistrée, nous le savons toujours. La Corporation vous facturera deux fois sa valeur et fermera votre dossier. Certains capitaines croient la galaxie assez grande pour s'y cacher. Elle ne l'est pas. »",
-    // M10 : la Banque a son propre guichet ; le bureau des contrats y renvoie poliment.
-    "dlg.office.bank": "L'employé secoue la tête sans quitter ses écrans. « Ce comptoir est celui de la Logistique, capitaine. Pour l'hypothèque, voyez le guichet de la Banque. »",
     "dlg.office.closed": "Les écrans de l'employé s'éteignent l'un après l'autre. « Votre dossier est clos, capitaine. Hexa-Corp n'a plus rien pour vous. La Banque, elle, attend toujours son argent. »",
-    "dlg.office.bank_closed": "« Votre dette ne se ferme pas avec votre dossier. Le guichet de la Banque, lui, reste ouvert. »",
     // --- Dialogues : guichet de la Banque (P25, M9) -------------------------------------------
     "dlg.bank.name": "Guichet de la Banque",
     "dlg.bank.first": "Derrière une vitre épaisse, un employé de la Banque vérifie votre identité sur son écran. « Hypothèque, échéances, change au taux d'Hexis : tout passe par ce guichet, capitaine. »",
     "dlg.bank.again": "« Capitaine. » L'employé fait pivoter son écran vers vous. « Votre compte. »",
     "dlg.bank.closed": "L'employé ne sourit pas. « Votre dossier chez Hexa-Corp est clos, capitaine. Votre dette, elle, ne l'est pas. »",
     "dlg.bank.show_account": "Montrez-moi mon compte.",
-    "dlg.bank.pay": "Payer l'échéance.",
+    // {installment} : le montant de la prochaine échéance (`terminal/page.rs::dialogue_args`).
+    "dlg.bank.pay": "Payer l'échéance ({installment}).",
     "dlg.bank.paid": "« Reçu. La Banque vous remercie. »",
     "dlg.bank.bye": "Ce sera tout.",
     // --- Dialogues : comptoir du marché (P25, M9) ---------------------------------------------

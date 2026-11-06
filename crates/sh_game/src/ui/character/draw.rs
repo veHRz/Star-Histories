@@ -19,7 +19,9 @@ use sh_sim::Captain;
 
 use super::ActiveTab;
 use super::logic::{self, Stack, Step};
-use super::{CellRef, CharacterUi, DetailPane, GridCell, Icons, ScreenButton, ScreenView, Sources};
+use super::{
+    CellRef, CellZone, CharacterUi, DetailPane, GridCell, Icons, ScreenButton, ScreenView, Sources,
+};
 use crate::career::{faction_name, money, rank_name};
 use crate::clock::format_date;
 use crate::data::{Data, Texts};
@@ -34,6 +36,13 @@ const CELL: f32 = 64.0;
 /// Côté de l'icône dans sa case.
 const ICON: f32 = 52.0;
 const GAP: f32 = 6.0;
+/// Bord d'une case (px).
+const CELL_BORDER: f32 = 1.0;
+/// Débord de la zone de survol d'une case, compté depuis sa boîte intérieure (où se placent ses
+/// enfants) : son bord, la moitié de l'espace entre deux cases, et un pixel de recouvrement
+/// avec la voisine, pour qu'aucune fente ne reste une fois les positions arrondies à l'échelle
+/// de l'interface (M11).
+const HOVER_REACH: f32 = CELL_BORDER + GAP / 2.0 + 1.0;
 /// Grille de l'onglet Inventaire : au moins 6 × 4 cases.
 const PACK_COLUMNS: usize = 6;
 const PACK_ROWS: usize = 4;
@@ -289,11 +298,7 @@ fn loans(
         .iter()
         .map(|loan| {
             // La dernière échéance ne dépasse pas le reste dû (`Captain::pay_installment`).
-            let installment = if loan.balance.cents < loan.installment.cents {
-                loan.balance
-            } else {
-                loan.installment
-            };
+            let installment = crate::ui::terminal::installment_due(loan);
             let due_note = match today.map(|d| d.days_until(loan.next_due)) {
                 Some(0) => Some(t.get("character.loan.today")),
                 Some(1) => Some(t.get("character.loan.tomorrow")),
@@ -870,7 +875,7 @@ fn spawn_cell(
             Node {
                 width: px(CELL),
                 height: px(CELL),
-                border: UiRect::all(px(1)),
+                border: UiRect::all(px(CELL_BORDER)),
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
                 flex_shrink: 0.0,
@@ -880,6 +885,22 @@ fn spawn_cell(
             BorderColor::all(edge),
         ))
         .id();
+    // La zone de survol de la case, invisible : elle déborde jusqu'au milieu de l'espace qui la
+    // sépare de ses voisines, si bien que la souris passe d'une case à l'autre sans traverser le
+    // fond (M11 : le détail clignotait vers la case choisie). Le survol et le clic y remontent
+    // jusqu'à la case (`GridCell`) ; l'icône et la quantité ne retiennent pas la souris.
+    commands.spawn((
+        ChildOf(cell),
+        Name::new("Zone de survol"),
+        Node {
+            position_type: PositionType::Absolute,
+            left: px(-HOVER_REACH),
+            right: px(-HOVER_REACH),
+            top: px(-HOVER_REACH),
+            bottom: px(-HOVER_REACH),
+            ..default()
+        },
+    ));
     let Some((item, count)) = stack else {
         return;
     };
@@ -914,6 +935,9 @@ fn spawn_grid(
     let grid = commands
         .spawn((
             ChildOf(parent),
+            // Sous les zones de survol des cases : ce qui leur échapperait (une fente d'un pixel)
+            // reste dans la grille, le détail ne bouge pas.
+            CellZone,
             Node {
                 display: Display::Grid,
                 grid_template_columns: RepeatedGridTrack::px(columns as u16, CELL),
@@ -1553,6 +1577,9 @@ fn spawn_container(commands: &mut Commands, body: Entity, kit: &Kit, b: &Contain
     let main = commands
         .spawn((
             ChildOf(body),
+            // Les deux grilles et l'espace entre elles : passer de l'une à l'autre ne ramène pas
+            // le détail à la case choisie.
+            CellZone,
             Node {
                 flex_direction: FlexDirection::Row,
                 align_items: AlignItems::FlexStart,
@@ -1769,5 +1796,69 @@ pub(super) fn spawn_detail(
     };
     if let Some((label, button)) = action {
         spawn_button(commands, pane, kit, label, button);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::Focus;
+    use super::*;
+
+    fn stack(item: &str) -> Stack {
+        Stack {
+            item: item.to_owned(),
+            count: 1,
+        }
+    }
+
+    /// Un casier : deux cases pleines au casier, une à l'inventaire, des cases vides.
+    fn locker() -> Content {
+        Content {
+            title: String::new(),
+            tabs: None,
+            body: Body::Container(ContainerBody {
+                section: String::new(),
+                stock: None,
+                refusal: None,
+                stash: vec![stack("datapad"), stack("spare_parts")],
+                stash_cells: 20,
+                pack: vec![stack("ration")],
+                pack_cells: 20,
+            }),
+        }
+    }
+
+    /// M11 : glisser d'une case à l'autre, ou sur une case vide, garde le détail de la dernière
+    /// case pleine survolée ; il ne revient à la case choisie qu'une fois la souris sortie des
+    /// cases.
+    #[test]
+    fn le_detail_suit_la_derniere_case_pleine_survolee() {
+        let content = locker();
+        let mut focus = Focus {
+            selected: Some(CellRef::Stash(0)),
+            ..Focus::default()
+        };
+        assert_eq!(focus.shown(&content), Some(CellRef::Stash(0)));
+        // Une case pleine survolée : le détail la suit.
+        focus.hovered = Some(CellRef::Stash(1));
+        focus.pointed = Some(CellRef::Stash(1));
+        assert_eq!(focus.shown(&content), Some(CellRef::Stash(1)));
+        // Entre deux cases (rien de survolé un instant) mais encore dans la zone, puis une case
+        // vide de l'autre grille : toujours la dernière case pleine.
+        focus.hovered = None;
+        focus.settle(true);
+        assert_eq!(focus.shown(&content), Some(CellRef::Stash(1)));
+        focus.hovered = Some(CellRef::Pack(5));
+        focus.settle(false);
+        assert_eq!(focus.shown(&content), Some(CellRef::Stash(1)));
+        // Une autre case pleine : le détail passe à elle.
+        focus.hovered = Some(CellRef::Pack(0));
+        focus.pointed = Some(CellRef::Pack(0));
+        assert_eq!(focus.shown(&content), Some(CellRef::Pack(0)));
+        // La souris sort vraiment des cases : retour à la case choisie.
+        focus.hovered = None;
+        focus.settle(false);
+        assert_eq!(focus.pointed, None);
+        assert_eq!(focus.shown(&content), Some(CellRef::Stash(0)));
     }
 }

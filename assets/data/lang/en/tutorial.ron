@@ -1,7 +1,10 @@
-// Tutoriel guidé (M8, M9 ; crates/sh_game/src/tutorial.rs). {place} : le système où l'on est,
-// puis la destination du contrat ; {beacon} : la balise d'approche du port ; {room} : le nom
+// Tutoriel guidé (M8, M9, M11 ; crates/sh_game/src/tutorial.rs). {place} : le système où l'on
+// est, puis la destination du contrat ; {beacon} : la balise d'approche du port ; {room} : le nom
 // d'une salle du vaisseau (lang/en/rooms.ron) ; {item} : le nom d'un objet. Le rôle des salles
-// est celui du jeu tel qu'il est (vérifié dans le code), sans mécanique promise.
+// est celui du jeu tel qu'il est (vérifié dans le code), sans mécanique promise. Étape de la
+// Banque (M11) : {debt} la dette du départ, {lender} le prêteur, {installment} l'échéance,
+// {days} sa cadence, {penalty} la pénalité de retard, {limit} les échéances manquées avant la
+// saisie, tous tirés des données (gameplay/career.ron, départ de partie) : ce que le jeu applique.
 {
     "tutorial.header": "TUTORIAL · STEP {n} OF {total}",
     "tutorial.skip_hint": "[KeyH] twice: skip the tutorial. It can also be turned off in the options.",
@@ -14,6 +17,7 @@
     "tutorial.marker.locker": "Locker",
     "tutorial.marker.pickup": "To pick up: {item}",
     "tutorial.marker.office": "Contract office",
+    "tutorial.marker.bank": "Bank counter",
     "tutorial.marker.helm": "Pilot's seat",
     "tutorial.cabin.title": "Your cabin",
     "tutorial.cabin.body": "Your ship is in orbit, and here you are in your cabin: the bunk, a desk, lockers to stow your belongings. Aim at a locker and press [KeyE] to open it, pick up the datapad lying on the desk ([KeyE]), then open your inventory ([KeyI]). [Escape] closes these screens.",
@@ -46,6 +50,11 @@
     "tutorial.contract.body": "Aim at the clerk, behind the counter, and press [KeyE]. Ask for work, then accept a transport (CT) or resupply (CR) contract: its cargo must be delivered to another system.",
     "tutorial.check.talk": "Talk to the clerk ([KeyE])",
     "tutorial.check.contract": "Accept a transport contract",
+    "tutorial.bank.title": "The ship's debt",
+    "tutorial.bank.body": "Your ship is mortgaged: you start with a debt of {debt} to the Bank ({lender}). An installment of {installment} falls due every {days} days; it is paid at the Bank's counter. Each missed installment adds a {penalty} penalty to the debt, and after {limit} missed installments, the Bank helps itself from your account. Talk to the clerk ([KeyE]) and ask to see your account.",
+    "tutorial.check.bank": "Enter the Bank",
+    "tutorial.check.teller": "Talk to the Bank clerk ([KeyE])",
+    "tutorial.check.account": "Check your account",
     "tutorial.screens.title": "Keep track",
     "tutorial.screens.body": "Your contract is noted in the mission log. Open the log ([KeyJ]), the captain's record ([KeyC]: reputations, loans) or the character screen ([KeyI]: inventory, [KeyO]: skills), and the codex ([KeyK]); [Escape] closes them.",
     "tutorial.check.journal": "Mission log ([KeyJ])",

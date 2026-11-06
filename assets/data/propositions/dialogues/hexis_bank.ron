@@ -3,6 +3,10 @@
 // (« taux d'Hexis », hypothèque CH à saisie automatique). L'employé est anonyme ; ses
 // répliques sont proposées et n'affirment rien de plus que le canon. La Banque encaisse
 // toujours, même d'un traître (comme le dit le guichetier des contrats).
+// M11 : « Payer l'échéance » cite son montant (`{installment}` dans le texte de langue,
+// remplacé par `ui/terminal/page.rs::dialogue_page` d'après le prêt du capitaine). Le tutoriel
+// fait venir ici après le premier contrat (étape `Bank`) : le compte s'ouvre par
+// `Open(Bank)`.
 (
     id: "hexis_bank",
     status: Proposition("P25"),

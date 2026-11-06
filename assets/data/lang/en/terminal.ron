@@ -179,24 +179,21 @@
     "dlg.office.again": "\"Captain.\" The clerk does not look up. \"A contract?\"",
     "dlg.office.trusted": "The clerk almost smiles. \"Captain. Your deliveries arrive on time; that gets noticed upstairs. What can Logistics do for you?\"",
     "dlg.office.ask_work": "I'm looking for work.",
-    "dlg.office.ask_bank": "About my mortgage.",
     "dlg.office.bye": "That's all.",
     "dlg.office.back": "Something else.",
     "dlg.office.work": "\"Transport, resupply, towing. The cargo is ours, the ship is yours, the deadline is in the contract. Deliver and you are paid on the spot.\"",
     "dlg.office.show_contracts": "Show me the open contracts.",
     "dlg.office.ask_rules": "What if something goes wrong?",
     "dlg.office.rules": "\"Late is a failure, and failures are on your file. A cargo sold elsewhere is a breach: every crate is registered, we always know. The Corporation will bill you twice its value and close your file. Some captains think the galaxy is large enough to hide in. It is not.\"",
-    // M10 : la Banque a son propre guichet ; le bureau des contrats y renvoie poliment.
-    "dlg.office.bank": "The clerk shakes their head, eyes still on the screens. \"This is the Logistics counter, captain. For the mortgage, see the Bank's counter.\"",
     "dlg.office.closed": "The clerk's screens go dark one after the other. \"Your file is closed, captain. Hexa-Corp has nothing for you. The Bank, however, still expects its money.\"",
-    "dlg.office.bank_closed": "\"Your debt does not close with your file. The Bank's counter, for its part, stays open.\"",
     // --- Dialogues : guichet de la Banque (P25, M9) -------------------------------------------
     "dlg.bank.name": "Bank counter",
     "dlg.bank.first": "Behind thick glass, a Bank clerk checks your identity on a screen. \"Mortgage, installments, exchange at the Hexis rate: it all goes through this counter, captain.\"",
     "dlg.bank.again": "\"Captain.\" The clerk swivels a screen towards you. \"Your account.\"",
     "dlg.bank.closed": "The clerk does not smile. \"Your file with Hexa-Corp is closed, captain. Your debt is not.\"",
     "dlg.bank.show_account": "Show me my account.",
-    "dlg.bank.pay": "Pay the installment.",
+    // {installment} : le montant de la prochaine échéance (`terminal/page.rs::dialogue_args`).
+    "dlg.bank.pay": "Pay the installment ({installment}).",
     "dlg.bank.paid": "\"Received. The Bank thanks you.\"",
     "dlg.bank.bye": "That's all.",
     // --- Dialogues : comptoir du marché (P25, M9) ---------------------------------------------

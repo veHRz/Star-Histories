@@ -23,7 +23,7 @@ mod view;
 
 pub use page::{
     Action, Body, Cell, Choice, Column, Ctx, Detail, Field, Gauge, Glyph, Header, Note, Page, Row,
-    Slot, Tab, Tone, page,
+    Slot, Tab, Tone, installment_due, page,
 };
 
 use bevy::input::mouse::{AccumulatedMouseScroll, MouseScrollUnit};
@@ -691,13 +691,7 @@ fn apply_choices(
                 }
             }
             Action::PayInstallment => {
-                let due = cap.loan.as_ref().map(|l| {
-                    if l.balance.cents < l.installment.cents {
-                        l.balance
-                    } else {
-                        l.installment
-                    }
-                });
+                let due = cap.loan.as_ref().map(installment_due);
                 match cap.pay_installment(&data) {
                     Ok(o) => {
                         out.extend(o);

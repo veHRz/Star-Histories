@@ -3,8 +3,9 @@
 //! et le rangement d'un casier, ouvert par `items::OpenContainer`.
 //!
 //! - **Inventaire** : objets portés en grille d'icônes (`ItemDef::icon_path`, quantité en coin,
-//!   une case par pile : `max_stack`), détail de l'objet survolé ou choisi, équipement par
-//!   emplacement (`items::Equipment` ; équiper et retirer déplacent l'objet entre l'inventaire
+//!   une case par pile : `max_stack`), détail de l'objet survolé ou choisi (M11 : il suit la
+//!   dernière case pleine survolée tant que la souris reste sur les cases, `Focus`), équipement
+//!   par emplacement (`items::Equipment` ; équiper et retirer déplacent l'objet entre l'inventaire
 //!   et l'emplacement), compte (crédits, Wuro), récapitulatif des réputations (comme la fiche
 //!   du terminal : jamais une organisation secrète) et des emprunts.
 //! - **Compétences** : niveau de chaque compétence et barre d'expérience vers le suivant
@@ -81,6 +82,8 @@ impl Plugin for CharacterScreenPlugin {
             .add_observer(on_cell_click)
             .add_observer(on_cell_over)
             .add_observer(on_cell_out)
+            .add_observer(on_zone_over)
+            .add_observer(on_zone_out)
             .add_observer(on_button_over)
             .add_observer(on_button_out)
             .add_systems(
@@ -153,20 +156,50 @@ pub enum CellRef {
     Slot(EquipSlot),
 }
 
-/// La case survolée (souris) et la case choisie (clic, clavier). Le détail montre la première
-/// qui contient un objet.
+/// La case survolée (souris), la dernière case pleine survolée, et la case choisie (clic,
+/// clavier). Le détail montre la première des trois qui contient un objet.
+///
+/// M11 (retour de l'auteur) : en glissant d'une case à l'autre, le détail ne revient plus à la
+/// case choisie. La zone de survol d'une case couvre l'espace qui la sépare de ses voisines
+/// (`draw::spawn_cell`), et une case vide survolée garde le détail de la dernière case pleine
+/// (`pointed`). Il ne revient à la case choisie que quand la souris quitte vraiment les cases
+/// (ni sur une case, ni dans une zone qui les relie, [`CellZone`]) : hors des cases, le détail
+/// décrit la case marquée en ambre, celle sur laquelle agissent Entrée et le bouton du détail.
+/// Le garder sur la dernière case survolée tromperait : pour atteindre le bouton du détail, la
+/// souris traverse souvent d'autres cases, et le bouton serait celui de la dernière traversée.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct Focus {
     hovered: Option<CellRef>,
+    /// La dernière case pleine survolée, tant que la souris reste sur les cases.
+    pointed: Option<CellRef>,
     selected: Option<CellRef>,
 }
 
 impl Focus {
     fn shown(&self, content: &Content) -> Option<CellRef> {
         let filled = |at: &CellRef| content.item_at(*at).is_some();
-        self.hovered.filter(filled).or(self.selected.filter(filled))
+        self.hovered
+            .filter(filled)
+            .or(self.pointed.filter(filled))
+            .or(self.selected.filter(filled))
+    }
+
+    /// Une fois passés tous les événements du pointeur d'un frame (la sortie d'une case précède
+    /// l'entrée dans la voisine) : si la souris n'est plus sur une case ni dans une zone qui les
+    /// relie (`in_zone`), elle a vraiment quitté les cases, et le détail oublie la dernière case
+    /// survolée pour revenir à la case choisie.
+    fn settle(&mut self, in_zone: bool) {
+        if self.hovered.is_none() && !in_zone {
+            self.pointed = None;
+        }
     }
 }
+
+/// Une zone de cases (une grille, les deux grilles d'un casier) : tant que la souris y reste,
+/// même entre deux cases ou entre les deux grilles, le détail garde la dernière case pleine
+/// survolée.
+#[derive(Component)]
+struct CellZone;
 
 /// L'écran du personnage ouvert.
 #[derive(Resource, Debug)]
@@ -179,6 +212,9 @@ pub struct CharacterScreen {
     /// Fermeture demandée : effective quand les touches sont relâchées.
     closing: bool,
     focus: Focus,
+    /// La zone de cases sous la souris ([`CellZone`]), tenue par les entrées et sorties du
+    /// pointeur.
+    pointer_zone: Option<Entity>,
     /// Au prochain dessin, choisir la première case pleine (ouverture, changement d'onglet).
     auto_select: bool,
     /// Au prochain dessin, choisir la case de cet objet dans l'inventaire (objet retiré).
@@ -189,6 +225,9 @@ pub struct CharacterScreen {
     drawn: Option<Content>,
     drawn_date: Option<sh_core::StellarDate>,
     drawn_focus: Option<Focus>,
+    /// La case dont le panneau de détail est dessiné : il n'est refait que si elle change (une
+    /// case vide survolée ne le redessine pas).
+    drawn_shown: Option<Option<CellRef>>,
 }
 
 impl CharacterScreen {
@@ -199,12 +238,14 @@ impl CharacterScreen {
             armed: false,
             closing: false,
             focus: Focus::default(),
+            pointer_zone: None,
             auto_select: true,
             select_item: None,
             refused: None,
             drawn: None,
             drawn_date: None,
             drawn_focus: None,
+            drawn_shown: None,
         }
     }
 
@@ -673,8 +714,10 @@ fn on_navigate(event: On<Start<Navigate>>, screen: Option<ResMut<CharacterScreen
         .and_then(|content| content.step(screen.focus.selected, dx, dy));
     if next.is_some() && next != screen.focus.selected {
         screen.focus.selected = next;
-        // Le clavier prend la main sur la souris jusqu'à son prochain survol.
+        // Le clavier prend la main sur la souris jusqu'à son prochain survol : le détail suit
+        // la case choisie, plus la dernière survolée.
         screen.focus.hovered = None;
+        screen.focus.pointed = None;
     }
 }
 
@@ -698,6 +741,8 @@ fn on_activate(
     }
 }
 
+/// Une case survolée (directement, ou par sa zone de survol qui déborde : l'événement remonte
+/// de la zone à la case). Pleine, elle devient celle que montre le détail.
 fn on_cell_over(
     event: On<PointerOver>,
     cells: Query<&GridCell>,
@@ -709,8 +754,14 @@ fn on_cell_over(
     if screen.focus.hovered != Some(cell.at) {
         screen.focus.hovered = Some(cell.at);
     }
+    if cell.filled && screen.focus.pointed != Some(cell.at) {
+        screen.focus.pointed = Some(cell.at);
+    }
 }
 
+/// La souris quitte une case : elle n'est plus survolée, mais le détail garde son objet tant
+/// que la souris reste sur les cases (`render_focus` en juge, une fois tous les événements du
+/// frame passés).
 fn on_cell_out(
     event: On<PointerOut>,
     cells: Query<&GridCell>,
@@ -723,6 +774,35 @@ fn on_cell_out(
     // avant la sortie de celle-ci.
     if screen.focus.hovered == Some(cell.at) {
         screen.focus.hovered = None;
+    }
+}
+
+/// La souris entre dans une zone de cases (ou passe d'un de ses éléments à un autre : la
+/// sortie de l'un et l'entrée dans l'autre remontent toutes deux jusqu'à la zone, dans cet
+/// ordre, au même frame).
+fn on_zone_over(
+    event: On<PointerOver>,
+    zones: Query<(), With<CellZone>>,
+    screen: Option<ResMut<CharacterScreen>>,
+) {
+    let Some(mut screen) = screen.filter(|_| zones.contains(event.entity)) else {
+        return;
+    };
+    if screen.pointer_zone != Some(event.entity) {
+        screen.pointer_zone = Some(event.entity);
+    }
+}
+
+fn on_zone_out(
+    event: On<PointerOut>,
+    zones: Query<(), With<CellZone>>,
+    screen: Option<ResMut<CharacterScreen>>,
+) {
+    let Some(mut screen) = screen.filter(|_| zones.contains(event.entity)) else {
+        return;
+    };
+    if screen.pointer_zone == Some(event.entity) {
+        screen.pointer_zone = None;
     }
 }
 
@@ -850,6 +930,8 @@ fn render_content(
     screen.drawn = Some(content);
     screen.drawn_date = date;
     screen.drawn_focus = None;
+    // Un panneau de détail neuf, vide : à remplir.
+    screen.drawn_shown = None;
 }
 
 /// Survol et choix : couleurs des cases et panneau de détail, sans redessiner le reste.
@@ -863,48 +945,62 @@ fn render_focus(
     mut screen: ResMut<CharacterScreen>,
     mut cells: Query<(&GridCell, &mut BorderColor, &mut BackgroundColor)>,
     panes: Query<Entity, With<DetailPane>>,
+    zones: Query<(), With<CellZone>>,
 ) {
-    if screen.closing || screen.drawn_focus.as_ref() == Some(&screen.focus) {
+    if screen.closing {
         return;
+    }
+    // Ici, après les observateurs du pointeur (`PreUpdate`) : la souris a-t-elle vraiment quitté
+    // les cases ? (Une zone effacée par un redessin ne compte plus : sa sortie n'arrive jamais.)
+    if screen.focus.pointed.is_some() {
+        let in_zone = screen.pointer_zone.is_some_and(|zone| zones.contains(zone));
+        screen.focus.settle(in_zone);
     }
     let Some(content) = screen.drawn.as_ref() else {
         return;
     };
+    let shown = screen.focus.shown(content);
+    let recolor = screen.drawn_focus.as_ref() != Some(&screen.focus);
+    let redetail = screen.drawn_shown != Some(shown);
+    if !recolor && !redetail {
+        return;
+    }
     if content.has_cells() {
         // Le panneau vient d'être créé par le dessin : il existe dès la frame suivante.
         let Ok(pane) = panes.single() else {
             return;
         };
-        for (cell, mut border, mut background) in &mut cells {
-            let (fill, edge) = draw::cell_colors(
-                cell.filled,
-                screen.focus.hovered == Some(cell.at),
-                screen.focus.selected == Some(cell.at),
-            );
-            background.0 = fill;
-            *border = BorderColor::all(edge);
+        if recolor {
+            for (cell, mut border, mut background) in &mut cells {
+                let (fill, edge) = draw::cell_colors(
+                    cell.filled,
+                    screen.focus.hovered == Some(cell.at),
+                    screen.focus.selected == Some(cell.at),
+                );
+                background.0 = fill;
+                *border = BorderColor::all(edge);
+            }
         }
-        let icons = Icons {
-            icons: icons.as_deref(),
-            server: &server,
-        };
-        let kit = draw::Kit {
-            fonts: &fonts,
-            icons: &icons,
-            t: &texts,
-            data: &data,
-        };
-        commands.entity(pane).despawn_children();
-        draw::spawn_detail(
-            &mut commands,
-            pane,
-            &kit,
-            content,
-            screen.focus.shown(content),
-        );
+        // Seulement si la case montrée change : glisser sur une case vide ou entre deux cases
+        // ne refait pas le panneau.
+        if redetail {
+            let icons = Icons {
+                icons: icons.as_deref(),
+                server: &server,
+            };
+            let kit = draw::Kit {
+                fonts: &fonts,
+                icons: &icons,
+                t: &texts,
+                data: &data,
+            };
+            commands.entity(pane).despawn_children();
+            draw::spawn_detail(&mut commands, pane, &kit, content, shown);
+        }
     }
     let focus = screen.focus.clone();
     screen.drawn_focus = Some(focus);
+    screen.drawn_shown = Some(shown);
 }
 
 // --- Icônes ------------------------------------------------------------------------------------

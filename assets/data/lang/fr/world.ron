@@ -57,8 +57,6 @@
     "console.comms.message": "Communications : aucun nouveau message.",
     "console.engineering.name": "la console de la salle des machines",
     "console.engineering.message": "Machines : réacteur nominal, réserves de carburant lourd pleines.",
-    "console.galley.name": "le terminal de la cuisine",
-    "console.galley.message": "Cuisine : rations en stock.",
     // Catalogue d'objets (gameplay/items.ron) : `item.<id>` est le nom, en minuscules (il se
     // glisse dans une phrase : « Ramassé : tablette ») ; `item.<id>.description`, la fiche.
     "item.datapad.description": "Une tablette de bord, écran rayé, batterie fatiguée. Elle garde vos notes et vos relevés.",
