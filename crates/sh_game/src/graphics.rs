@@ -8,7 +8,9 @@
 //! - au décor par niveau (M9, docs/m9-retours.md §3.2) : un nœud glTF de décor optionnel
 //!   ([`DecorDetail`], extra `detail`) est caché avec ses enfants si son niveau dépasse
 //!   `decor_detail` ; un changement de préréglage s'applique en direct, sans recharger la cellule
-//!   (le réglage à l'arrivée d'un modèle est fait par `sector::gltf`).
+//!   (le réglage à l'arrivée d'un modèle est fait par `sector::gltf`) ;
+//! - au budget d'ombres des lumières ponctuelles (M11 : seulement les lumières visibles, et sans
+//!   va-et-vient entre deux lumières presque à égale distance, `shadow_budget`).
 
 use bevy::anti_alias::fxaa::Fxaa;
 use bevy::anti_alias::smaa::Smaa;
@@ -295,12 +297,13 @@ fn cpu_light_clustering(mut settings: ResMut<GlobalClusterSettings>) {
 }
 
 /// Budget d'ombres des lumières ponctuelles (AGENTS.md §10) : seules les lumières candidates
-/// les plus proches de la caméra projettent des ombres, dans la limite du préréglage.
+/// visibles les plus proches de la caméra projettent des ombres, dans la limite du préréglage
+/// ([`shadow_budget`]).
 pub(crate) fn budget_point_shadows(
     settings: Res<GraphicsSettings>,
     camera: Query<&GlobalTransform, With<WorldCamera>>,
     mut lights: Query<
-        (&GlobalTransform, &mut PointLight),
+        (&GlobalTransform, &InheritedVisibility, &mut PointLight),
         With<crate::sector::gltf::ShadowCandidate>,
     >,
 ) {
@@ -308,18 +311,67 @@ pub(crate) fn budget_point_shadows(
         return;
     };
     let eye = eye.translation();
-    let mut ranked: Vec<(f32, Mut<PointLight>)> = lights
+    let mut found: Vec<(ShadowLight, Mut<PointLight>)> = lights
         .iter_mut()
-        .map(|(t, light)| (t.translation().distance_squared(eye), light))
+        .map(|(t, visibility, light)| {
+            let candidate = ShadowLight {
+                distance: t.translation().distance(eye),
+                visible: visibility.get(),
+                shadowed: light.shadow_maps_enabled,
+            };
+            (candidate, light)
+        })
         .collect();
-    ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let allowed = usize::from(settings.preset.max_shadowed_point_lights);
-    for (i, (_, mut light)) in ranked.into_iter().enumerate() {
-        let wanted = i < allowed;
+    let candidates: Vec<ShadowLight> = found.iter().map(|(c, _)| *c).collect();
+    let wanted = shadow_budget(
+        &candidates,
+        usize::from(settings.preset.max_shadowed_point_lights),
+    );
+    for ((_, light), wanted) in found.iter_mut().zip(wanted) {
         if light.shadow_maps_enabled != wanted {
             light.shadow_maps_enabled = wanted;
         }
     }
+}
+
+/// Une lumière candidate à l'ombre, vue de la caméra.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct ShadowLight {
+    /// Distance à la caméra, en mètres.
+    pub distance: f32,
+    /// Visible dans la hiérarchie (`InheritedVisibility`) : une cellule cachée derrière une
+    /// porte fermée (`sector::streaming`) cache ses lumières, que le rendu n'extrait plus.
+    pub visible: bool,
+    /// Porte déjà une ombre.
+    pub shadowed: bool,
+}
+
+/// Avantage d'une lumière qui porte déjà une ombre : sa distance compte pour 80 %. Sans lui,
+/// deux lumières presque à égale distance s'échangent l'ombre au moindre pas, et chaque échange
+/// recrée les six vues de la carte d'ombre d'une lumière ponctuelle (spécialisation et file de
+/// rendu de tout ce qu'elle voit) : un à-coup à chaque fois.
+const SHADOW_KEEP: f32 = 0.8;
+
+/// Les lumières qui portent une ombre : les plus proches parmi les **visibles**, au plus
+/// `allowed`. Une lumière cachée n'en porte pas et ne prend pas de place dans le budget (il va
+/// aux lumières qu'on voit) ; une lumière déjà ombrée garde l'avantage ([`SHADOW_KEEP`]).
+pub(crate) fn shadow_budget(lights: &[ShadowLight], allowed: usize) -> Vec<bool> {
+    let mut ranked: Vec<(usize, f32)> = lights
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| l.visible)
+        .map(|(i, l)| {
+            let keep = if l.shadowed { SHADOW_KEEP } else { 1.0 };
+            (i, l.distance * keep)
+        })
+        .collect();
+    // À égalité, l'ordre des lumières décide : le même d'un frame à l'autre.
+    ranked.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
+    let mut wanted = vec![false; lights.len()];
+    for (i, _) in ranked.into_iter().take(allowed) {
+        wanted[i] = true;
+    }
+    wanted
 }
 
 /// Le préréglage a changé (options) : chaque décor optionnel déjà instancié est montré ou caché
@@ -363,6 +415,42 @@ mod tests {
         assert_eq!(shown(PresetLevel::Low), [0]);
         assert_eq!(shown(PresetLevel::Medium), [0, 1]);
         assert_eq!(shown(PresetLevel::High), [0, 1, 2]);
+    }
+
+    fn light(distance: f32, visible: bool, shadowed: bool) -> ShadowLight {
+        ShadowLight {
+            distance,
+            visible,
+            shadowed,
+        }
+    }
+
+    /// Les plus proches des lumières visibles ; une cachée n'a pas d'ombre et ne compte pas.
+    #[test]
+    fn budget_des_ombres_aux_lumieres_visibles() {
+        let lights = [
+            light(2.0, false, true),
+            light(4.0, true, false),
+            light(9.0, true, false),
+            light(6.0, true, false),
+        ];
+        assert_eq!(shadow_budget(&lights, 2), [false, true, false, true]);
+        assert_eq!(shadow_budget(&lights, 0), [false; 4]);
+        assert_eq!(shadow_budget(&lights, 10), [false, true, true, true]);
+        assert!(shadow_budget(&[], 2).is_empty());
+    }
+
+    /// Une lumière ombrée garde son ombre face à une voisine à peine plus proche ; elle la
+    /// cède à une nettement plus proche.
+    #[test]
+    fn budget_des_ombres_sans_va_et_vient() {
+        let close_call = [light(5.0, true, true), light(4.6, true, false)];
+        assert_eq!(shadow_budget(&close_call, 1), [true, false]);
+        let clear_win = [light(5.0, true, true), light(3.0, true, false)];
+        assert_eq!(shadow_budget(&clear_win, 1), [false, true]);
+        // Égalité parfaite : toujours la même.
+        let tie = [light(5.0, true, false), light(5.0, true, false)];
+        assert_eq!(shadow_budget(&tie, 1), [true, false]);
     }
 
     #[test]

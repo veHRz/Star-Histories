@@ -16,6 +16,7 @@ pub mod data;
 pub mod dev;
 #[cfg(feature = "dev")]
 mod dev_tools;
+pub mod frame_pace;
 pub mod graphics;
 pub mod input;
 pub mod interaction;
@@ -45,8 +46,9 @@ impl Plugin for StarHistoriesPlugin {
         let mut window = Window {
             title: "Star Histories".into(),
             resolution: WindowResolution::new(1600, 900),
-            // Pas de synchronisation verticale forcée : les mesures de l'autopilote doivent
-            // refléter le vrai coût d'une frame. La vsync deviendra une option (M7).
+            // Sans synchronisation verticale au départ : les mesures de l'autopilote voient le
+            // vrai coût d'une frame. L'option du joueur (M11) la pose à chaud dès le premier
+            // frame, avec la limite d'images (`frame_pace`).
             present_mode: PresentMode::AutoNoVsync,
             ..default()
         };
@@ -95,6 +97,9 @@ impl Plugin for StarHistoriesPlugin {
             // M9 : objets du joueur (catalogue, casiers, équipement), PNJ de comptoir.
             items::ItemsPlugin,
             npc::NpcPlugin,
+            // M11 : limite d'images, synchronisation verticale, compteur d'images. Après
+            // `DefaultPlugins` : il pose son attente dans le monde de rendu.
+            frame_pace::FramePacePlugin,
         ));
         #[cfg(feature = "dev")]
         app.add_plugins(dev_tools::DevToolsPlugin);

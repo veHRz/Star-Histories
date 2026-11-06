@@ -1,6 +1,6 @@
 //! Écran des options (M7, à onglets depuis M9), commun au menu principal et au menu de pause.
 //! Cinq onglets : Général (disposition du clavier, encart des touches), Affichage (qualité,
-//! plein écran), Gameplay (tutoriel, conseils), Son (volumes) et Contrôles, qui a ses pages :
+//! plein écran, limite d'images, synchronisation verticale, compteur d'images : M11), Gameplay (tutoriel, conseils), Son (volumes) et Contrôles, qui a ses pages :
 //! Souris (sensibilités à pied et au pilotage, inversion), puis une page de touches par
 //! catégorie (Interface, À pied, Pilotage, Carte : `input::KEY_ACTIONS`, règles dans `options`).
 //!
@@ -28,6 +28,7 @@ use bevy::ui_widgets::{Activate, ActivateOnPress, Button};
 use sh_data::PresetLevel;
 
 use crate::data::{Data, Texts};
+use crate::frame_pace::step_fps_limit;
 use crate::input::{KEY_ACTIONS, KeyCategory};
 use crate::options::{Slot, UserSettings, choosable, current_layout, physical_label};
 use crate::ui::keys_panel::{KeyHelp, KeyHint, KeySource};
@@ -317,6 +318,10 @@ enum Row {
     KeyHelp,
     Preset,
     Fullscreen,
+    /// Limite d'images par seconde (M11, rame_pace::FPS_LIMITS).
+    FpsLimit,
+    Vsync,
+    ShowFps,
     Tutorial,
     Tips,
     Volume(Channel),
@@ -332,6 +337,9 @@ impl Row {
             Row::KeyHelp => "options.key_help",
             Row::Preset => "options.graphics",
             Row::Fullscreen => "options.fullscreen",
+            Row::FpsLimit => "options.fps_limit",
+            Row::Vsync => "options.vsync",
+            Row::ShowFps => "options.show_fps",
             Row::Tutorial => "options.tutorial",
             Row::Tips => "options.tips",
             Row::Volume(Channel::Master) => "options.master_volume",
@@ -349,7 +357,13 @@ impl Row {
 fn rows(page: Page) -> Vec<Row> {
     match page {
         Page::General => vec![Row::Layout, Row::KeyHelp],
-        Page::Display => vec![Row::Preset, Row::Fullscreen],
+        Page::Display => vec![
+            Row::Preset,
+            Row::Fullscreen,
+            Row::FpsLimit,
+            Row::Vsync,
+            Row::ShowFps,
+        ],
         Page::Gameplay => vec![Row::Tutorial, Row::Tips],
         Page::Sound => vec![
             Row::Volume(Channel::Master),
@@ -411,6 +425,9 @@ fn adjust(row: Row, step: i8, s: &mut UserSettings, keyboard: Option<&sh_data::K
         }
         Row::KeyHelp => s.key_help = !s.key_help,
         Row::Fullscreen => s.fullscreen = !s.fullscreen,
+        Row::FpsLimit => s.fps_limit = step_fps_limit(s.fps_limit, step),
+        Row::Vsync => s.vsync = !s.vsync,
+        Row::ShowFps => s.show_fps = !s.show_fps,
         Row::Tutorial => s.tutorial = !s.tutorial,
         Row::Tips => s.tips = !s.tips,
         Row::InvertY => s.invert_y = !s.invert_y,
@@ -655,6 +672,10 @@ const ROW_HEIGHT: f32 = 46.0;
 const KEY_ROW_HEIGHT: f32 = 30.0;
 /// Largeur d'une case de touche.
 const SLOT_WIDTH: f32 = 128.0;
+/// Largeur de la valeur d'un réglage à − et + (« 100 % », « 1,5 »).
+const VALUE_WIDTH: f32 = 76.0;
+/// Largeur de la limite d'images : « Illimitée » (« Unlimited ») tient sur une ligne.
+const FPS_VALUE_WIDTH: f32 = 112.0;
 /// Largeur d'un onglet.
 const TAB_WIDTH: f32 = 124.0;
 /// Largeur d'un bouton de page de Contrôles.
@@ -912,6 +933,16 @@ fn settings_page(
                 }
                 Row::KeyHelp => toggle(r, fonts, texts, row, s.key_help),
                 Row::Fullscreen => toggle(r, fonts, texts, row, s.fullscreen),
+                Row::FpsLimit => {
+                    let value = if s.fps_limit == 0 {
+                        texts.get("options.fps_limit.unlimited")
+                    } else {
+                        texts.number(f64::from(s.fps_limit), 0)
+                    };
+                    stepper(r, fonts, row, value, FPS_VALUE_WIDTH);
+                }
+                Row::Vsync => toggle(r, fonts, texts, row, s.vsync),
+                Row::ShowFps => toggle(r, fonts, texts, row, s.show_fps),
                 Row::Tutorial => toggle(r, fonts, texts, row, s.tutorial),
                 Row::Tips => toggle(r, fonts, texts, row, s.tips),
                 Row::InvertY => toggle(r, fonts, texts, row, s.invert_y),
@@ -921,14 +952,20 @@ fn settings_page(
                         Channel::Music => s.music_volume,
                         Channel::Effects => s.effects_volume,
                     };
-                    stepper(r, fonts, row, percent(value));
+                    stepper(r, fonts, row, percent(value), VALUE_WIDTH);
                 }
                 Row::Sensitivity(sense) => {
                     let value = match sense {
                         Sense::Foot => s.mouse_sensitivity,
                         Sense::Piloting => s.piloting_sensitivity,
                     };
-                    stepper(r, fonts, row, texts.number(f64::from(value), 1));
+                    stepper(
+                        r,
+                        fonts,
+                        row,
+                        texts.number(f64::from(value), 1),
+                        VALUE_WIDTH,
+                    );
                 }
                 Row::Key(_) => {}
             },
@@ -1186,8 +1223,16 @@ fn setting_row(
     });
 }
 
-/// − valeur + : une valeur réglée (volume, sensibilité), en relevé à chasse fixe.
-fn stepper(parent: &mut ChildSpawnerCommands, fonts: &UiFonts, row: Row, value: String) {
+/// − valeur + : une valeur réglée (volume, sensibilité, limite d'images), en relevé à chasse
+/// fixe ; `width` : la place de la valeur, assez large pour la plus longue (les boutons ne
+/// bougent pas quand elle change).
+fn stepper(
+    parent: &mut ChildSpawnerCommands,
+    fonts: &UiFonts,
+    row: Row,
+    value: String,
+    width: f32,
+) {
     spawn_small(
         parent,
         fonts,
@@ -1200,11 +1245,11 @@ fn stepper(parent: &mut ChildSpawnerCommands, fonts: &UiFonts, row: Row, value: 
         fonts.mono(17.0),
         TextColor(theme::SCREEN),
         Node {
-            width: px(76),
+            width: px(width),
             justify_content: JustifyContent::Center,
             ..default()
         },
-        TextLayout::justify(Justify::Center),
+        TextLayout::justify(Justify::Center).with_no_wrap(),
     ));
     spawn_small(
         parent,
@@ -1329,6 +1374,25 @@ mod tests {
         assert_eq!(keys, KEY_ACTIONS.len());
     }
 
+    /// Les lignes de l'onglet Affichage et le compteur d'images ont leurs textes, dans les deux
+    /// langues.
+    #[test]
+    fn libelles_de_l_affichage() {
+        let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/data");
+        for code in [sh_data::paths::LANG_CODE, sh_data::paths::LANG_EN_CODE] {
+            let lang = sh_data::load_lang(&data, code).unwrap_or_else(|e| panic!("{e}"));
+            let mut keys: Vec<&str> = rows(Page::Display).iter().map(|r| r.label()).collect();
+            keys.extend([
+                "options.fps_limit.unlimited",
+                "options.fps.counter",
+                "options.note.display",
+            ]);
+            for key in keys {
+                assert!(lang.has(key), "{code} : clé absente {key}");
+            }
+        }
+    }
+
     #[test]
     fn reglages_au_cran() {
         let mut s = UserSettings::default();
@@ -1344,6 +1408,29 @@ mod tests {
         assert_eq!(s.preset, PresetLevel::Low);
         adjust(Row::Tips, -1, &mut s, None);
         assert!(!s.tips);
+        // Limite d'images (M11) : illimitée par défaut, « − » descend vers 240, puis 165…
+        assert_eq!(s.fps_limit, 0);
+        adjust(Row::FpsLimit, -1, &mut s, None);
+        assert_eq!(s.fps_limit, 240);
+        for _ in 0..5 {
+            adjust(Row::FpsLimit, -1, &mut s, None);
+        }
+        assert_eq!(s.fps_limit, 75);
+        adjust(Row::FpsLimit, 1, &mut s, None);
+        assert_eq!(s.fps_limit, 90);
+        adjust(Row::Vsync, 1, &mut s, None);
+        adjust(Row::ShowFps, -1, &mut s, None);
+        assert!(s.vsync && s.show_fps);
+        assert_eq!(
+            rows(Page::Display),
+            [
+                Row::Preset,
+                Row::Fullscreen,
+                Row::FpsLimit,
+                Row::Vsync,
+                Row::ShowFps
+            ]
+        );
         let keyboard = sh_data::Keyboard {
             default_layout: "azerty".into(),
             layouts: [

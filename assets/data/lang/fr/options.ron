@@ -62,7 +62,14 @@
     "options.preset.medium": "Moyen",
     "options.preset.high": "Haut",
     "options.fullscreen": "Plein écran",
-    "options.note.display": "La qualité graphique s'applique entièrement au prochain lieu chargé.",
+    // Limite d'images, synchronisation verticale et compteur d'images (M11, `frame_pace`).
+    "options.fps_limit": "Limite d'images par seconde",
+    "options.fps_limit.unlimited": "Illimitée",
+    "options.vsync": "Synchronisation verticale",
+    "options.show_fps": "Afficher les i/s",
+    // Le compteur du coin bas droit : images par seconde, temps moyen et pire temps d'une image.
+    "options.fps.counter": "{fps} i/s · {ms} ms (pire {worst})",
+    "options.note.display": "La qualité graphique s'applique entièrement au prochain lieu chargé. La limite d'images régularise le rythme et ménage le processeur ; avec la synchronisation verticale, laissez-la illimitée ou sous la fréquence de l'écran.",
 
     "options.tutorial": "Tutoriel",
     "options.tips": "Conseils",

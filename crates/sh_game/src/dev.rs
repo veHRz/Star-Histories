@@ -62,17 +62,33 @@
 //!   sauvegarde en vol reprend au poste de pilotage) ; `menu_return` et `pause_escape` n'ont
 //!   pas besoin du siège.
 //!
-//! À la sortie, le temps de frame moyen et maximal est toujours journalisé (hors démarrage).
+//! - `SH_FPS_LIMIT=<n>` (0 : illimitée), `SH_VSYNC=1` et `SH_FPS_COUNTER=1` (M11) : limite
+//!   d'images, synchronisation verticale et compteur d'images de l'autopilote, qui ne lit pas les
+//!   réglages du joueur (`frame_pace`).
+//! - `SH_FRAME_TRACE=<fichier.csv>` (M11) : une ligne par frame après le chargement (`FrameTrace`,
+//!   colonnes dans `TRACE_HEADER`), écrite par blocs sur un fil à part.
+//!
+//! À la sortie, le temps de frame est toujours journalisé (hors démarrage), trace ou pas : la
+//! ligne « temps de frame : moyenne… » (lue par `tools/perf.*`), puis une ligne « temps de
+//! frame : p50… » (centiles, écart-type, chutes : au moins 3 frames de suite à plus de 1,5 fois
+//! la médiane), puis les 10 pires frames avec leur contexte (« pire frame k/10 : … »).
 
 use std::path::PathBuf;
+use std::sync::mpsc;
+use std::time::Instant;
 
+use bevy::ecs::entity::Entities;
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
+use bevy::render::render_asset::RenderAssetBytesPerFrame;
 use bevy::render::view::screenshot::{Capturing, Screenshot, save_to_disk};
 use bevy::window::{MonitorSelection, WindowMode};
 use bevy::winit::WinitSettings;
 
 use crate::data::Data;
+use crate::frame_pace::{FrameLimit, PaceShared, RenderSample};
 use crate::loading::StartRequest;
+use crate::sector::streaming::{CellInstance, CellStates, Quality};
 use crate::state::{AppState, EnterGame, ViewLevel};
 
 /// Frames d'attente maximale après la demande de capture avant d'abandonner.
@@ -85,7 +101,21 @@ pub struct AutopilotPlugin;
 impl Plugin for AutopilotPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<FrameStats>()
+            .init_resource::<UpdateClock>()
+            .add_systems(First, mark_update_start)
             .add_systems(Last, (record_frame_time, report_on_exit).chain());
+        // `SH_FRAME_TRACE=<fichier.csv>` : une ligne par frame, pour expliquer les à-coups.
+        if let Some(path) = std::env::var_os("SH_FRAME_TRACE") {
+            match FrameTrace::open(PathBuf::from(path)) {
+                Ok(trace) => {
+                    // Une limite d'envoi au GPU qu'aucune frame n'atteint : rien n'est retardé,
+                    // mais Bevy compte alors les octets envoyés à chaque frame (`upload_kb`).
+                    app.insert_resource(trace)
+                        .insert_resource(RenderAssetBytesPerFrame::new(usize::MAX / 2));
+                }
+                Err(message) => error!("{message}"),
+            }
+        }
         // `SH_PAUSE=1|load` : le menu de pause (ou sa liste de sauvegardes), pour les captures.
         if let Ok(value) = std::env::var("SH_PAUSE") {
             app.insert_resource(PauseShot {
@@ -343,32 +373,459 @@ struct FrameStats {
     total_ms: f64,
     worst_ms: f64,
     over_33ms: u32,
+    /// Chaque frame mesurée (ms) : centiles et chutes se calculent à la sortie (4 octets par
+    /// frame, ≈ 1 Mo par heure à 60 i/s).
+    frames: Vec<f32>,
+    /// Les pires frames, de la pire à la moins mauvaise, avec leur contexte.
+    worst: Vec<WorstFrame>,
+}
+
+/// Une chute : au moins [`DROP_MIN_FRAMES`] frames de suite à plus de [`DROP_FACTOR`] fois la
+/// médiane de la mesure (une frame isolée est un pic, pas une chute).
+const DROP_FACTOR: f32 = 1.5;
+const DROP_MIN_FRAMES: usize = 3;
+/// Pires frames gardées avec leur contexte et journalisées à la sortie.
+const WORST_KEPT: usize = 10;
+
+/// Début de la mise à jour du monde principal (premier programme du frame, `First`).
+#[derive(Resource)]
+struct UpdateClock(Instant);
+
+impl Default for UpdateClock {
+    fn default() -> Self {
+        Self(Instant::now())
+    }
+}
+
+fn mark_update_start(mut clock: ResMut<UpdateClock>) {
+    clock.0 = Instant::now();
+}
+
+/// Ce qui se passe autour d'une frame : de quoi expliquer un pic. Les colonnes chères (entités,
+/// lumières et maillages visibles) ne se comptent que pour la trace ou une pire frame.
+#[derive(SystemParam)]
+struct FrameProbe<'w, 's> {
+    state: Option<Res<'w, State<AppState>>>,
+    view: Option<Res<'w, State<ViewLevel>>>,
+    sector: Option<Res<'w, crate::sector::ActiveSector>>,
+    cells: Option<Res<'w, CellStates>>,
+    instances: Query<'w, 's, (&'static CellInstance, Option<&'static Visibility>)>,
+    added: Query<'w, 's, (), Added<CellInstance>>,
+    removed: RemovedComponents<'w, 's, CellInstance>,
+    entities: &'w Entities,
+    lights: Query<'w, 's, &'static ViewVisibility, With<PointLight>>,
+    meshes: Query<'w, 's, &'static ViewVisibility, With<Mesh3d>>,
+    limit: Option<Res<'w, FrameLimit>>,
+    pace: Option<Res<'w, PaceShared>>,
+    clock: Res<'w, UpdateClock>,
+}
+
+impl FrameProbe<'_, '_> {
+    fn context(&self, removed: usize) -> FrameContext {
+        let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+        let mut context = FrameContext {
+            update_ms: self.clock.0.elapsed().as_secs_f64() * 1000.0,
+            render: self.pace.as_ref().map(|p| p.sample()).unwrap_or_default(),
+            limit: self.limit.as_deref().copied().unwrap_or_default(),
+            state: self
+                .state
+                .as_ref()
+                .map_or_else(|| "-".to_owned(), |s| format!("{:?}", s.get())),
+            view: self.view.as_ref().map_or("-", |v| v.get().key()),
+            sector: self
+                .sector
+                .as_ref()
+                .map_or_else(|| "-".to_owned(), |s| s.sector.id.to_string()),
+            cell: self
+                .cells
+                .as_ref()
+                .and_then(|c| c.current.clone())
+                .unwrap_or_else(|| "-".to_owned()),
+            cells_spawned: count(self.added.iter().count()),
+            cells_removed: count(removed),
+            entities: self.entities.count_spawned(),
+            point_lights: count(self.lights.iter().filter(|v| v.get()).count()),
+            meshes: count(self.meshes.iter().filter(|v| v.get()).count()),
+            ..default()
+        };
+        for (instance, visibility) in &self.instances {
+            match instance.quality {
+                Quality::Local => context.cells_local += 1,
+                Quality::Sector => context.cells_sector += 1,
+            }
+            if visibility == Some(&Visibility::Hidden) {
+                context.cells_hidden += 1;
+            }
+        }
+        context
+    }
+}
+
+/// Le contexte d'une frame (trace et pires frames).
+#[derive(Clone, Debug, Default, PartialEq)]
+struct FrameContext {
+    /// Mise à jour du monde principal (de `First` à `Last`).
+    update_ms: f64,
+    /// Rendu de l'image précédente (rendu en pipeline) et attente du limiteur.
+    render: RenderSample,
+    limit: FrameLimit,
+    state: String,
+    view: &'static str,
+    sector: String,
+    cell: String,
+    cells_local: u32,
+    cells_sector: u32,
+    /// Instances de cellule cachées (`Visibility::Hidden` : derrière une porte fermée).
+    cells_hidden: u32,
+    cells_spawned: u32,
+    cells_removed: u32,
+    entities: u32,
+    point_lights: u32,
+    meshes: u32,
+}
+
+/// Les colonnes de la trace par frame (`SH_FRAME_TRACE`). `frame` compte depuis la fin du
+/// chargement ; `frame_ms` est l'intervalle entre deux présentations vu par le jeu
+/// (`Time<Real>`) ; `update_ms` la mise à jour du monde principal ; `render_ms` (programme de
+/// rendu, attentes du GPU et présentation comprises), `pace_wait_ms`, `pace_late` (image en
+/// retard sur la limite), `pipelines`, `pipelines_waiting` (pipelines en compilation) et
+/// `upload_kb` (envois au GPU) décrivent la dernière image rendue, une frame derrière ; `view`,
+/// `sector`, `cell` : où est le joueur ; `cells_*` : instances de cellule (Locales, Sectorielles,
+/// cachées, apparues et retirées pendant la frame) ; `point_lights` et `meshes` : visibles d'au
+/// moins une vue ; `warmup` : frame exclue des mesures (compilation des premiers pipelines).
+const TRACE_HEADER: &str = "frame,time_s,frame_ms,update_ms,render_ms,pace_wait_ms,pace_late,\
+fps_limit,vsync,state,view,sector,cell,cells_local,cells_sector,cells_hidden,cells_spawned,\
+cells_removed,entities,point_lights,meshes,pipelines,pipelines_waiting,upload_kb,warmup";
+
+impl FrameContext {
+    /// Une ligne de la trace, dans l'ordre de [`TRACE_HEADER`].
+    fn write_csv(&self, out: &mut String, frame: u32, time_s: f64, ms: f64, warmup: bool) {
+        use std::fmt::Write as _;
+        let r = &self.render;
+        let _ = writeln!(
+            out,
+            "{frame},{time_s:.4},{ms:.3},{:.3},{:.3},{:.3},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{:.1},{}",
+            self.update_ms,
+            r.render_ms,
+            r.wait_ms,
+            u8::from(r.late),
+            self.limit.fps.unwrap_or(0),
+            u8::from(self.limit.vsync),
+            self.state,
+            self.view,
+            self.sector,
+            self.cell,
+            self.cells_local,
+            self.cells_sector,
+            self.cells_hidden,
+            self.cells_spawned,
+            self.cells_removed,
+            self.entities,
+            self.point_lights,
+            self.meshes,
+            r.pipelines,
+            r.pipelines_waiting,
+            r.upload_bytes as f64 / 1024.0,
+            u8::from(warmup),
+        );
+    }
+
+    /// Le contexte d'une pire frame, pour le journal.
+    fn describe(&self) -> String {
+        let r = &self.render;
+        let limit = match self.limit.fps {
+            Some(fps) => format!("{fps} i/s"),
+            None => "aucune".to_owned(),
+        };
+        let vsync = if self.limit.vsync { " + vsync" } else { "" };
+        format!(
+            "{}/{}, secteur {}, cellule {}, cellules {} L + {} S ({} cachées, +{} −{}), {} entités, \
+             {} lumières et {} maillages visibles ; maj {:.1} ms, rendu {:.1} ms, attente {:.1} ms{}, \
+             pipelines {} ({} en compilation), envoi {:.0} Ko, limite {limit}{vsync}",
+            self.state,
+            self.view,
+            self.sector,
+            self.cell,
+            self.cells_local,
+            self.cells_sector,
+            self.cells_hidden,
+            self.cells_spawned,
+            self.cells_removed,
+            self.entities,
+            self.point_lights,
+            self.meshes,
+            self.update_ms,
+            r.render_ms,
+            r.wait_ms,
+            if r.late { " (en retard)" } else { "" },
+            r.pipelines,
+            r.pipelines_waiting,
+            r.upload_bytes as f64 / 1024.0,
+        )
+    }
+}
+
+/// Une des pires frames de la mesure.
+#[derive(Clone, Debug, PartialEq)]
+struct WorstFrame {
+    frame: u32,
+    ms: f64,
+    context: String,
+}
+
+/// Une frame de `ms` millisecondes entre-t-elle dans les pires ?
+fn worst_candidate(worst: &[WorstFrame], ms: f64) -> bool {
+    worst.len() < WORST_KEPT || worst.last().is_some_and(|w| ms > w.ms)
+}
+
+/// Range une frame parmi les pires (de la pire à la moins mauvaise), au plus [`WORST_KEPT`].
+fn insert_worst(worst: &mut Vec<WorstFrame>, frame: WorstFrame) {
+    let at = worst.partition_point(|w| w.ms >= frame.ms);
+    worst.insert(at, frame);
+    worst.truncate(WORST_KEPT);
+}
+
+/// Centile `p` (de 0 à 100) d'une série triée, au rang le plus proche.
+fn percentile(sorted: &[f32], p: f64) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    let rank = ((p / 100.0) * sorted.len() as f64).ceil() as usize;
+    f64::from(sorted[rank.clamp(1, sorted.len()) - 1])
+}
+
+/// Les chutes d'une mesure : leur nombre, et la plus longue (frames, durée totale en ms).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct Drops {
+    count: u32,
+    longest_frames: usize,
+    longest_ms: f64,
+}
+
+impl Drops {
+    fn close_run(&mut self, frames: usize, ms: f64, min_frames: usize) {
+        if frames < min_frames {
+            return;
+        }
+        self.count += 1;
+        if (frames, ms) > (self.longest_frames, self.longest_ms) {
+            self.longest_frames = frames;
+            self.longest_ms = ms;
+        }
+    }
+}
+
+/// Les séries d'au moins `min_frames` frames consécutives au-dessus de `threshold` ms.
+fn find_drops(frames: &[f32], threshold: f32, min_frames: usize) -> Drops {
+    let mut drops = Drops::default();
+    let (mut run, mut run_ms) = (0, 0.0);
+    for &ms in frames {
+        if ms > threshold {
+            run += 1;
+            run_ms += f64::from(ms);
+        } else {
+            drops.close_run(run, run_ms, min_frames);
+            (run, run_ms) = (0, 0.0);
+        }
+    }
+    drops.close_run(run, run_ms, min_frames);
+    drops
+}
+
+/// Le résumé journalisé à la sortie.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct FrameSummary {
+    p50: f64,
+    p95: f64,
+    p99: f64,
+    std_dev: f64,
+    drops: Drops,
+}
+
+fn summarize(frames: &[f32]) -> Option<FrameSummary> {
+    if frames.is_empty() {
+        return None;
+    }
+    let mut sorted = frames.to_vec();
+    sorted.sort_by(f32::total_cmp);
+    let p50 = percentile(&sorted, 50.0);
+    let n = frames.len() as f64;
+    let mean = frames.iter().map(|ms| f64::from(*ms)).sum::<f64>() / n;
+    let variance = frames
+        .iter()
+        .map(|ms| (f64::from(*ms) - mean).powi(2))
+        .sum::<f64>()
+        / n;
+    Some(FrameSummary {
+        p50,
+        p95: percentile(&sorted, 95.0),
+        p99: percentile(&sorted, 99.0),
+        std_dev: variance.sqrt(),
+        drops: find_drops(frames, p50 as f32 * DROP_FACTOR, DROP_MIN_FRAMES),
+    })
+}
+
+/// Lignes de trace envoyées d'un bloc au fil d'écriture (≈ 2 s à 60 i/s).
+const TRACE_BLOCK_LINES: u32 = 120;
+/// Place réservée pour un bloc (≈ 130 octets par ligne).
+const TRACE_BLOCK_BYTES: usize = 24 * 1024;
+
+/// La trace par frame (`SH_FRAME_TRACE`) : les lignes s'accumulent en mémoire et partent par
+/// blocs vers un fil d'écriture. Le fil du jeu ne touche jamais au disque, sauf à la sortie, où
+/// il attend la fin de l'écriture.
+#[derive(Resource)]
+struct FrameTrace {
+    path: PathBuf,
+    buffer: String,
+    pending: u32,
+    lines: u64,
+    sender: Option<mpsc::Sender<String>>,
+    writer: Option<std::thread::JoinHandle<()>>,
+}
+
+impl FrameTrace {
+    fn open(path: PathBuf) -> Result<Self, String> {
+        if let Some(dir) = path.parent().filter(|dir| !dir.as_os_str().is_empty()) {
+            std::fs::create_dir_all(dir).map_err(|err| {
+                format!(
+                    "SH_FRAME_TRACE : dossier {} impossible : {err}",
+                    dir.display()
+                )
+            })?;
+        }
+        let file = std::fs::File::create(&path).map_err(|err| {
+            format!(
+                "SH_FRAME_TRACE : {} impossible à créer : {err}",
+                path.display()
+            )
+        })?;
+        let (sender, receiver) = mpsc::channel::<String>();
+        let shown = path.display().to_string();
+        let writer = std::thread::Builder::new()
+            .name("sh-frame-trace".into())
+            .spawn(move || {
+                use std::io::Write as _;
+                let mut out = std::io::BufWriter::new(file);
+                for block in receiver {
+                    // Chaque bloc est vidé sur le disque : un arrêt brutal garde ce qui précède.
+                    if let Err(err) = out.write_all(block.as_bytes()).and_then(|()| out.flush()) {
+                        error!("trace par frame : écriture impossible dans {shown} : {err}");
+                        return;
+                    }
+                }
+            })
+            .map_err(|err| format!("SH_FRAME_TRACE : fil d'écriture impossible : {err}"))?;
+        let mut buffer = String::with_capacity(TRACE_BLOCK_BYTES);
+        buffer.push_str(TRACE_HEADER);
+        buffer.push('\n');
+        info!("trace par frame vers {}", path.display());
+        Ok(Self {
+            path,
+            buffer,
+            pending: 0,
+            lines: 0,
+            sender: Some(sender),
+            writer: Some(writer),
+        })
+    }
+
+    fn push(&mut self, context: &FrameContext, frame: u32, time_s: f64, ms: f64, warmup: bool) {
+        context.write_csv(&mut self.buffer, frame, time_s, ms, warmup);
+        self.pending += 1;
+        self.lines += 1;
+        if self.pending >= TRACE_BLOCK_LINES {
+            self.send_block();
+        }
+    }
+
+    fn send_block(&mut self) {
+        self.pending = 0;
+        if self.buffer.is_empty() {
+            return;
+        }
+        let block = std::mem::replace(&mut self.buffer, String::with_capacity(TRACE_BLOCK_BYTES));
+        if let Some(sender) = &self.sender
+            && sender.send(block).is_err()
+        {
+            // Le fil d'écriture s'est arrêté sur une erreur (déjà journalisée) : plus d'envoi.
+            self.sender = None;
+        }
+    }
+
+    /// Envoie le dernier bloc et attend que tout soit écrit (sortie du jeu).
+    fn finish(&mut self) {
+        let Some(writer) = self.writer.take() else {
+            return;
+        };
+        self.send_block();
+        // Sans émetteur, le fil d'écriture finit sa boucle.
+        self.sender = None;
+        if writer.join().is_err() {
+            error!("trace par frame : le fil d'écriture a paniqué");
+        }
+        info!(
+            "trace par frame : {} frames dans {}",
+            self.lines,
+            self.path.display()
+        );
+    }
 }
 
 fn record_frame_time(
     time: Res<Time<Real>>,
     data: Option<Res<Data>>,
     mut stats: ResMut<FrameStats>,
+    trace: Option<ResMut<FrameTrace>>,
+    mut probe: FrameProbe,
 ) {
+    // Lu à chaque frame : seuls les retraits de cette frame comptent.
+    let removed = probe.removed.read().count();
     if data.is_none() {
         return;
     }
     stats.since_loaded += 1;
-    if stats.since_loaded <= WARMUP_FRAMES {
+    let frame = stats.since_loaded;
+    let warmup = frame <= WARMUP_FRAMES;
+    let ms = time.delta_secs_f64() * 1000.0;
+    let candidate = !warmup && worst_candidate(&stats.worst, ms);
+    if candidate || trace.is_some() {
+        let context = probe.context(removed);
+        if let Some(mut trace) = trace {
+            trace.push(&context, frame, time.elapsed_secs_f64(), ms, warmup);
+        }
+        if candidate {
+            insert_worst(
+                &mut stats.worst,
+                WorstFrame {
+                    frame,
+                    ms,
+                    context: context.describe(),
+                },
+            );
+        }
+    }
+    if warmup {
         return;
     }
-    let ms = time.delta_secs_f64() * 1000.0;
     stats.count += 1;
     stats.total_ms += ms;
     stats.worst_ms = stats.worst_ms.max(ms);
     if ms > 33.0 {
         stats.over_33ms += 1;
     }
+    stats.frames.push(ms as f32);
 }
 
-fn report_on_exit(mut exits: MessageReader<AppExit>, stats: Res<FrameStats>) {
+fn report_on_exit(
+    mut exits: MessageReader<AppExit>,
+    stats: Res<FrameStats>,
+    trace: Option<ResMut<FrameTrace>>,
+) {
     if exits.read().next().is_none() {
         return;
+    }
+    if let Some(mut trace) = trace {
+        trace.finish();
     }
     if stats.count == 0 {
         info!(
@@ -376,6 +833,7 @@ fn report_on_exit(mut exits: MessageReader<AppExit>, stats: Res<FrameStats>) {
         );
         return;
     }
+    // Cette ligne est lue telle quelle par `tools/perf.*` : ne pas la changer.
     let mean = stats.total_ms / f64::from(stats.count);
     info!(
         "temps de frame : moyenne {mean:.2} ms ({:.0} i/s), pire {:.2} ms, {} frame(s) > 33 ms, sur {} frames",
@@ -384,6 +842,28 @@ fn report_on_exit(mut exits: MessageReader<AppExit>, stats: Res<FrameStats>) {
         stats.over_33ms,
         stats.count
     );
+    if let Some(s) = summarize(&stats.frames) {
+        info!(
+            "temps de frame : p50 {:.2} ms, p95 {:.2} ms, p99 {:.2} ms, écart-type {:.2} ms ; {} chute(s) ({DROP_MIN_FRAMES} frames de suite ou plus à plus de {DROP_FACTOR} × la médiane), la plus longue : {} frames, {:.0} ms",
+            s.p50,
+            s.p95,
+            s.p99,
+            s.std_dev,
+            s.drops.count,
+            s.drops.longest_frames,
+            s.drops.longest_ms
+        );
+    }
+    let kept = stats.worst.len();
+    for (rank, w) in stats.worst.iter().enumerate() {
+        info!(
+            "pire frame {}/{kept} : n° {} {:.1} ms — {}",
+            rank + 1,
+            w.frame,
+            w.ms,
+            w.context
+        );
+    }
 }
 
 #[derive(Resource)]
@@ -594,6 +1074,98 @@ mod tests {
             }))
         );
         assert!(parse_start("cockpit").is_err());
+    }
+
+    #[test]
+    fn centiles() {
+        let sorted: Vec<f32> = (1..=100).map(|i| i as f32).collect();
+        assert_eq!(percentile(&sorted, 50.0), 50.0);
+        assert_eq!(percentile(&sorted, 95.0), 95.0);
+        assert_eq!(percentile(&sorted, 99.0), 99.0);
+        assert_eq!(percentile(&sorted, 100.0), 100.0);
+        assert_eq!(percentile(&sorted, 0.0), 1.0);
+        assert_eq!(percentile(&[7.0], 99.0), 7.0);
+        assert_eq!(percentile(&[], 50.0), 0.0);
+    }
+
+    /// Une chute : trois frames de suite ou plus au-dessus du seuil ; un pic isolé ou double
+    /// n'en est pas une.
+    #[test]
+    fn chutes() {
+        let frames = [
+            10.0, 30.0, 10.0, // pic isolé
+            30.0, 30.0, 10.0, // deux frames
+            30.0, 31.0, 32.0, 10.0, // chute de 3
+            40.0, 40.0, 40.0, 40.0, // chute de 4, en fin de mesure
+        ];
+        let drops = find_drops(&frames, 15.0, 3);
+        assert_eq!(drops.count, 2);
+        assert_eq!(drops.longest_frames, 4);
+        assert!((drops.longest_ms - 160.0).abs() < 1e-9);
+        assert_eq!(find_drops(&[10.0; 50], 15.0, 3), Drops::default());
+    }
+
+    #[test]
+    fn resume_des_frames() {
+        assert_eq!(summarize(&[]), None);
+        // 40 i/s, puis 20 i/s quatre frames, puis 40 : la chute du retour de l'auteur.
+        let mut frames = vec![25.0f32; 96];
+        frames.splice(50..50, [50.0f32; 4]);
+        let s = summarize(&frames).unwrap_or_else(|| panic!("pas de résumé"));
+        assert_eq!(s.p50, 25.0);
+        assert_eq!(s.p95, 25.0);
+        assert_eq!(s.p99, 50.0);
+        assert_eq!(s.drops.count, 1);
+        assert_eq!(s.drops.longest_frames, 4);
+        // Écart-type d'une série à deux valeurs : sqrt(p (1 − p)) × écart.
+        let expected = (0.04f64 * 0.96).sqrt() * 25.0;
+        assert!((s.std_dev - expected).abs() < 1e-6, "{}", s.std_dev);
+    }
+
+    #[test]
+    fn pires_frames_rangees() {
+        let mut worst = Vec::new();
+        for (frame, ms) in (1..=30u32).map(|f| (f, f64::from(f % 13))) {
+            if worst_candidate(&worst, ms) {
+                insert_worst(
+                    &mut worst,
+                    WorstFrame {
+                        frame,
+                        ms,
+                        context: String::new(),
+                    },
+                );
+            }
+        }
+        assert_eq!(worst.len(), WORST_KEPT);
+        let kept: Vec<f64> = worst.iter().map(|w| w.ms).collect();
+        assert_eq!(
+            kept,
+            [12.0, 12.0, 11.0, 11.0, 10.0, 10.0, 9.0, 9.0, 8.0, 8.0]
+        );
+        // À égalité, la plus ancienne reste devant.
+        assert_eq!(worst[0].frame, 12);
+        assert!(!worst_candidate(&worst, 8.0));
+        assert!(worst_candidate(&worst, 8.5));
+    }
+
+    #[test]
+    fn ligne_de_trace() {
+        let columns = TRACE_HEADER.split(',').count();
+        let mut out = String::new();
+        let context = FrameContext {
+            view: "sector",
+            sector: "spaceport".into(),
+            cell: "sas".into(),
+            ..FrameContext::default()
+        };
+        context.write_csv(&mut out, 42, 1.5, 16.7, false);
+        assert!(out.ends_with('\n'));
+        let line = out.trim_end();
+        assert_eq!(line.split(',').count(), columns, "{line}");
+        assert!(line.starts_with("42,1.5000,16.700,"), "{line}");
+        assert!(line.contains(",sector,spaceport,sas,"), "{line}");
+        assert!(!context.describe().is_empty());
     }
 }
 

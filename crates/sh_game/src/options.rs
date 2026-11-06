@@ -26,6 +26,9 @@
 //! Sensibilités (M9) : un modificateur `Scale` sur l'action [`Look`] (à pied) et un autre sur
 //! [`Steer`] (aux commandes : base de `gameplay/flight.ron`, puis le réglage du joueur). Les
 //! systèmes de jeu ne lisent plus que l'inversion de l'axe ([`UserSettings::look_scale`]).
+//!
+//! Limite d'images, synchronisation verticale et compteur d'images (M11) : réglés ici, appliqués
+//! par `frame_pace` (qui laisse `SH_FPS_LIMIT` et `SH_VSYNC` décider pour l'autopilote).
 
 use std::collections::BTreeMap;
 
@@ -102,6 +105,14 @@ pub struct UserSettings {
     /// ([`UserSettings::migrate`]), jamais réécrit.
     #[serde(rename = "keys", skip_serializing_if = "BTreeMap::is_empty")]
     pub legacy_keys: BTreeMap<String, String>,
+    /// Limite d'images par seconde (M11), appliquée par `frame_pace` ; 0 : illimitée. Les choix
+    /// de l'option : `frame_pace::FPS_LIMITS`. Un fichier plus ancien n'a pas ces trois champs :
+    /// ils prennent leur valeur par défaut (`#[serde(default)]` de la structure).
+    pub fps_limit: u32,
+    /// Synchronisation verticale (M11).
+    pub vsync: bool,
+    /// Compteur d'images par seconde dans le coin de l'écran (M11).
+    pub show_fps: bool,
 }
 
 impl Default for UserSettings {
@@ -121,6 +132,10 @@ impl Default for UserSettings {
             key_help: true,
             bindings: BTreeMap::new(),
             legacy_keys: BTreeMap::new(),
+            // Comme avant M11 : ni limite ni vsync (les mesures voient le vrai coût d'une image).
+            fps_limit: 0,
+            vsync: false,
+            show_fps: false,
         }
     }
 }
@@ -1071,6 +1086,9 @@ mod tests {
         s.set_slot(action("foot_crouch"), Slot::Primary, None);
         s.set_slot(action("piloting_dock"), Slot::Primary, Some(KeyCode::KeyT));
         s.piloting_sensitivity = 1.5;
+        s.fps_limit = 60;
+        s.vsync = true;
+        s.show_fps = true;
         let path = temp_file("aller_retour");
         sh_data::write_ron(&path, &s).unwrap_or_else(|e| panic!("{e}"));
         let text = std::fs::read_to_string(&path).unwrap_or_default();
@@ -1111,6 +1129,8 @@ mod tests {
         assert_eq!(s.preset, PresetLevel::Low);
         assert!(s.invert_y && s.fullscreen);
         assert_eq!(s.piloting_sensitivity, 1.0);
+        // Réglages de M11 absents du fichier : ni limite, ni vsync, ni compteur.
+        assert_eq!((s.fps_limit, s.vsync, s.show_fps), (0, false, false));
         assert!(s.legacy_keys.is_empty());
         // L'ancienne touche E (interagir, roulis à droite) est sur F partout, et F sur E.
         for (id, key) in [
