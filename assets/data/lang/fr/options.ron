@@ -69,7 +69,7 @@
     "options.show_fps": "Afficher les i/s",
     // Le compteur du coin bas droit : images par seconde, temps moyen et pire temps d'une image.
     "options.fps.counter": "{fps} i/s · {ms} ms (pire {worst})",
-    "options.note.display": "La qualité graphique s'applique entièrement au prochain lieu chargé. La limite d'images régularise le rythme et ménage le processeur ; avec la synchronisation verticale, laissez-la illimitée ou sous la fréquence de l'écran.",
+    "options.note.display": "La qualité graphique s'applique entièrement au prochain lieu chargé. La limite d'images (60 par défaut) garde un rythme régulier et ménage le processeur ; avec la synchronisation verticale, laissez-la illimitée ou sous la fréquence de l'écran.",
 
     "options.tutorial": "Tutoriel",
     "options.tips": "Conseils",

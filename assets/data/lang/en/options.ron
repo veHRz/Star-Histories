@@ -69,7 +69,7 @@
     "options.show_fps": "Show FPS",
     // Le compteur du coin bas droit : images par seconde, temps moyen et pire temps d'une image.
     "options.fps.counter": "{fps} FPS · {ms} ms (worst {worst})",
-    "options.note.display": "Graphics quality fully applies from the next place loaded. The frame rate limit steadies the pace and spares the processor; with vertical sync, leave it unlimited or below the screen's refresh rate.",
+    "options.note.display": "Graphics quality fully applies from the next place loaded. The frame rate limit (60 by default) keeps a steady pace and spares the processor; with vertical sync, leave it unlimited or below the screen's refresh rate.",
 
     "options.tutorial": "Tutorial",
     "options.tips": "Tips",

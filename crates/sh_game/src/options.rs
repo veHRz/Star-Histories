@@ -105,9 +105,11 @@ pub struct UserSettings {
     /// ([`UserSettings::migrate`]), jamais réécrit.
     #[serde(rename = "keys", skip_serializing_if = "BTreeMap::is_empty")]
     pub legacy_keys: BTreeMap<String, String>,
-    /// Limite d'images par seconde (M11), appliquée par `frame_pace` ; 0 : illimitée. Les choix
-    /// de l'option : `frame_pace::FPS_LIMITS`. Un fichier plus ancien n'a pas ces trois champs :
-    /// ils prennent leur valeur par défaut (`#[serde(default)]` de la structure).
+    /// Limite d'images par seconde (M11), appliquée par `frame_pace` ; 0 : illimitée, choisie
+    /// par le joueur et gardée telle quelle. Les choix de l'option : `frame_pace::FPS_LIMITS`.
+    /// Un fichier plus ancien n'a pas ces trois champs : ils prennent leur valeur par défaut, ici
+    /// [`DEFAULT_FPS_LIMIT`].
+    #[serde(default = "default_fps_limit")]
     pub fps_limit: u32,
     /// Synchronisation verticale (M11).
     pub vsync: bool,
@@ -132,12 +134,21 @@ impl Default for UserSettings {
             key_help: true,
             bindings: BTreeMap::new(),
             legacy_keys: BTreeMap::new(),
-            // Comme avant M11 : ni limite ni vsync (les mesures voient le vrai coût d'une image).
-            fps_limit: 0,
+            fps_limit: DEFAULT_FPS_LIMIT,
             vsync: false,
             show_fps: false,
         }
     }
+}
+
+/// Limite d'images du joueur par défaut (M11, décision réversible de l'orchestrateur) : la
+/// cible de la machine de référence. Sans limite, ses images alternaient 2,5 ms et 20,8 ms
+/// (écart-type 7,3 ms) : les « chutes une fois sur deux » de l'auteur ; à 60 i/s, 16,67 ms
+/// réguliers (écart-type 0,09 ms). L'autopilote garde « illimitée » (`autopilot_settings`).
+pub const DEFAULT_FPS_LIMIT: u32 = 60;
+
+fn default_fps_limit() -> u32 {
+    DEFAULT_FPS_LIMIT
 }
 
 /// Une des deux cases d'une action.
@@ -512,24 +523,32 @@ fn settings_path() -> std::path::PathBuf {
     crate::save::user_dir().join("settings.ron")
 }
 
+/// Les réglages de l'autopilote, qui ne lit pas ceux du joueur ; `env` lit une variable
+/// d'environnement. `SH_KEYS=KeyE:KeyF,foot_jump:KeyB+KeyN,…` : un remappage imposé, pour le
+/// vérifier. L'autopilote est muet (il tourne pendant que l'auteur travaille), sauf `SH_AUDIO=1`,
+/// et sans conseils ni tutoriel (captures propres), sauf `SH_TIPS=1` et `SH_TUTORIAL=1`. Il n'a
+/// **pas de limite d'images** : ses mesures voient le vrai coût d'une image et restent
+/// comparables d'un jalon à l'autre (`SH_FPS_LIMIT` en pose une, `frame_pace`).
+fn autopilot_settings(env: impl Fn(&str) -> Option<String>) -> UserSettings {
+    let defaults = UserSettings::default();
+    let mut settings = UserSettings {
+        tips: env("SH_TIPS").is_some(),
+        tutorial: env("SH_TUTORIAL").is_some_and(|v| v.trim() != "0"),
+        master_volume: if env("SH_AUDIO").is_some() {
+            defaults.master_volume
+        } else {
+            0.0
+        },
+        fps_limit: 0,
+        ..defaults
+    };
+    settings.apply_key_spec(&env("SH_KEYS").unwrap_or_default());
+    settings
+}
+
 fn load() -> UserSettings {
     if crate::dev::autopilot_active() {
-        // `SH_KEYS=KeyE:KeyF,foot_jump:KeyB+KeyN,…` : un remappage imposé, pour le vérifier.
-        // L'autopilote est muet (il tourne pendant que l'auteur travaille), sauf `SH_AUDIO=1`,
-        // et sans conseils ni tutoriel (captures propres), sauf `SH_TIPS=1` et `SH_TUTORIAL=1`.
-        let defaults = UserSettings::default();
-        let mut settings = UserSettings {
-            tips: std::env::var_os("SH_TIPS").is_some(),
-            tutorial: std::env::var("SH_TUTORIAL").is_ok_and(|v| v.trim() != "0"),
-            master_volume: if std::env::var_os("SH_AUDIO").is_some() {
-                defaults.master_volume
-            } else {
-                0.0
-            },
-            ..defaults
-        };
-        settings.apply_key_spec(&std::env::var("SH_KEYS").unwrap_or_default());
-        return settings;
+        return autopilot_settings(|name| std::env::var(name).ok());
     }
     let path = settings_path();
     if !path.exists() {
@@ -1086,7 +1105,7 @@ mod tests {
         s.set_slot(action("foot_crouch"), Slot::Primary, None);
         s.set_slot(action("piloting_dock"), Slot::Primary, Some(KeyCode::KeyT));
         s.piloting_sensitivity = 1.5;
-        s.fps_limit = 60;
+        s.fps_limit = 144;
         s.vsync = true;
         s.show_fps = true;
         let path = temp_file("aller_retour");
@@ -1098,6 +1117,55 @@ mod tests {
         assert!(text.contains("\"KeyB\""), "{text}");
         // L'ancien champ n'est pas réécrit.
         assert!(!text.contains("keys:"), "{text}");
+    }
+
+    /// 60 i/s par défaut ; « Illimitée » (0) choisie par le joueur s'écrit et se relit telle
+    /// quelle, sans retomber sur le défaut.
+    #[test]
+    fn limite_d_images_par_defaut_et_illimitee_gardee() {
+        assert_eq!(DEFAULT_FPS_LIMIT, 60);
+        assert_eq!(UserSettings::default().fps_limit, DEFAULT_FPS_LIMIT);
+        let s = UserSettings {
+            fps_limit: 0,
+            ..UserSettings::default()
+        };
+        let path = temp_file("illimitee");
+        sh_data::write_ron(&path, &s).unwrap_or_else(|e| panic!("{e}"));
+        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        let back: UserSettings = sh_data::read_ron(&path).unwrap_or_else(|e| panic!("{e}"));
+        let _ = std::fs::remove_file(&path);
+        assert!(text.contains("fps_limit: 0"), "{text}");
+        assert_eq!(back.fps_limit, 0);
+        // Un fichier qui ne cite que ce champ : le reste prend ses défauts, le 0 reste.
+        let path = temp_file("illimitee_seule");
+        std::fs::write(&path, "(fps_limit: 0)").unwrap_or_else(|e| panic!("{e}"));
+        let back: UserSettings = sh_data::read_ron(&path).unwrap_or_else(|e| panic!("{e}"));
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(back.fps_limit, 0);
+        assert_eq!(back.preset, UserSettings::default().preset);
+    }
+
+    /// L'autopilote n'a pas de limite d'images (mesures comparables), est muet et sans
+    /// conseils ; ses variables le règlent.
+    #[test]
+    fn reglages_de_l_autopilote() {
+        let s = autopilot_settings(|_| None);
+        assert_eq!(s.fps_limit, 0);
+        assert_eq!(s.master_volume, 0.0);
+        assert!(!s.tips && !s.tutorial);
+        let s = autopilot_settings(|name| match name {
+            "SH_AUDIO" | "SH_TIPS" => Some("1".into()),
+            "SH_TUTORIAL" => Some("0".into()),
+            "SH_KEYS" => Some("foot_interact:KeyF".into()),
+            _ => None,
+        });
+        assert_eq!(s.fps_limit, 0);
+        assert_eq!(s.master_volume, UserSettings::default().master_volume);
+        assert!(s.tips && !s.tutorial);
+        assert_eq!(
+            s.slots(action("foot_interact")).primary,
+            Some(KeyCode::KeyF)
+        );
     }
 
     /// Un fichier de M7 (une touche par touche d'origine) se relit sans erreur.
@@ -1129,8 +1197,11 @@ mod tests {
         assert_eq!(s.preset, PresetLevel::Low);
         assert!(s.invert_y && s.fullscreen);
         assert_eq!(s.piloting_sensitivity, 1.0);
-        // Réglages de M11 absents du fichier : ni limite, ni vsync, ni compteur.
-        assert_eq!((s.fps_limit, s.vsync, s.show_fps), (0, false, false));
+        // Réglages de M11 absents du fichier : la limite par défaut (60), ni vsync ni compteur.
+        assert_eq!(
+            (s.fps_limit, s.vsync, s.show_fps),
+            (DEFAULT_FPS_LIMIT, false, false)
+        );
         assert!(s.legacy_keys.is_empty());
         // L'ancienne touche E (interagir, roulis à droite) est sur F partout, et F sur E.
         for (id, key) in [

@@ -318,7 +318,7 @@ enum Row {
     KeyHelp,
     Preset,
     Fullscreen,
-    /// Limite d'images par seconde (M11, rame_pace::FPS_LIMITS).
+    /// Limite d'images par seconde (M11, `frame_pace::FPS_LIMITS`).
     FpsLimit,
     Vsync,
     ShowFps,
@@ -1408,16 +1408,23 @@ mod tests {
         assert_eq!(s.preset, PresetLevel::Low);
         adjust(Row::Tips, -1, &mut s, None);
         assert!(!s.tips);
-        // Limite d'images (M11) : illimitée par défaut, « − » descend vers 240, puis 165…
-        assert_eq!(s.fps_limit, 0);
+        // Limite d'images (M11) : 60 par défaut ; « − » descend jusqu'à 30 et s'y tient, « + »
+        // monte jusqu'à 240 puis « Illimitée » (0), et s'y tient.
+        assert_eq!(s.fps_limit, 60);
         adjust(Row::FpsLimit, -1, &mut s, None);
-        assert_eq!(s.fps_limit, 240);
-        for _ in 0..5 {
+        assert_eq!(s.fps_limit, 50);
+        for _ in 0..3 {
             adjust(Row::FpsLimit, -1, &mut s, None);
         }
-        assert_eq!(s.fps_limit, 75);
+        assert_eq!(s.fps_limit, 30);
+        for _ in 0..9 {
+            adjust(Row::FpsLimit, 1, &mut s, None);
+        }
+        assert_eq!(s.fps_limit, 240);
         adjust(Row::FpsLimit, 1, &mut s, None);
-        assert_eq!(s.fps_limit, 90);
+        assert_eq!(s.fps_limit, 0);
+        adjust(Row::FpsLimit, 1, &mut s, None);
+        assert_eq!(s.fps_limit, 0);
         adjust(Row::Vsync, 1, &mut s, None);
         adjust(Row::ShowFps, -1, &mut s, None);
         assert!(s.vsync && s.show_fps);
