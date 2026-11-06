@@ -5,6 +5,14 @@
 
 ## Ouvertes
 
+19. **Vitesses de vol (M11).** Tu as demandé une poussée vers 1 km/s, qui devait aussi raccourcir la traversée de Vorrh, et une croisière plus lente. Deux points :
+    - **Vorrh.** L'autopilote fait toute son approche en croisière, freinage compris : la poussée à 1 km/s ne le raccourcit pas, et une croisière plus lente l'allonge. Trajet de `deliver_vorrh` (Vorrhal → chantiers de Vorrh-II, 3,7 millions de km), selon le taux de montée et le plafond de la croisière : 0,15/s et 0,1 c (avant) → 4,1 min ; **0,10/s et 0,05 c (appliqué en M11, ta demande)** → 6,9 min ; 0,10/s et 0,1 c → 5,1 min ; 0,15/s et 0,05 c → 6,0 min. Entre planètes voisines, les trajets passent de 1 à 2 min à 2 à 4 min. Que veux-tu garder : une croisière plus lente, ou des trajets courts ? Deux valeurs dans `assets/data/gameplay/space.ron` (`cruise_rate`, `cruise_max_speed`).
+    - **Vitesse de combat.** À 1 km/s, un raid se fuirait sans effort (pillards à 260–320 m/s). Hypothèse appliquée : tant que des hostiles sont proches (croisière interdite), la poussée reste bornée à 250 m/s, et le bandeau affiche « VOL ASSISTÉ · COMBAT ». Ça te va ?
+    → Réponse :
+
+20. **Restes de M10.** (a) Le nez de la corvette reste large de face tant que le hangar ne laisse que 1,5 m devant la vitre : faut-il allonger le berceau ? (b) Le dépôt de fret d'Ambroise et d'Ostrag reprend le modèle du spatioport par défaut : ça te va pour l'instant ?
+    → Réponse :
+
 ## Tranchées
 
 1. **Départ de la v1.** Capitaine indépendant à Hexis, endetté auprès de la Banque (P1) : ça te va ?

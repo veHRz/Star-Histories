@@ -183,6 +183,19 @@ But : traiter la liste de l'auteur du 05/11/2026 après M9 (sas et casiers, frig
 
 ---
 
+## M11 — Troisième passe de retours de l'auteur
+
+But : traiter la liste de l'auteur du 06/11/2026 (étape Banque du tutoriel, survol de l'inventaire, montant de l'échéance, bureau des contrats sans l'hypothèque, limite d'images en option, coffre de la Banque, chutes de FPS et lag du sas amarré, hall chargé sous les yeux du joueur, vaisseau déchargé hors du bord, poussée à 1 km/s, croisière plus lente, repères des objets du système). Plan, causes, conventions entre lots et avancement : `docs/m11.md`.
+
+- [ ] Mesures de l'avant sous Windows : `tools/perf.ps1 -Preset low -Window fullscreen`, sas amarré, captures `m11-avant-*`.
+- [ ] Vague 1 : coffre de la Banque (D), tutoriel et comptoirs (U), fluidité et mesure (P), streaming (S), vol (V).
+- [ ] Vague 2 : branchement et scénarios (B).
+- [ ] Intégration et tests par l'orchestrateur à chaque vague : `tools/check.ps1`, captures avant / après, `tools/perf.ps1 -Preset low -Window fullscreen`.
+
+**Fini quand** : chaque point de la liste est traité ou tranché avec l'auteur ; plus de lag dans le sas amarré ni de hall qui se charge sous les yeux ; `tools/check.ps1` vert ; ≥ 60 i/s en Bas 1080p sur la machine de référence, aucune chute périodique ; l'auteur valide les captures avant / après.
+
+---
+
 ## Après la v1 (non planifié, à décider avec l'auteur)
 
 Débuts multiples (`_context/futur.md`), nouveaux systèmes et royaumes à mesure que le canon grandit, commandement de flottes, personnages non humains, magie, histoires écrites de la Trame Actuelle.
