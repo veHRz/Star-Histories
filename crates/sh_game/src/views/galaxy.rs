@@ -934,7 +934,6 @@ fn spawn_galaxy(
         &texts,
         &fonts,
         texts.get("view.galaxy.title"),
-        "view.galaxy.hint",
         SCOPE,
     ));
 }

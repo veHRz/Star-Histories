@@ -61,15 +61,14 @@ pub struct BannerDetail;
 /// Bandeau du lieu, en haut à gauche : une plaquette à barre ambre, le nom du lieu en capitales
 /// espacées et, dessous, le détail ([`BannerDetail`] : à bord de quoi, dans quelle salle).
 ///
-/// M9 : les commandes n'y sont plus (encart des touches, `ui::keys_panel`) ; `_hint_key` reste
-/// dans la signature pour les appelants des vues, il ne sert plus. Le bandeau s'arrête avant la
-/// colonne du coin haut droit (date, nouvelles, tutoriel : [`crate::clock::HudCorner`]) : le
-/// nœud extérieur fixe cette largeur permise, la plaquette prend celle de son texte.
+/// M9 : les commandes n'y sont plus (encart des touches, `ui::keys_panel`) ; M11 : la clé de
+/// leur ligne d'aide a quitté la signature avec les textes `view.*.hint`. Le bandeau s'arrête
+/// avant la colonne du coin haut droit (date, nouvelles, tutoriel : [`crate::clock::HudCorner`]) :
+/// le nœud extérieur fixe cette largeur permise, la plaquette prend celle de son texte.
 pub fn view_banner(
     _texts: &Texts,
     fonts: &UiFonts,
     title: String,
-    _hint_key: &str,
     scope: impl Component,
 ) -> impl Bundle {
     (

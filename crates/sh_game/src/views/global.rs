@@ -733,7 +733,6 @@ fn spawn_global(
         &texts,
         &fonts,
         texts.format("view.global.title", &[("place", &title_place)]),
-        "view.global.hint",
         SCOPE,
     ));
 }

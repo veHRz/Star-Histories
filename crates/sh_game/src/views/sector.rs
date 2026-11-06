@@ -199,7 +199,6 @@ fn spawn_test_room(
         &texts,
         &fonts,
         texts.get("view.sector.title"),
-        "view.sector.hint",
         SCOPE,
     ));
 }

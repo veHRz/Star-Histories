@@ -118,7 +118,6 @@ fn spawn_hud(
             &texts,
             &fonts,
             texts.get(&sector.sector.name_key),
-            "",
             scope.clone(),
         ));
     }
