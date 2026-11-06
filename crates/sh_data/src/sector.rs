@@ -360,8 +360,9 @@ impl Sector {
     /// ouvertures, les portes que `open` dit ouvertes et les vitrages déclarés
     /// ([`Sector::window_neighbors`]) ; par un vitrage sur l'extérieur ([`OUTSIDE`]), la cellule
     /// qui entoure (le hangar vu de la verrière du vaisseau amarré) et, en sens inverse, la salle
-    /// derrière la verrière, vue de dehors. Une salle aux vitrages non déclarés ne voit, et ne se
-    /// voit, que par ses portails.
+    /// derrière la verrière, vue de dehors. Une fenêtre se voit des deux côtés, même si un seul
+    /// d'entre eux la déclare ; une salle sans aucun vitrage déclaré, d'un côté ni de l'autre, ne
+    /// voit et ne se voit que par ses portails.
     pub fn seen_from<'a>(
         &'a self,
         from: &[&str],
@@ -388,7 +389,7 @@ impl Sector {
                     queue.push(next);
                 }
             }
-            queue.extend(self.window_neighbors(id).unwrap_or_default());
+            queue.extend(self.window_neighbors(id));
             // Par une verrière : ce qui entoure ; vue de dehors : ce qui est derrière une verrière.
             if cell.sees_outside() == Some(true) {
                 queue.extend(self.containers(id).into_iter().map(|c| c.id.as_str()));
@@ -404,12 +405,14 @@ impl Sector {
     }
 
     /// Les cellules qu'on voit par les vitrages de `cell` : celles qu'elle déclare, et celles qui
-    /// la déclarent (une fenêtre se voit des deux côtés), triées. `None` si `cell` ne déclare pas
-    /// ses vitrages ([`Cell::windows`]).
-    pub fn window_neighbors(&self, cell: &str) -> Option<Vec<&str>> {
-        let declared = self.cell(cell)?.windows.as_ref()?;
-        let mut out: Vec<&str> = declared
-            .iter()
+    /// la déclarent (une fenêtre se voit des deux côtés, même déclarée d'un seul : le chantier
+    /// déclare sa fenêtre, le hangar la voit aussi), triées, sans doublon.
+    pub fn window_neighbors(&self, cell: &str) -> Vec<&str> {
+        let mut out: Vec<&str> = self
+            .cell(cell)
+            .and_then(|c| c.windows.as_ref())
+            .into_iter()
+            .flatten()
             .map(String::as_str)
             .filter(|c| *c != OUTSIDE && *c != cell && self.cell(c).is_some())
             .collect();
@@ -424,7 +427,7 @@ impl Sector {
         }
         out.sort_unstable();
         out.dedup();
-        Some(out)
+        out
     }
 
     /// Les cellules qui entourent `cell` (sa boîte est dans la leur : le hangar autour des salles
@@ -874,11 +877,10 @@ mod tests {
         );
         let closed = |_: &Portal| false;
         let set = |ids: &[&'static str]| ids.iter().copied().collect::<BTreeSet<&str>>();
-        // Une fenêtre se voit des deux côtés ; le hangar ne déclare rien lui-même.
-        assert_eq!(docked.window_neighbors("hangar"), None);
-        assert_eq!(docked.window_neighbors("chantier"), Some(vec!["hangar"]));
-        declare(&mut port, "hangar", &[]);
-        assert_eq!(port.window_neighbors("hangar"), Some(vec!["chantier"]));
+        // Une fenêtre se voit des deux côtés, même si le hangar ne déclare rien lui-même.
+        assert_eq!(docked.window_neighbors("hangar"), vec!["chantier"]);
+        assert_eq!(docked.window_neighbors("chantier"), vec!["hangar"]);
+        assert!(docked.window_neighbors("hall").is_empty());
         // Du hangar : la fenêtre du chantier, et le cockpit par la verrière.
         assert_eq!(
             docked.seen_from(&["hangar"], closed),
@@ -899,6 +901,43 @@ mod tests {
         // Un vitrage sur une cellule inconnue est une erreur.
         declare(&mut port, "hall", &["nulle_part"]);
         assert_eq!(port.problems().len(), 1, "{:?}", port.problems());
+    }
+
+    #[test]
+    fn vitrages_declares_partout() {
+        // Ce que déclarera le lot D : la fenêtre des deux côtés, la verrière, rien ailleurs.
+        let mut ship = real("corvette.ron");
+        let mut port = real("spaceport.ron");
+        for c in ship.cells.iter_mut().chain(port.cells.iter_mut()) {
+            c.windows = Some(match c.id.as_str() {
+                "cockpit" => vec![OUTSIDE.to_owned()],
+                "chantier" => vec!["hangar".to_owned()],
+                "hangar" => vec!["chantier".to_owned()],
+                _ => Vec::new(),
+            });
+        }
+        let docked = dock(&ship, "@dock", &port, "@ship").unwrap_or_else(|e| panic!("{e}"));
+        assert!(docked.problems().is_empty(), "{:?}", docked.problems());
+        let closed = |_: &Portal| false;
+        let set = |ids: &[&'static str]| ids.iter().copied().collect::<BTreeSet<&str>>();
+        // Déclarée des deux côtés, la fenêtre n'est comptée qu'une fois.
+        assert_eq!(docked.window_neighbors("hangar"), vec!["chantier"]);
+        assert_eq!(docked.window_neighbors("chantier"), vec!["hangar"]);
+        let hangar = set(&["chantier", "cockpit", "hangar"]);
+        assert_eq!(docked.seen_from(&["hangar"], closed), hangar);
+        assert_eq!(docked.seen_from(&["chantier"], closed), hangar);
+        assert_eq!(docked.seen_from(&["cockpit"], closed), hangar);
+        assert_eq!(docked.seen_from(&["sas"], closed), set(&["sas"]));
+        assert_eq!(
+            docked.seen_from(&["hall"], closed),
+            set(&["couloir", "hall"])
+        );
+        assert_eq!(
+            docked.seen_from(&["couloir_avant"], closed),
+            set(&["couloir_arriere", "couloir_avant"])
+        );
+        // En vol, la verrière ne montre aucune cellule.
+        assert_eq!(ship.seen_from(&["cockpit"], closed), set(&["cockpit"]));
     }
 
     #[test]
