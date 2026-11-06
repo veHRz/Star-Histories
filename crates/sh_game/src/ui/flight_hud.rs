@@ -38,6 +38,7 @@ use crate::state::{ControlMode, ViewLevel};
 use crate::transition::{DockBeacon, Sequence};
 use crate::tutorial::{Stage, Tutorial, is_active, marker_spot};
 use crate::ui::theme::{self, Frame, UiFonts};
+use crate::views::set_px_if_changed;
 use crate::voyage::Location;
 
 pub struct FlightHudPlugin;
@@ -520,8 +521,8 @@ fn place_destination_marker(
             left + MARKER_WIDTH,
             top + MARKER_HEIGHT,
         ));
-        node.left = px(left);
-        node.top = px(top);
+        // Immobile, le repère ne relance pas la mise en page de l'interface (M11).
+        set_px_if_changed(&mut node, left, top);
         if text.0 != *label {
             text.0.clone_from(label);
         }

@@ -900,6 +900,8 @@ fn spawn_panel<const IN_GAME: bool>(mut commands: Commands, fonts: Res<UiFonts>)
     commands.spawn((
         Name::new("Encart des touches"),
         KeysPanel,
+        // Les étiquettes à pied s'y effacent au lieu de s'y lire au travers (M11).
+        crate::views::LabelFreeZone,
         scope,
         // Rien n'y retient un clic : la carte galactique reste cliquable dessous.
         Pickable::IGNORE,

@@ -70,6 +70,7 @@ use crate::ui::character::{CharacterScreen, ScreenView};
 use crate::ui::hud::Notice;
 use crate::ui::terminal::{Screen, Terminal};
 use crate::ui::theme::{self, Frame, UiFonts};
+use crate::views::set_px_if_changed;
 use crate::voyage::{Location, RoutePlan};
 
 pub struct TutorialPlugin;
@@ -1482,8 +1483,8 @@ fn place_marker(
     let top = (spot.y - 10.0).clamp(8.0, (window.height() - 48.0).max(8.0));
     match markers.single_mut() {
         Ok((_, mut node, mut label, mut visibility)) => {
-            node.left = px(left);
-            node.top = px(top);
+            // Immobile, le repère ne relance pas la mise en page de l'interface (M11).
+            set_px_if_changed(&mut node, left, top);
             if label.0 != text {
                 label.0 = text;
             }
