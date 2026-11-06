@@ -298,10 +298,11 @@ impl FootLabel {
 const FOOT_FADE_BAND: f32 = 1.0;
 const FOOT_FADE_TIME: f32 = 0.2;
 
-/// Un élément du HUD qu'une étiquette à pied ne recouvre jamais (M11, plaque vue sur la date) :
-/// la plaque s'efface en l'approchant, et a disparu quand elle le touche. Le bandeau du lieu le
-/// porte ; le coin haut droit (date, nouvelles, tutoriel : [`crate::clock::HudCorner`]) en est un
-/// d'office ; tout autre élément du HUD peut le recevoir (l'encart des touches).
+/// Un élément du HUD qu'une étiquette ne recouvre jamais (M11, plaque vue sur la date, repère
+/// vu sous l'encart des touches) : une plaque à pied s'efface en l'approchant et a disparu quand
+/// elle le touche ; un repère du système (`ui::flight_hud`) s'y réduit à son losange, ou
+/// disparaît si son losange y tombe. Le bandeau du lieu et l'encart des touches le portent ; le
+/// coin haut droit (date, nouvelles, tutoriel : [`crate::clock::HudCorner`]) en est un d'office.
 ///
 /// Pourquoi un effacement et pas l'ordre de dessin : les plaques sont **déjà** dessinées sous
 /// tout le HUD (`GlobalZIndex(-1)`, sous les racines à 0 et l'encart à 4). Mais ces éléments ne
@@ -431,8 +432,9 @@ fn drop_foot_plate(remove: On<Remove<FootLabel>>, mut commands: Commands, of: Qu
     }
 }
 
-/// Les zones du HUD que les étiquettes à pied laissent libres (voir [`LabelFreeZone`]).
-type FreeZones<'w, 's> = Query<
+/// Les zones du HUD que les étiquettes laissent libres (voir [`LabelFreeZone`]) : plaques à
+/// pied ici, repères du système aux commandes (`ui::flight_hud`).
+pub(crate) type FreeZones<'w, 's> = Query<
     'w,
     's,
     (
@@ -442,6 +444,20 @@ type FreeZones<'w, 's> = Query<
     ),
     Or<(With<HudCorner>, With<LabelFreeZone>)>,
 >;
+
+/// La place des zones libres au frame précédent, en px logiques (ceux de `Window::size` et des
+/// positions `px(…)` des étiquettes) ; un élément caché ou replié (`Display::None` : taille
+/// nulle) ne retient rien.
+pub(crate) fn free_zone_rects(zones: &FreeZones) -> Vec<Rect> {
+    zones
+        .iter()
+        .filter(|(node, _, visible)| visible.get() && !node.is_empty())
+        .map(|(node, transform, _)| {
+            let scale = node.inverse_scale_factor();
+            Rect::from_center_size(transform.translation * scale, node.size() * scale)
+        })
+        .collect()
+}
 
 /// Place les plaques à l'écran et règle leur fondu ; rien n'est écrit qui n'ait changé (en-tête
 /// du module).
@@ -461,16 +477,7 @@ fn place_foot_labels(
     let on_foot = *mode.get() == ControlMode::OnFoot;
     let current = states.as_ref().and_then(|s| s.current.as_deref());
     let step = time.delta_secs() / FOOT_FADE_TIME;
-    // Leur place du frame précédent, en px logiques (comme les repères du pilotage) ; un élément
-    // caché ou replié (`Display::None` : taille nulle) ne retient rien.
-    let free_zones: Vec<Rect> = zones
-        .iter()
-        .filter(|(node, _, visible)| visible.get() && !node.is_empty())
-        .map(|(node, transform, _)| {
-            let scale = node.inverse_scale_factor();
-            Rect::from_center_size(transform.translation * scale, node.size() * scale)
-        })
-        .collect();
+    let free_zones = free_zone_rects(&zones);
     for (label, at, mut of) in &mut labels {
         let anchor = at.translation();
         let mut target = 0.0;

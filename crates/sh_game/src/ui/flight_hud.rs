@@ -17,7 +17,8 @@
 //! est dans le champ : un losange, son nom, sa distance. Pas de flèche au bord de l'écran (le
 //! repère de destination garde la sienne), pas de chevauchement (les plus proches d'abord, nom
 //! masqué au-delà de [`NAV_NAMED`] ou s'il en couvrirait un autre, [`arrange_markers`]), rien
-//! quand la cible remplit l'écran. Le texte coûte cher au GPU intégré de référence : un ensemble
+//! quand la cible remplit l'écran ni sur les zones libres du HUD (encart des touches, bandeau
+//! du lieu, coin haut droit : [`crate::views::LabelFreeZone`]), qui sont translucides. Le texte coûte cher au GPU intégré de référence : un ensemble
 //! fixe de nœuds réutilisés, aucun spawn par frame, un `Text` réécrit seulement quand sa chaîne
 //! change (distance arrondie à trois chiffres, [`marker_distance`]).
 
@@ -38,7 +39,7 @@ use crate::state::{ControlMode, ViewLevel};
 use crate::transition::{DockBeacon, Sequence};
 use crate::tutorial::{Stage, Tutorial, is_active, marker_spot};
 use crate::ui::theme::{self, Frame, UiFonts};
-use crate::views::set_px_if_changed;
+use crate::views::{FreeZones, free_zone_rects, set_px_if_changed};
 use crate::voyage::Location;
 
 pub struct FlightHudPlugin;
@@ -605,8 +606,8 @@ fn fills_view(radius: f32, screen: Vec2) -> bool {
 
 /// Ce que montre chaque repère, dans l'ordre de `candidates` : la cible de l'autopilote, puis
 /// les plus proches d'abord ; au plus `slots` repères et `named` noms. Un losange qui couvrirait
-/// un repère déjà placé ou une zone de `blocked` (repère de destination, bandeau de pilotage)
-/// disparaît ; une étiquette qui en couvrirait un, ou sortirait de l'écran (`screen`), se réduit
+/// un repère déjà placé ou une zone de `blocked` (repère de destination, bandeau de pilotage,
+/// zones libres du HUD : encart des touches, bandeau du lieu, coin haut droit) disparaît ; une étiquette qui en couvrirait un, ou sortirait de l'écran (`screen`), se réduit
 /// au losange. Logique pure.
 fn arrange_markers(
     candidates: &[MarkerCandidate],
@@ -682,10 +683,11 @@ fn place_nav_markers(
         &GlobalTransform,
         Option<&SurfaceBody>,
     )>,
-    (camera, window, hud): (
+    (camera, window, hud, zones): (
         Query<(&Camera, &GlobalTransform), With<WorldCamera>>,
         Single<&Window, With<PrimaryWindow>>,
         Query<(&ComputedNode, &UiGlobalTransform), With<FlightHud>>,
+        FreeZones,
     ),
     mut slots: Query<(Entity, &mut NavMarker, &mut Node, &mut Visibility)>,
     mut parts: MarkerParts,
@@ -766,7 +768,9 @@ fn place_nav_markers(
         });
     }
     // Les zones à laisser libres : l'étiquette de la destination, le bandeau de pilotage (sa
-    // place du frame précédent, en px logiques).
+    // place du frame précédent, en px logiques), et celles des plaques à pied (encart des
+    // touches, bandeau du lieu, coin haut droit : `views::LabelFreeZone`). Ces éléments sont
+    // translucides : un repère dessous s'y lisait au travers, entre les lignes de l'encart.
     let mut blocked: Vec<Rect> = shown.rect.into_iter().collect();
     if let Ok((node, transform)) = hud.single()
         && !node.is_empty()
@@ -777,6 +781,7 @@ fn place_nav_markers(
             node.size() * scale,
         ));
     }
+    blocked.extend(free_zone_rects(&zones));
     let looks = arrange_markers(&candidates, &blocked, size, NAV_SLOTS, NAV_NAMED);
     for (target, look) in found.iter_mut().zip(looks) {
         target.look = look;
@@ -987,6 +992,32 @@ mod tests {
             NAV_NAMED,
         );
         assert_eq!(looks, vec![MarkerLook::Glyph]);
+    }
+
+    /// Le retour de l'auteur : « Hexis 924 km » se lisait à travers l'encart des touches.
+    #[test]
+    fn les_zones_libres_du_hud_ne_portent_aucun_repere() {
+        use MarkerLook::{Full, Glyph, Hidden};
+        // Encart des touches déplié (haut gauche), coin haut droit (date et nouvelles).
+        let keys = Rect::new(20.0, 88.0, 300.0, 420.0);
+        let corner = Rect::new(1180.0, 16.0, 1580.0, 140.0);
+        let looks = arrange_markers(
+            &[
+                // Losange sous l'encart : rien.
+                candidate(120.0, 200.0, 1.0e6),
+                // Losange dans le coin : rien.
+                candidate(1400.0, 60.0, 2.0e6),
+                // Losange libre, mais l'étiquette entrerait dans le coin : le losange seul.
+                candidate(1100.0, 60.0, 3.0e6),
+                // Juste à droite de l'encart, l'étiquette part vers la droite : tout.
+                candidate(330.0, 200.0, 4.0e6),
+            ],
+            &[keys, corner],
+            SCREEN,
+            NAV_SLOTS,
+            NAV_NAMED,
+        );
+        assert_eq!(looks, vec![Hidden, Hidden, Glyph, Full]);
     }
 
     #[test]
