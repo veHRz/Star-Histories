@@ -704,16 +704,21 @@ mod tests {
     #[test]
     fn compteur_lisse() {
         let mut window = FpsWindow::default();
-        for _ in 0..29 {
-            assert_eq!(window.push(1.0 / 60.0, 0.5), None);
+        // 20 images à 50 i/s (0,40 s), puis une lente de 50 ms (0,45 s) : la fenêtre de 0,5 s
+        // n'est pas pleine. Aucun cumul ne tombe près de 0,5 s : pas de bord flottant.
+        for _ in 0..20 {
+            assert_eq!(window.push(0.02, 0.5), None);
         }
-        // Une image lente au milieu : la moyenne bouge peu, le pire la montre.
         assert_eq!(window.push(0.05, 0.5), None);
+        // 0,47 s, 0,49 s : toujours rien ; 0,51 s : la lecture sort.
+        assert_eq!(window.push(0.02, 0.5), None);
+        assert_eq!(window.push(0.02, 0.5), None);
         let reading = window
-            .push(1.0 / 60.0, 0.5)
+            .push(0.02, 0.5)
             .unwrap_or_else(|| panic!("pas de lecture"));
+        // Une image lente au milieu : la moyenne bouge peu, le pire la montre.
         assert!((reading.worst_ms - 50.0).abs() < 1e-9);
-        assert!(reading.fps > 55.0 && reading.fps < 60.0, "{reading:?}");
+        assert!((reading.fps - 24.0 / 0.51).abs() < 1e-6, "{reading:?}");
         assert!((reading.mean_ms - 1000.0 / reading.fps).abs() < 1e-9);
         // La fenêtre repart de zéro ; une durée nulle ou absurde est ignorée.
         assert_eq!(window, FpsWindow::default());
