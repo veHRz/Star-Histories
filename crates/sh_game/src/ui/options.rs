@@ -1,7 +1,6 @@
 //! Écran des options (M7, à onglets depuis M9), commun au menu principal et au menu de pause.
 //! Cinq onglets : Général (disposition du clavier, encart des touches), Affichage (qualité,
-//! résolution dynamique, plein écran, limite d'images, synchronisation verticale, compteur
-//! d'images : M11), Gameplay (tutoriel, conseils), Son (volumes) et Contrôles, qui a ses pages :
+//! plein écran, limite d'images, synchronisation verticale, compteur d'images : M11), Gameplay (tutoriel, conseils), Son (volumes) et Contrôles, qui a ses pages :
 //! Souris (sensibilités à pied et au pilotage, inversion), puis une page de touches par
 //! catégorie (Interface, À pied, Pilotage, Carte : `input::KEY_ACTIONS`, règles dans `options`).
 //!
@@ -318,8 +317,6 @@ enum Row {
     Layout,
     KeyHelp,
     Preset,
-    /// Résolution dynamique (M11, `graphics::DynamicResolution`).
-    DynamicResolution,
     Fullscreen,
     /// Limite d'images par seconde (M11, `frame_pace::FPS_LIMITS`).
     FpsLimit,
@@ -339,7 +336,6 @@ impl Row {
             Row::Layout => "options.layout",
             Row::KeyHelp => "options.key_help",
             Row::Preset => "options.graphics",
-            Row::DynamicResolution => "options.dynamic_resolution",
             Row::Fullscreen => "options.fullscreen",
             Row::FpsLimit => "options.fps_limit",
             Row::Vsync => "options.vsync",
@@ -363,7 +359,6 @@ fn rows(page: Page) -> Vec<Row> {
         Page::General => vec![Row::Layout, Row::KeyHelp],
         Page::Display => vec![
             Row::Preset,
-            Row::DynamicResolution,
             Row::Fullscreen,
             Row::FpsLimit,
             Row::Vsync,
@@ -429,7 +424,6 @@ fn adjust(row: Row, step: i8, s: &mut UserSettings, keyboard: Option<&sh_data::K
             s.preset = PRESETS[cycle(index, PRESETS.len())].0;
         }
         Row::KeyHelp => s.key_help = !s.key_help,
-        Row::DynamicResolution => s.dynamic_resolution = !s.dynamic_resolution,
         Row::Fullscreen => s.fullscreen = !s.fullscreen,
         Row::FpsLimit => s.fps_limit = step_fps_limit(s.fps_limit, step),
         Row::Vsync => s.vsync = !s.vsync,
@@ -938,7 +932,6 @@ fn settings_page(
                     }
                 }
                 Row::KeyHelp => toggle(r, fonts, texts, row, s.key_help),
-                Row::DynamicResolution => toggle(r, fonts, texts, row, s.dynamic_resolution),
                 Row::Fullscreen => toggle(r, fonts, texts, row, s.fullscreen),
                 Row::FpsLimit => {
                     let value = if s.fps_limit == 0 {
@@ -1435,15 +1428,10 @@ mod tests {
         adjust(Row::Vsync, 1, &mut s, None);
         adjust(Row::ShowFps, -1, &mut s, None);
         assert!(s.vsync && s.show_fps);
-        // Résolution dynamique : activée par défaut, une bascule.
-        assert!(s.dynamic_resolution);
-        adjust(Row::DynamicResolution, 1, &mut s, None);
-        assert!(!s.dynamic_resolution);
         assert_eq!(
             rows(Page::Display),
             [
                 Row::Preset,
-                Row::DynamicResolution,
                 Row::Fullscreen,
                 Row::FpsLimit,
                 Row::Vsync,

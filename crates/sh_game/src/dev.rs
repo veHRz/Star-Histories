@@ -94,7 +94,6 @@ use bevy::winit::WinitSettings;
 
 use crate::data::Data;
 use crate::frame_pace::{FrameLimit, PaceShared, RenderSample};
-use crate::graphics::DynamicResolution;
 use crate::loading::StartRequest;
 use crate::sector::streaming::{CellInstance, CellStates, Quality};
 use crate::state::{AppState, EnterGame, ViewLevel};
@@ -386,41 +385,6 @@ struct FrameStats {
     frames: Vec<f32>,
     /// Les pires frames, de la pire à la moins mauvaise, avec leur contexte.
     worst: Vec<WorstFrame>,
-    /// L'échelle de rendu, sur les frames mesurées où la résolution dynamique était active.
-    scale: ScaleStats,
-}
-
-/// L'échelle de rendu de la résolution dynamique au fil de la mesure : moyenne, la plus basse,
-/// paliers descendus et remontés.
-#[derive(Clone, Debug, Default, PartialEq)]
-struct ScaleStats {
-    frames: u32,
-    total: f64,
-    lowest: f32,
-    last: Option<f32>,
-    downs: u32,
-    ups: u32,
-}
-
-impl ScaleStats {
-    fn push(&mut self, scale: f32) {
-        if self.frames == 0 {
-            self.lowest = scale;
-        }
-        self.frames += 1;
-        self.total += f64::from(scale);
-        self.lowest = self.lowest.min(scale);
-        match self.last {
-            Some(last) if scale < last - 1e-4 => self.downs += 1,
-            Some(last) if scale > last + 1e-4 => self.ups += 1,
-            _ => {}
-        }
-        self.last = Some(scale);
-    }
-
-    fn mean(&self) -> f64 {
-        self.total / f64::from(self.frames.max(1))
-    }
 }
 
 /// Une chute : au moins [`DROP_MIN_FRAMES`] frames de suite à plus de [`DROP_FACTOR`] fois la
@@ -460,7 +424,6 @@ struct FrameProbe<'w, 's> {
     meshes: Query<'w, 's, &'static ViewVisibility, With<Mesh3d>>,
     limit: Option<Res<'w, FrameLimit>>,
     pace: Option<Res<'w, PaceShared>>,
-    dynamic: Option<Res<'w, DynamicResolution>>,
     clock: Res<'w, UpdateClock>,
 }
 
@@ -490,7 +453,6 @@ impl FrameProbe<'_, '_> {
             entities: self.entities.count_spawned(),
             point_lights: count(self.lights.iter().filter(|v| v.get()).count()),
             meshes: count(self.meshes.iter().filter(|v| v.get()).count()),
-            render_scale: self.dynamic.as_ref().map_or(1.0, |d| d.scale()),
             ..default()
         };
         for (instance, visibility) in &self.instances {
@@ -527,8 +489,6 @@ struct FrameContext {
     entities: u32,
     point_lights: u32,
     meshes: u32,
-    /// Échelle de rendu de la 3D (résolution dynamique, sinon celle du préréglage).
-    render_scale: f32,
 }
 
 /// Les colonnes de la trace par frame (`SH_FRAME_TRACE`). `frame` compte depuis la fin du
@@ -539,14 +499,10 @@ struct FrameContext {
 /// `upload_kb` (envois au GPU) décrivent la dernière image rendue, une frame derrière ; `view`,
 /// `sector`, `cell` : où est le joueur ; `cells_*` : instances de cellule (Locales, Sectorielles,
 /// cachées, apparues et retirées pendant la frame) ; `point_lights` et `meshes` : visibles d'au
-/// moins une vue ; `warmup` : frame exclue des mesures (compilation des premiers pipelines) ;
-/// `render_scale` : échelle de rendu de la 3D (`graphics::DynamicResolution`) ; `gpu_ms` : travail
-/// du GPU pour l'image rendue d'avant, mesuré par le limiteur (`RenderSample::gpu_ms`, 0 : pas de
-/// mesure ; trop fort sans limite d'images).
+/// moins une vue ; `warmup` : frame exclue des mesures (compilation des premiers pipelines).
 const TRACE_HEADER: &str = "frame,time_s,frame_ms,update_ms,render_ms,pace_wait_ms,pace_late,\
 fps_limit,vsync,state,view,sector,cell,cells_local,cells_sector,cells_hidden,cells_spawned,\
-cells_removed,entities,point_lights,meshes,pipelines,pipelines_waiting,upload_kb,warmup,\
-render_scale,gpu_ms";
+cells_removed,entities,point_lights,meshes,pipelines,pipelines_waiting,upload_kb,warmup";
 
 impl FrameContext {
     /// Une ligne de la trace, dans l'ordre de [`TRACE_HEADER`].
@@ -555,7 +511,7 @@ impl FrameContext {
         let r = &self.render;
         let _ = writeln!(
             out,
-            "{frame},{time_s:.4},{ms:.3},{:.3},{:.3},{:.3},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{:.1},{},{:.2},{:.3}",
+            "{frame},{time_s:.4},{ms:.3},{:.3},{:.3},{:.3},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{:.1},{}",
             self.update_ms,
             r.render_ms,
             r.wait_ms,
@@ -578,8 +534,6 @@ impl FrameContext {
             r.pipelines_waiting,
             r.upload_bytes as f64 / 1024.0,
             u8::from(warmup),
-            self.render_scale,
-            r.gpu_ms,
         );
     }
 
@@ -594,8 +548,7 @@ impl FrameContext {
         format!(
             "{}/{}, secteur {}, cellule {}, cellules {} L + {} S ({} cachées, +{} −{}), {} entités, \
              {} lumières et {} maillages visibles ; maj {:.1} ms, rendu {:.1} ms, attente {:.1} ms{}, \
-             pipelines {} ({} en compilation), envoi {:.0} Ko, limite {limit}{vsync}, \
-             échelle {:.0} %, GPU {:.1} ms",
+             pipelines {} ({} en compilation), envoi {:.0} Ko, limite {limit}{vsync}",
             self.state,
             self.view,
             self.sector,
@@ -615,8 +568,6 @@ impl FrameContext {
             r.pipelines,
             r.pipelines_waiting,
             r.upload_bytes as f64 / 1024.0,
-            self.render_scale * 100.0,
-            r.gpu_ms,
         )
     }
 }
@@ -870,9 +821,6 @@ fn record_frame_time(
         stats.over_33ms += 1;
     }
     stats.frames.push(ms as f32);
-    if let Some(dynamic) = probe.dynamic.as_deref().filter(|d| d.enabled()) {
-        stats.scale.push(dynamic.scale());
-    }
 }
 
 fn report_on_exit(
@@ -911,19 +859,6 @@ fn report_on_exit(
             s.drops.count,
             s.drops.longest_frames,
             s.drops.longest_ms
-        );
-    }
-    // Seulement si la résolution dynamique était active (joueur, ou `SH_DYNRES=1`).
-    let scale = &stats.scale;
-    if scale.frames > 0 {
-        info!(
-            "temps de frame : échelle de rendu moyenne {:.0} %, la plus basse {:.0} %, {} palier(s) ({} descente(s), {} remontée(s)), sur {} frames",
-            scale.mean() * 100.0,
-            f64::from(scale.lowest) * 100.0,
-            scale.downs + scale.ups,
-            scale.downs,
-            scale.ups,
-            scale.frames
         );
     }
     let kept = stats.worst.len();
@@ -1229,11 +1164,6 @@ mod tests {
             view: "sector",
             sector: "spaceport".into(),
             cell: "sas".into(),
-            render_scale: 0.7,
-            render: RenderSample {
-                gpu_ms: 12.5,
-                ..RenderSample::default()
-            },
             ..FrameContext::default()
         };
         context.write_csv(&mut out, 42, 1.5, 16.7, false);
@@ -1242,28 +1172,7 @@ mod tests {
         assert_eq!(line.split(',').count(), columns, "{line}");
         assert!(line.starts_with("42,1.5000,16.700,"), "{line}");
         assert!(line.contains(",sector,spaceport,sas,"), "{line}");
-        // Les colonnes de M11 (lot R) en fin de ligne : les précédentes ne bougent pas.
-        assert!(TRACE_HEADER.ends_with(",warmup,render_scale,gpu_ms"));
-        assert!(line.ends_with(",0,0.70,12.500"), "{line}");
-        let described = context.describe();
-        assert!(
-            described.contains("échelle 70 %") && described.contains("GPU 12.5 ms"),
-            "{described}"
-        );
-    }
-
-    /// L'échelle de rendu au fil de la mesure : moyenne, la plus basse, paliers.
-    #[test]
-    fn echelle_de_rendu_resumee() {
-        let mut s = ScaleStats::default();
-        for scale in [0.8, 0.8, 0.75, 0.7, 0.7, 0.75, 0.8] {
-            s.push(scale);
-        }
-        assert_eq!(s.frames, 7);
-        assert!((s.lowest - 0.7).abs() < 1e-6);
-        assert_eq!((s.downs, s.ups), (2, 2));
-        assert!((s.mean() - 5.3 / 7.0).abs() < 1e-6, "{}", s.mean());
-        assert_eq!(ScaleStats::default().mean(), 0.0);
+        assert!(!context.describe().is_empty());
     }
 }
 

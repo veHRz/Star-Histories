@@ -29,9 +29,12 @@
 //!
 //! Limite d'images, synchronisation verticale et compteur d'images (M11) : réglés ici, appliqués
 //! par `frame_pace` (qui laisse `SH_FPS_LIMIT` et `SH_VSYNC` décider pour l'autopilote).
-//! Résolution dynamique (M11) : réglée ici, appliquée par `graphics` ; coupée pour l'autopilote
-//! sauf `SH_DYNRES=1`. Sans fichier de réglages (première partie), le préréglage suit le GPU :
-//! Bas sur un GPU intégré, Moyen ailleurs ([`default_preset_for_gpu`]).
+//! Sans fichier de réglages (première partie), le préréglage suit le GPU : Bas sur un GPU
+//! intégré, Moyen ailleurs ([`default_preset_for_gpu`]).
+//!
+//! La résolution dynamique de la vague 3 de M11 a été retirée (décision de l'auteur : la qualité
+//! Haute devenait floue). Un fichier qui contient encore `dynamic_resolution` se relit : serde
+//! ignore les champs inconnus (pas de `deny_unknown_fields`, voir `ancien_champ_ignore`).
 
 use std::collections::BTreeMap;
 
@@ -126,10 +129,6 @@ pub struct UserSettings {
     pub vsync: bool,
     /// Compteur d'images par seconde dans le coin de l'écran (M11).
     pub show_fps: bool,
-    /// Résolution dynamique (M11, `graphics`) : l'échelle de rendu de la 3D descend sous celle
-    /// du préréglage quand le GPU n'a plus de marge. Activée par défaut (aussi pour un fichier
-    /// plus ancien, qui n'a pas ce champ).
-    pub dynamic_resolution: bool,
 }
 
 impl Default for UserSettings {
@@ -152,7 +151,6 @@ impl Default for UserSettings {
             fps_limit: DEFAULT_FPS_LIMIT,
             vsync: false,
             show_fps: false,
-            dynamic_resolution: true,
         }
     }
 }
@@ -585,9 +583,8 @@ fn settings_path() -> std::path::PathBuf {
 /// d'environnement. `SH_KEYS=KeyE:KeyF,foot_jump:KeyB+KeyN,…` : un remappage imposé, pour le
 /// vérifier. L'autopilote est muet (il tourne pendant que l'auteur travaille), sauf `SH_AUDIO=1`,
 /// et sans conseils ni tutoriel (captures propres), sauf `SH_TIPS=1` et `SH_TUTORIAL=1`. Il n'a
-/// **ni limite d'images ni résolution dynamique** : ses mesures voient le vrai coût d'une image
-/// et restent comparables d'un jalon à l'autre (`SH_FPS_LIMIT` pose une limite, `frame_pace` ;
-/// `SH_DYNRES=1` la résolution dynamique, `graphics`).
+/// **pas de limite d'images** : ses mesures voient le vrai coût d'une image et restent
+/// comparables d'un jalon à l'autre (`SH_FPS_LIMIT` en pose une, `frame_pace`).
 fn autopilot_settings(env: impl Fn(&str) -> Option<String>) -> UserSettings {
     let defaults = UserSettings::default();
     let mut settings = UserSettings {
@@ -599,7 +596,6 @@ fn autopilot_settings(env: impl Fn(&str) -> Option<String>) -> UserSettings {
             0.0
         },
         fps_limit: 0,
-        dynamic_resolution: env("SH_DYNRES").is_some_and(|v| v.trim() == "1"),
         ..defaults
     };
     settings.apply_key_spec(&env("SH_KEYS").unwrap_or_default());
@@ -1212,17 +1208,15 @@ mod tests {
     fn reglages_de_l_autopilote() {
         let s = autopilot_settings(|_| None);
         assert_eq!(s.fps_limit, 0);
-        assert!(!s.dynamic_resolution);
         assert_eq!(s.master_volume, 0.0);
         assert!(!s.tips && !s.tutorial);
         let s = autopilot_settings(|name| match name {
-            "SH_AUDIO" | "SH_TIPS" | "SH_DYNRES" => Some("1".into()),
+            "SH_AUDIO" | "SH_TIPS" => Some("1".into()),
             "SH_TUTORIAL" => Some("0".into()),
             "SH_KEYS" => Some("foot_interact:KeyF".into()),
             _ => None,
         });
         assert_eq!(s.fps_limit, 0);
-        assert!(s.dynamic_resolution);
         assert_eq!(s.master_volume, UserSettings::default().master_volume);
         assert!(s.tips && !s.tutorial);
         assert_eq!(
@@ -1244,17 +1238,58 @@ mod tests {
         }
         // Le défaut de la structure (fichier illisible, autopilote) reste Moyen.
         assert_eq!(UserSettings::default().preset, PresetLevel::Medium);
-        assert!(UserSettings::default().dynamic_resolution);
     }
 
-    /// Le choix du joueur, gardé : « Non » écrit dans le fichier se relit « Non ».
+    /// Le fichier de l'auteur, écrit pendant la vague 3 de M11, contient encore
+    /// `dynamic_resolution` (option retirée) : il se relit sans erreur, et aucun autre réglage
+    /// n'est perdu.
     #[test]
-    fn resolution_dynamique_coupee_gardee() {
+    fn ancien_champ_ignore() {
         let path = temp_file("dynres");
-        std::fs::write(&path, "(dynamic_resolution: false)").unwrap_or_else(|e| panic!("{e}"));
+        std::fs::write(
+            &path,
+            r#"(
+    preset: High,
+    fullscreen: true,
+    master_volume: 0.4,
+    music_volume: 0.6,
+    effects_volume: 0.8,
+    mouse_sensitivity: 1.2,
+    piloting_sensitivity: 0.9,
+    invert_y: false,
+    tips: false,
+    tutorial: false,
+    keyboard_layout: "qwerty",
+    key_help: false,
+    bindings: {
+        "foot_interact": (primary: "KeyF", secondary: ""),
+    },
+    fps_limit: 75,
+    vsync: true,
+    show_fps: true,
+    dynamic_resolution: true,
+)"#,
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
         let back: UserSettings = sh_data::read_ron(&path).unwrap_or_else(|e| panic!("{e}"));
         let _ = std::fs::remove_file(&path);
-        assert!(!back.dynamic_resolution);
+        assert_eq!(back.preset, PresetLevel::High);
+        assert!(back.fullscreen && back.vsync && back.show_fps);
+        assert!(!back.tips && !back.tutorial && !back.key_help);
+        assert_eq!(back.master_volume, 0.4);
+        assert_eq!(back.piloting_sensitivity, 0.9);
+        assert_eq!(back.keyboard_layout, "qwerty");
+        assert_eq!(back.fps_limit, 75);
+        assert_eq!(
+            back.slots(action("foot_interact")).primary,
+            Some(KeyCode::KeyF)
+        );
+        // Réécrit, il n'a plus le champ retiré.
+        let path = temp_file("dynres_reecrit");
+        sh_data::write_ron(&path, &back).unwrap_or_else(|e| panic!("{e}"));
+        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        let _ = std::fs::remove_file(&path);
+        assert!(!text.contains("dynamic_resolution"), "{text}");
     }
 
     /// Un fichier de M7 (une touche par touche d'origine) se relit sans erreur.
@@ -1291,8 +1326,6 @@ mod tests {
             (s.fps_limit, s.vsync, s.show_fps),
             (DEFAULT_FPS_LIMIT, false, false)
         );
-        // Résolution dynamique (M11) absente du fichier : activée.
-        assert!(s.dynamic_resolution);
         assert!(s.legacy_keys.is_empty());
         // L'ancienne touche E (interagir, roulis à droite) est sur F partout, et F sur E.
         for (id, key) in [
