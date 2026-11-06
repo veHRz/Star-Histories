@@ -51,11 +51,22 @@ assets/textures/lightmaps/spaceport/, descripteur assets/data/propositions/secto
 art/places/spaceport.blend.
 
     blender --background --factory-startup --python tools/blender/places/spaceport.py -- \
-        [--no-bake] [--lit] [--previews] [--only a,b] [--samples N] [--res 1280x720]
+        [--no-bake] [--lit] [--previews] [--only a,b] [--samples N] [--res 1280x720] \
+        [--quick] [--cells a,b] [--check [--contacts]]
 
 `--no-bake` : pas de lightmap (itération) ; `--lit` : aperçus Cycles avec les lampes ;
 `--previews` : aperçus « comme dans le jeu » (lightmaps appliquées). Aperçus dans
-target/art-previews/D/. Repères Blender : X = est, Y = nord, Z = haut.
+target/art-previews/D/ (SH_PREVIEW_DIR pour un autre dossier). Repères Blender : X = est,
+Y = nord, Z = haut.
+
+`--quick [--cells a,b]` : itération, ni export ni bake, aperçus éclairés des seules cellules
+citées. `--cells a,b` sans `--quick` (M11) : export partiel, seuls les modèles et les lightmaps
+de ces cellules sont réécrits (les autres sont construites pour le bake et le .blend, mais leurs
+fichiers ne bougent pas ; le descripteur garde leurs expositions). `--check [--cells a,b]` (M11) :
+contrôle des faces coplanaires qui se recouvrent (z-fighting) des cellules citées (défaut
+COPLANAR_STRICT), faces cachées retirées comme à l'export, voisines comprises ; rien n'est écrit.
+Les cellules de COPLANAR_STRICT sont aussi contrôlées à chaque export, qui échoue s'il y reste
+une paire fautive faite par ce script.
 """
 
 from __future__ import annotations
@@ -81,7 +92,8 @@ import sector_tools as st  # noqa: E402
 import ship_interior as kit  # noqa: E402
 
 SECTOR = "spaceport"
-PREVIEWS = c.ROOT / "target" / "art-previews" / "D"
+# Dossier des aperçus ; SH_PREVIEW_DIR (sous target/art-previews/) pour un autre lot (M11 : m11-d).
+PREVIEWS = c.ROOT / "target" / "art-previews" / os.environ.get("SH_PREVIEW_DIR", "D")
 
 # --- Le vaisseau amarré (cotes du lot de l'intérieur, repère du jeu du vaisseau) ---------------
 # Cotes de l'intérieur type `corvette` (lot B de M9, définitives) : boîte englobante des cellules,
@@ -241,12 +253,89 @@ def _prepare_spaceport(objects):
         _repack(objects, res)
         got = lm.density(objects, res)
     _THICKENED.append(n)
+    # M11 : contrôle de coplanarité de ce qui est exporté (faces cachées déjà retirées) pour les
+    # cellules nettoyées ; l'export échoue s'il reste une paire fautive faite par ce script.
+    cids = {coll.name[len("CELL_"):] for o in objects for coll in o.users_collection if coll.name.startswith("CELL_")}
+    for cid in sorted(cids & set(COPLANAR_STRICT)):
+        lines, mine = coplanar_summary(cid, coplanar_faces(objects))
+        _COPLANAR_REPORT.extend(lines)
+        if mine:
+            raise RuntimeError("\n".join(lines))
     return res, got
 
 
 _PREPARE = lm.prepare
 _THICKENED: list[int] = []
+_COPLANAR_REPORT: list[str] = []
 lm.prepare = _prepare_spaceport
+
+# --- Export partiel (M11) : `--cells a,b` sans `--quick` -------------------------------------------
+# Toutes les cellules sont construites, dépliées et fusionnées comme d'habitude (le .blend reste
+# complet ; au bake, les voisines occultent, renvoient la lumière et leurs lampes éclairent par les
+# portes), mais seuls les modèles et les lightmaps des cellules demandées sont écrits ; le
+# descripteur garde l'exposition des autres lightmaps (relue dans le descripteur actuel).
+_ONLY: set[str] | None = None
+_EXPORT_GLTF = c.export_gltf
+_BAKE_CELLS = lm.bake_cells
+
+
+def _export_gltf_only(rel_path: str, objects):
+    """`common.export_gltf`, sauf pour un modèle de cellule hors de l'export partiel : rien
+    n'est écrit (le fichier existant reste tel quel)."""
+    stem = Path(rel_path).stem
+    cell = stem[: -len("_lod")] if stem.endswith("_lod") else stem
+    if _ONLY is not None and cell in CELLS and cell not in _ONLY:
+        return c.ROOT / rel_path
+    return _EXPORT_GLTF(rel_path, objects)
+
+
+class _BakeOnly(dict):
+    """Entrée de `lightmap.bake_cells` pour un export partiel : `values()` donne toutes les
+    cellules (objets rendus pendant le bake, lampes), `items()` seulement celles à cuire (la
+    boucle du bake)."""
+
+    def __init__(self, data, only):
+        super().__init__(data)
+        self.only = set(only)
+
+    def items(self):
+        return [(cid, v) for cid, v in super().items() if cid in self.only]
+
+
+def _ron_lightmaps(rel: str) -> dict:
+    """Lightmaps citées par le descripteur actuel : {cellule: {"image", "exposure"}}."""
+    path = c.ROOT / rel
+    if not path.exists():
+        return {}
+    pat = re.compile(r'lightmap: \(image: "([^"]+)", exposure: ([0-9.]+)\)')
+    return {Path(img).stem: {"image": img, "exposure": float(exp)} for img, exp in pat.findall(path.read_text(encoding="utf-8"))}
+
+
+def _bake_cells_only(cells, out_dir, lamps_coll):
+    """`lightmap.bake_cells`, restreint aux cellules de l'export partiel ; les PNG des autres
+    cellules ne doivent pas bouger (vérifié), leur exposition vient du descripteur actuel."""
+    if _ONLY is None:
+        return _BAKE_CELLS(cells, out_dir, lamps_coll)
+    import hashlib
+
+    def digests():
+        out = {}
+        for cid in cells:
+            png = c.ROOT / "assets" / out_dir / f"{cid}.png"
+            if cid not in _ONLY and png.exists():
+                out[cid] = hashlib.sha256(png.read_bytes()).hexdigest()
+        return out
+
+    before = digests()
+    baked = _BAKE_CELLS(_BakeOnly(cells, _ONLY), out_dir, lamps_coll)
+    if digests() != before or set(baked) != set(_ONLY) & set(cells):
+        raise RuntimeError(f"export partiel : bake inattendu ({sorted(baked)} cuites, {sorted(_ONLY)} demandées)")
+    kept = _ron_lightmaps(f"assets/data/propositions/sectors/{SECTOR}.ron")
+    return {cid: baked.get(cid, kept.get(cid)) for cid in cells if cid in baked or cid in kept}
+
+
+c.export_gltf = _export_gltf_only
+lm.bake_cells = _bake_cells_only
 
 
 def _snap_up(v: float, g: float = 2.0) -> float:
@@ -359,6 +448,11 @@ WINDOWS = {
     "chantier": [("E",) + WINDOW],
     "hangar": [("W",) + WINDOW],
 }
+# M11 (streaming) : cellules vues par une vitre (`sector_tools.sector_ron`, champ `windows`).
+# Seule la fenêtre du chantier traverse un mur (WINDOWS) ; le verre de la Banque (guichets,
+# cloisons), du bureau (cloison du comptoir) et les bouteilles de la taverne restent dans leur
+# cellule, la porte de baie du hangar est opaque.
+WINDOW_VIEWS = {"chantier": ["hangar"], "hangar": ["chantier"]}
 
 SPAWNS = [
     # Au pied de la passerelle, côté hangar, regard vers le vaisseau (cap −90° = +X).
@@ -425,6 +519,11 @@ def place(objs, center, facing):
         x, y = obj.location.x, obj.location.y
         obj.location = (center[0] + x * cs - y * sn, center[1] + x * sn + y * cs, center[2] + obj.location.z)
         obj.rotation_euler[2] += facing
+
+
+# Noms des maillages faits par le kit (`Cell.add`, `Cell.shell`) : le contrôle de coplanarité
+# sépare ce qui se corrige ici de ce qui revient au kit (`tools/blender/kit/`).
+KIT_OBJECTS: set[str] = set()
 
 
 class Cell:
@@ -521,6 +620,7 @@ class Cell:
             col = []
             structure = False
         self.visual.extend(vis)
+        KIT_OBJECTS.update(o.name for o in vis)
         if structure:
             self.structure.extend(vis)
         self.colliders.extend(col)
@@ -544,6 +644,7 @@ class Cell:
 
     def shell(self, shell):
         self.visual.extend(shell["visual"])
+        KIT_OBJECTS.update(o.name for o in shell["visual"])
         self.structure.extend(shell["structure"])
         self.colliders.extend(shell["colliders"])
         self.marks.extend(shell.get("marks", []))
@@ -815,31 +916,80 @@ def stall(k: Cell, tag, center, facing, body: str, roof: str, wares: list, count
 # --- Pièces nouvelles (M9) ---------------------------------------------------------------------
 
 
-def partition(k: Cell, tag, p0, p1, height=1.05, glass_top=2.1):
+def partition(k: Cell, tag, p0, p1, height=1.05, glass_top=2.1, *, seal=False, joint_a=None, joint_b=None):
     """Cloison de guichet le long de X ou de Y, de p0 à p1 (x, y) : caisson noir à lisse jaune,
     plinthe, vitrage jusqu'à `glass_top` (0 : sans) ; collider plein (le joueur ne passe pas
-    derrière les comptoirs)."""
+    derrière les comptoirs).
+
+    M11 (`seal=True`, la Banque ; les autres salles gardent leur géométrie tant qu'elles ne sont
+    pas réexportées) : aucune face coplanaire (`coplanar_faces`). Caisson enfoncé de 5 mm dans la
+    lisse jaune (son dessus affleurait le plateau d'un comptoir voisin), vitrage enfoncé de 5 mm
+    dans la lisse jaune et 5 mm sous le haut (il touchait la lisse, le fronton), montants de 5 cm
+    d'épaisseur sous la lisse haute de 6 cm (leurs flancs l'affleuraient), enfoncés dans la lisse
+    jaune et dans la lisse haute. `joint_a` / `joint_b` (bout p0 / p1) : "through" (la cloison
+    traverse l'angle : chaque pièce prolongée de sa demi-épaisseur, montant d'angle centré sur le
+    point) ou "butt" (elle bute contre une cloison "through" : chaque pièce arrêtée contre la même
+    pièce de l'autre, pas de montant à ce bout) ; None : bout libre."""
     (ax, ay), (bx, by) = p0, p1
     along_x = abs(bx - ax) >= abs(by - ay)
     L = abs(bx - ax) if along_x else abs(by - ay)
     cx, cy = (ax + bx) / 2, (ay + by) / 2
+    # Abscisse le long de la cloison : p0 du côté négatif.
+    sgn = 1.0 if (bx - ax if along_x else by - ay) >= 0 else -1.0
+    if not seal and (joint_a or joint_b):
+        raise ValueError("partition : joint_a / joint_b demandent seal=True")
 
     def dims(along, across, hh):
         return (along, across, hh) if along_x else (across, along, hh)
 
     def at(s, z):
-        return (cx + s, cy, z) if along_x else (cx, cy + s, z)
+        return (cx + sgn * s, cy, z) if along_x else (cx, cy + sgn * s, z)
 
-    k.box(f"{tag}", dims(L, 0.1, height), (cx, cy, height / 2), "paint_black", bevel=0.008, structure=True)
-    k.box(f"{tag}_cap", dims(L + 0.02, 0.14, 0.04), (cx, cy, height + 0.02), "paint_yellow", bevel=0.005)
-    k.box(f"{tag}_kick", dims(L - 0.02, 0.12, 0.1), (cx, cy, 0.05), "rubber")
+    def piece(name, s0, s1, across, z0, z1, mat, **kw):
+        """Pièce de s0 à s1 le long de la cloison (bouts ajustés par les jonctions)."""
+        half = across / 2
+        for joint, end, d in ((joint_a, -L / 2, 1.0), (joint_b, L / 2, -1.0)):
+            if joint is None:
+                continue
+            if name == "glass":
+                new = end + d * 0.02  # 5 mm dans le montant d'angle (5 cm de côté)
+            elif joint == "through":
+                new = end - d * half
+            else:  # "butt"
+                new = end + d * half
+            if d > 0:
+                s0 = new
+            else:
+                s1 = new
+        return k.box(f"{tag}_{name}" if name != "body" else f"{tag}", dims(s1 - s0, across, z1 - z0),
+                     at((s0 + s1) / 2, (z0 + z1) / 2), mat, **kw)
+
+    if not seal:
+        k.box(f"{tag}", dims(L, 0.1, height), (cx, cy, height / 2), "paint_black", bevel=0.008, structure=True)
+        k.box(f"{tag}_cap", dims(L + 0.02, 0.14, 0.04), (cx, cy, height + 0.02), "paint_yellow", bevel=0.005)
+        k.box(f"{tag}_kick", dims(L - 0.02, 0.12, 0.1), (cx, cy, 0.05), "rubber")
+        top = height + 0.1
+        if glass_top:
+            gh = glass_top - height - 0.04
+            k.box(f"{tag}_glass", dims(L - 0.1, 0.02, gh), (cx, cy, height + 0.04 + gh / 2), "glass")
+            k.box(f"{tag}_rail", dims(L, 0.06, 0.05), (cx, cy, glass_top), "paint_black")
+            for s in (-L / 2 + 0.03, L / 2 - 0.03):
+                k.box(f"{tag}_mullion", dims(0.05, 0.06, gh), at(s, height + 0.04 + gh / 2), "paint_black")
+            top = glass_top + 0.03
+        k.col(f"{tag}", dims(L, 0.14, top), (cx, cy, top / 2))
+        return
+    piece("body", -L / 2, L / 2, 0.1, 0.0, height + 0.005, "paint_black", bevel=0.008, structure=True)
+    piece("cap", -L / 2 - 0.01, L / 2 + 0.01, 0.14, height, height + 0.04, "paint_yellow", bevel=0.005)
+    piece("kick", -L / 2 + 0.01, L / 2 - 0.01, 0.12, 0.0, 0.1, "rubber")
     top = height + 0.1
     if glass_top:
-        gh = glass_top - height - 0.04
-        k.box(f"{tag}_glass", dims(L - 0.1, 0.02, gh), (cx, cy, height + 0.04 + gh / 2), "glass")
-        k.box(f"{tag}_rail", dims(L, 0.06, 0.05), (cx, cy, glass_top), "paint_black")
-        for s in (-L / 2 + 0.03, L / 2 - 0.03):
-            k.box(f"{tag}_mullion", dims(0.05, 0.06, gh), at(s, height + 0.04 + gh / 2), "paint_black")
+        piece("glass", -L / 2 + 0.045, L / 2 - 0.045, 0.02, height + 0.035, glass_top - 0.005, "glass")
+        piece("rail", -L / 2, L / 2, 0.06, glass_top - 0.025, glass_top + 0.025, "paint_black")
+        for joint, end, d in ((joint_a, -L / 2, 1.0), (joint_b, L / 2, -1.0)):
+            if joint == "butt":
+                continue
+            s = end if joint == "through" else end + d * 0.03
+            k.box(f"{tag}_mullion", dims(0.05, 0.05, glass_top - 0.01 - height - 0.025), at(s, (height + 0.025 + glass_top - 0.01) / 2), "paint_black")
         top = glass_top + 0.03
     k.col(f"{tag}", dims(L, 0.14, top), (cx, cy, top / 2))
 
@@ -1180,12 +1330,15 @@ def hanging_sign(k: Cell, tag, center, facing, length=2.4, arrows=((1, 0.55), (-
 def stanchions(k: Cell, tag, points, h=0.95, rope="fabric"):
     """Barrière de potelets en laiton (socle, fût, boule) et barres matelassées entre eux,
     `points` = [(x, y)] alignés sur X ou sur Y ; collider sur chaque travée."""
+    # M11 : boule enfoncée de 5 mm sur le fût, barres alternativement 5 mm plus haut (leurs
+    # bouts se croisent sur les potelets : dessus et dessous ne sont plus coplanaires).
     for x, y in points:
         k.cyl(f"{tag}_base", 0.15, 0.03, (x, y, 0.015), "brass", segments=16)
         k.cyl(f"{tag}_post", 0.025, h, (x, y, h / 2 + 0.02), "brass", segments=10)
-        k.cyl(f"{tag}_cap", 0.045, 0.06, (x, y, h + 0.05), "brass", segments=10)
-    for (xa, ya), (xb, yb) in zip(points[:-1], points[1:]):
-        k.strut(f"{tag}_rope", (xa, ya, h - 0.12), (xb, yb, h - 0.12), 0.05, 0.06, rope)
+        k.cyl(f"{tag}_cap", 0.045, 0.06, (x, y, h + 0.045), "brass", segments=10)
+    for i, ((xa, ya), (xb, yb)) in enumerate(zip(points[:-1], points[1:])):
+        zr = h - 0.12 + 0.005 * (i % 2)
+        k.strut(f"{tag}_rope", (xa, ya, zr), (xb, yb, zr), 0.05, 0.06, rope)
         along_x = abs(xb - xa) >= abs(yb - ya)
         size = (abs(xb - xa), 0.12, h + 0.08) if along_x else (0.12, abs(yb - ya), h + 0.08)
         k.col(f"{tag}", size, ((xa + xb) / 2, (ya + yb) / 2, (h + 0.08) / 2))
@@ -1195,35 +1348,42 @@ def vault_door(k: Cell, tag, center, facing):
     """Porte de coffre (décor), face vers +Y local, `center` au pied du mur : cadre carré massif
     noir à bandes de danger et pochoirs, collerette de laiton, porte ronde de métal brut à deux
     gradins, couronne de boulons, moyeu et volant à trois rayons en laiton, gonds à droite (vu
-    de face), pênes engagés dans leurs gâches à gauche, seuil d'acier. Fermée. Collider."""
+    de face), pênes engagés dans leurs gâches à gauche, seuil d'acier. Fermée. Collider.
+
+    Profondeurs (y local, M11) : aucune face coplanaire avec une autre (`coplanar_faces`), le
+    coffre scintillait. Cadre de 0 à 0,32 ; tout ce qui s'y appuie y est enfoncé (gâches dès
+    0,29, collerette dès 0,30, porte dès 0,31, décalcomanies dès 0,318, faces avant à 0,328 et
+    0,327) ; porte jusqu'à 0,68, bras de gonds jusqu'à 0,69 (1 cm en saillie : ils étaient au
+    ras de la porte), boulons de 0,67 à 0,73 (enfoncés dans la porte), volant de 0,85 à 0,91 et
+    rayons de 0,855 à 0,905 (5 cm de section : à 6 cm, deux d'entre eux affleuraient le volant)."""
     R, zc = 1.22, 1.45
     k.begin()
     k.box(f"{tag}_frame", (3.0, 0.32, 3.0), (0, 0.16, 1.5), "paint_black", bevel=0.03, structure=True)
     for z in (0.12, 2.86):
-        k.ori(f"{tag}_frame_hazard", (2.9, 0.14, 0.008), (0, 0.324, z), *FRONT, "trim_sheet", "hazard")
+        k.ori(f"{tag}_frame_hazard", (2.9, 0.14, 0.01), (0, 0.323, z), *FRONT, "trim_sheet", "hazard")
     for x in (-1.05, 1.05):
-        k.ori(f"{tag}_frame_label", (0.62, 0.1, 0.006), (x, 0.324, 2.62), *FRONT, "trim_sheet", "stencils")
-    k._keep(kit._ring(k.nm(f"{tag}_collar"), R + 0.03, R + 0.24, 0.12, (0, 0.38, zc), k.m["brass"], k.coll, segments=32))
-    k.cyl(f"{tag}_door", R, 0.36, (0, 0.5, zc), "bare", axis="Y", segments=32)
+        k.ori(f"{tag}_frame_label", (0.62, 0.1, 0.009), (x, 0.3225, 2.62), *FRONT, "trim_sheet", "stencils")
+    k._keep(kit._ring(k.nm(f"{tag}_collar"), R + 0.03, R + 0.24, 0.14, (0, 0.37, zc), k.m["brass"], k.coll, segments=32))
+    k.cyl(f"{tag}_door", R, 0.37, (0, 0.495, zc), "bare", axis="Y", segments=32)
     k.cyl(f"{tag}_step", R - 0.2, 0.04, (0, 0.69, zc), "dark", axis="Y", segments=32)
     k.cyl(f"{tag}_face", R - 0.42, 0.04, (0, 0.72, zc), "bare", axis="Y", segments=28)
     for i in range(16):
         a = 2 * math.pi * i / 16
-        k.cyl(f"{tag}_bolt", 0.045, 0.05, ((R - 0.1) * math.cos(a), 0.705, zc + (R - 0.1) * math.sin(a)), "dark", axis="Y", segments=8)
+        k.cyl(f"{tag}_bolt", 0.045, 0.06, ((R - 0.1) * math.cos(a), 0.70, zc + (R - 0.1) * math.sin(a)), "dark", axis="Y", segments=8)
     k.cyl(f"{tag}_hub", 0.3, 0.14, (0, 0.79, zc), "dark", axis="Y", segments=20)
     k.cyl(f"{tag}_hub_cap", 0.13, 0.06, (0, 0.88, zc), "brass", axis="Y", segments=16)
     k._keep(kit._ring(k.nm(f"{tag}_wheel"), 0.56, 0.65, 0.06, (0, 0.88, zc), k.m["brass"], k.coll, segments=24))
     for i in range(3):
         a = math.pi / 2 + 2 * math.pi * i / 3
-        k.strut(f"{tag}_spoke", (0.2 * math.cos(a), 0.88, zc + 0.2 * math.sin(a)), (0.6 * math.cos(a), 0.88, zc + 0.6 * math.sin(a)), 0.06, 0.05, "brass")
+        k.strut(f"{tag}_spoke", (0.2 * math.cos(a), 0.88, zc + 0.2 * math.sin(a)), (0.6 * math.cos(a), 0.88, zc + 0.6 * math.sin(a)), 0.05, 0.05, "brass")
     # Vu de face, +X local est à gauche : gonds à −X (à droite), pênes à +X (à gauche).
     for dz in (-0.72, 0.72):
         k.cyl(f"{tag}_hinge", 0.15, 0.5, (-(R + 0.12), 0.55, zc + dz), "dark", axis="Z", segments=16)
-        k.box(f"{tag}_hinge_arm", (0.5, 0.12, 0.3), (-(R - 0.08), 0.62, zc + dz), "bare", bevel=0.01)
+        k.box(f"{tag}_hinge_arm", (0.5, 0.135, 0.3), (-(R - 0.08), 0.6225, zc + dz), "bare", bevel=0.01)
     for dz in (-0.6, 0.0, 0.6):
-        k.box(f"{tag}_keeper", (0.24, 0.22, 0.24), (R + 0.3, 0.43, zc + dz), "dark", bevel=0.01)
+        k.box(f"{tag}_keeper", (0.24, 0.25, 0.24), (R + 0.3, 0.415, zc + dz), "dark", bevel=0.01)
         k.box(f"{tag}_bolt_bar", (0.42, 0.1, 0.1), (R + 0.1, 0.52, zc + dz), "bare")
-    k.box(f"{tag}_sill", (3.4, 1.1, 0.012), (0, 0.85, 0.006), "floor_plate")
+    k.box(f"{tag}_sill", (3.4, 1.115, 0.012), (0, 0.8425, 0.006), "floor_plate")
     k.col(f"{tag}", (3.0, 1.0, 3.0), (0, 0.5, 1.5))
     k.end(center, facing)
 
@@ -1797,6 +1957,23 @@ def build_marche(m: dict) -> Cell:
     return k
 
 
+def seal_counter(vis, name: str, length: float, facing: float, mon_back: float = 0.06) -> None:
+    """Correctif local d'un comptoir du kit (`kit.counter`, M11) en attendant celui du kit : le
+    caisson (`<name>_body`) est raccourci de 1 cm à chaque bout, sous les joues (`<name>_end±1`)
+    dont la face extérieure l'affleurait (faces coplanaires sur toute la hauteur) ; le moniteur
+    de l'employé (`<name>_mon*`) recule de `mon_back` m vers l'employé : sous la vitre de la
+    Banque, il traversait la vitre et son appui (dos du moniteur au ras de l'appui)."""
+    by_name = {o.name: o for o in vis}
+    body = by_name.get(f"{name}_body")
+    mon = [by_name.get(f"{name}_{p}") for p in ("mon_base", "mon_post", "mon", "mon_scr")]
+    if body is None or any(o is None for o in mon):
+        raise RuntimeError(f"seal_counter : pièces du comptoir {name} introuvables (kit.counter a changé ?)")
+    body.data.transform(Matrix.Diagonal(((length - 0.02) / length, 1.0, 1.0, 1.0)))
+    back = Vector((math.sin(facing), -math.cos(facing), 0.0)) * mon_back
+    for obj in mon:
+        obj.location = obj.location + back
+
+
 def deposit_wall(k: Cell, tag, center, facing, width=2.2, height=2.2, cols=5, rows=7):
     """Mur de coffres individuels (décor de la Banque), face vers +Y local, `center` au pied du
     mur : bâti sombre, portes de tôle peinte décalées, boutons de laiton, socle ; collider."""
@@ -1848,12 +2025,15 @@ def build_banque(m: dict) -> Cell:
     # --- Ligne des guichets : client à l'ouest, personnel à l'est. --------------------------------
     xc = -6.6
     gy, gl = -4.6, 2.0  # guichet de la Banque : face à la porte du hall
-    k.add(kit.counter(f"{cid}_guichet", (xc, gy, 0.0), FACE_E, m, k.coll, length=gl, role="bank", variant="a"))
-    # Vitre au-dessus du plateau (on parle par l'interstice de 20 cm) : visuelle seulement.
-    k.box("guichet_glass", (0.012, gl - 0.08, 0.85), (xc - 0.05, gy, 1.675), "glass")
+    vis, _, _ = k.add(kit.counter(f"{cid}_guichet", (xc, gy, 0.0), FACE_E, m, k.coll, length=gl, role="bank", variant="a"))
+    seal_counter(vis, f"{cid}_guichet", gl, FACE_E)
+    # Vitre au-dessus du plateau (on parle par l'interstice de 20 cm) : visuelle seulement. M11 :
+    # vitre et montants enfoncés de 5 mm dans l'appui, le plateau et le fronton (ils les
+    # touchaient : faces coplanaires).
+    k.box("guichet_glass", (0.012, gl - 0.08, 0.86), (xc - 0.05, gy, 1.675), "glass")
     k.box("guichet_sill", (0.05, gl, 0.03), (xc - 0.05, gy, 1.235), "brass")
     for s in (-1, 1):
-        k.box("guichet_post", (0.07, 0.07, 1.05), (xc - 0.05, gy + s * gl / 2, 1.575), "paint_black")
+        k.box("guichet_post", (0.07, 0.07, 1.06), (xc - 0.05, gy + s * gl / 2, 1.575), "paint_black")
     # Guichet fermé : caisson bas, vitre, rideau de tôle baissé derrière.
     fa, fb = gy + gl / 2 + 0.05, -2.2
     fm, fl = (fa + fb) / 2, fb - fa
@@ -1863,11 +2043,13 @@ def build_banque(m: dict) -> Cell:
     k.box("closed_kick", (0.02, fl - 0.02, 0.1), (xc - 0.305, fm, 0.05), "rubber")
     k.box("closed_glass", (0.012, fl - 0.06, 0.95), (xc - 0.05, fm, 1.6), "glass")
     k.box("closed_shutter", (0.03, fl - 0.06, 0.95), (xc + 0.06, fm, 1.6), "crate_slate")
-    k.box("closed_post", (0.07, 0.07, 1.07), (xc - 0.05, fb, 1.585), "paint_black")
+    k.box("closed_post", (0.07, 0.07, 1.08), (xc - 0.05, fb, 1.58), "paint_black")
     k.col("closed", (0.72, fl, 2.12), (xc, fm, 1.06))
-    partition(k, "part_n", (xc, fb), (xc, y1))
-    partition(k, "part_s", (xc, -6.8), (xc, gy - gl / 2))
-    partition(k, "part_staff", (xc, -6.8), (x1, -6.8))
+    # Cloisons sans faces coplanaires (M11) ; à l'angle du personnel, la cloison du sud bute
+    # contre celle qui traverse jusqu'au mur est.
+    partition(k, "part_n", (xc, fb), (xc, y1), seal=True)
+    partition(k, "part_s", (xc, -6.8), (xc, gy - gl / 2), seal=True, joint_a="butt")
+    partition(k, "part_staff", (xc, -6.8), (x1, -6.8), seal=True, joint_a="through")
     # Fronton : caisson noir à chants de laiton, écrans de cours tournés vers les clients,
     # bandeau chaud dessous (cuit, il éclaire les plateaux).
     fy0, fy1 = -6.8, y1
@@ -1878,7 +2060,9 @@ def build_banque(m: dict) -> Cell:
     for i, tile in enumerate(("bars_green", "wave_orange", "bars_orange", "wave_cyan", "bars_cyan")):
         y = fy1 - 0.55 - i * (flen - 1.1) / 4
         k.screen("fascia_scr", (0.8, 0.46), (xc - 0.156, y, 2.5), (0, -1, 0), (0, 0, 1), tile)
-    k.ori("fascia_glow", (flen - 0.3, 0.06, 0.02), (xc - 0.02, fc, 2.085), (0, 1, 0), (1, 0, 0), "band_warm", ("strip", 1.0))
+    # M11 : bandeau de 2,065 à 2,085 m (son dessous affleurait celui des lisses hautes des
+    # cloisons) et de xc − 0,065 à xc (ses flancs affleuraient les vitrages).
+    k.ori("fascia_glow", (flen - 0.3, 0.065, 0.02), (xc - 0.0325, fc, 2.075), (0, 1, 0), (1, 0, 0), "band_warm", ("strip", 1.0))
     # Côté personnel : mur de coffres individuels, bureau, armoire.
     deposit_wall(k, "deposit", (x1, -5.55, 0.0), FACE_E, width=2.2, height=2.2)
     k.add(kit.wall_desk(k.nm("desk"), (x1, -2.75, 0.0), FACE_E, m, k.coll, width=1.4, items_detail=1))
@@ -1892,16 +2076,25 @@ def build_banque(m: dict) -> Cell:
     stanchions(k, "barrier", [(-10.1, y0 + 0.3), (-10.1, -9.7), (-8.2, -9.7), (-6.3, -9.7), (-6.3, y0 + 0.3)])
     k.box("vault_line", (x1 - x0 - 0.1, 0.05, 0.006), ((x0 + x1) / 2, -7.2, 0.003), "brass")
     # Lambris noir à lisse de laiton (1,36 m) le long des murs de la salle des clients et du
-    # coffre ; il couvre la bande de danger du style « station ».
-    lam = [("W", y0, -8.1), ("W", -7.5, -5.65), ("W", -3.55, y1), ("N", x0, -8.5), ("N", -7.9, xc - 0.08),
+    # coffre ; il couvre la bande de danger du style « station ». M11 : dans les angles, le lambris
+    # nord ou sud bute contre celui de l'ouest ou de l'est (ils se chevauchaient : dessus
+    # coplanaires) ; au nord de la porte, il commence après le boîtier de commande de la porte
+    # (y ≈ −3,57 à −3,31), qu'il traversait.
+    lam = [("W", y0, -8.1), ("W", -7.5, -5.65), ("W", -3.25, y1), ("N", x0, -8.5), ("N", -7.9, xc - 0.08),
            ("S", x0, -9.75), ("S", -6.65, x1), ("E", y0, -8.1), ("E", -7.5, -6.88)]
+    corners = {(s, v) for s, a, b in lam if s in "WE" for v in (a, b) if v in (y0, y1)}
     for side, a, b in lam:
         ln, mid = b - a, (a + b) / 2
         if side in "NS":
             sgn = -1 if side == "N" else 1
             yw = y1 if side == "N" else y0
-            k.box("wainscot", (ln, 0.04, 1.36), (mid, yw + sgn * 0.08, 0.68), "paint_black")
-            k.box("wainscot_cap", (ln, 0.07, 0.04), (mid, yw + sgn * 0.075, 1.38), "brass")
+            # Bout dans un angle où passe un lambris ouest ou est : arrêté contre lui.
+            ca = 1.0 if a == x0 and ("W", yw) in corners else 0.0
+            cb = 1.0 if b == x1 and ("E", yw) in corners else 0.0
+            wa, wb = a + 0.10 * ca, b - 0.10 * cb
+            pa, pb = a + 0.11 * ca, b - 0.11 * cb
+            k.box("wainscot", (wb - wa, 0.04, 1.36), ((wa + wb) / 2, yw + sgn * 0.08, 0.68), "paint_black")
+            k.box("wainscot_cap", (pb - pa, 0.07, 0.04), ((pa + pb) / 2, yw + sgn * 0.075, 1.38), "brass")
         else:
             sgn = 1 if side == "W" else -1
             xw = x0 if side == "W" else x1
@@ -1925,7 +2118,9 @@ def build_banque(m: dict) -> Cell:
     k.screen("rates_tall", (0.86, 1.3), (x0 + 0.066, -6.65, 2.3), (0, 1, 0), (0, 0, 1), "bars_green")
     k.add(kit.wall_screen(k.nm("screen"), (x1, -9.8, 1.8), FACE_E, m, k.coll, size=(1.0, 0.6)))
     # Tapis de dalles claires bordé de laiton, de la porte au guichet.
-    rx0, rx1 = x0 + 0.05, xc - 0.42
+    # M11 : il commence après le seuil à bandes de danger de la porte (kit : 0,03 à 0,25 m du
+    # mur, 6 mm d'épaisseur comme le tapis), qu'il recouvrait.
+    rx0, rx1 = x0 + 0.26, xc - 0.42
     k.box("runner", (rx1 - rx0, 1.3, 0.006), ((rx0 + rx1) / 2, gy, 0.003), "tiles")
     for s in (-1, 1):
         k.box("runner_edge", (rx1 - rx0, 0.04, 0.008), ((rx0 + rx1) / 2, gy + s * 0.67, 0.004), "brass")
@@ -2081,18 +2276,198 @@ def check_marks(cells: dict) -> None:
         raise RuntimeError(f"repères en double : {dup or [n for n in names if re.search(r'.[0-9]{3}$', n)]}")
 
 
-def patch_dock_normal(ron_rel: str) -> None:
+# Faces coplanaires (M11, lot D : le coffre de la Banque scintillait). Deux faces dont les plans
+# sont à moins de COPLANAR_TOL et dont les contours se recouvrent sur plus de COPLANAR_MIN_AREA
+# se battent dans le tampon de profondeur (« z-fighting ») si elles regardent du même côté ; dos
+# à dos, elles ne se voient que si l'un des matériaux est double face (`use_backface_culling`
+# faux, exporté `doubleSided`), sinon ce sont des faces de contact cachées.
+COPLANAR_TOL = 0.001
+COPLANAR_DOT = 0.9995
+COPLANAR_MIN_AREA = 2e-5  # m² (0,2 cm²)
+# Cellules dont l'export échoue s'il reste des faces coplanaires de même sens (ou dos à dos avec
+# un matériau double face) : celles qui ont été nettoyées.
+COPLANAR_STRICT = ("banque",)
+
+
+def _clip_area(poly, clip) -> float:
+    """Aire de l'intersection de deux polygones convexes 2D (Sutherland–Hodgman), `clip` dans le
+    sens trigonométrique."""
+
+    def inside(p, a, b):
+        return (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]) >= -1e-12
+
+    def cut(p, q, a, b):
+        x1, y1, x2, y2 = p[0], p[1], q[0], q[1]
+        x3, y3, x4, y4 = a[0], a[1], b[0], b[1]
+        den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+        if abs(den) < 1e-15:
+            return q
+        t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / den
+        return (x1 + t * (x2 - x1), y1 + t * (y2 - y1))
+
+    out = list(poly)
+    for i in range(len(clip)):
+        a, b = clip[i], clip[(i + 1) % len(clip)]
+        src, out = out, []
+        if not src:
+            break
+        for j in range(len(src)):
+            p, q = src[j - 1], src[j]
+            if inside(q, a, b):
+                if not inside(p, a, b):
+                    out.append(cut(p, q, a, b))
+                out.append(q)
+            elif inside(p, a, b):
+                out.append(cut(p, q, a, b))
+    if len(out) < 3:
+        return 0.0
+    return 0.5 * abs(sum(out[i - 1][0] * out[i][1] - out[i][0] * out[i - 1][1] for i in range(len(out))))
+
+
+def coplanar_faces(objects, others=(), tol=COPLANAR_TOL, min_area=COPLANAR_MIN_AREA) -> list[dict]:
+    """Paires de faces coplanaires qui se recouvrent entre deux objets maillés de `objects` (ou
+    entre l'un d'eux et un objet de `others`, une cellule voisine) : plans à moins de `tol`,
+    normales égales ou opposées (à COPLANAR_DOT près), recouvrement des triangles de plus de
+    `min_area`. Renvoie une liste triée de {a, b, sense ("same" ou "opposite"), double (un des
+    matériaux est double face), area (m²), where (centre approché)}, une entrée par paire
+    d'objets et par plan."""
+    bpy.context.view_layer.update()
+    mine = [o for o in objects if o.type == "MESH" and not o.name.endswith("_col")]
+    theirs = [o for o in others if o.type == "MESH" and not o.name.endswith("_col")]
+    tris = []  # (objet, normale canonique, sens, d, sommets 3D)
+    for obj in mine + theirs:
+        mesh = obj.data
+        mesh.calc_loop_triangles()
+        mw = obj.matrix_world
+        co = [mw @ v.co for v in mesh.vertices]
+        double = any(m is not None and not m.use_backface_culling for m in mesh.materials)
+        for lt in mesh.loop_triangles:
+            p = [co[i] for i in lt.vertices]
+            n = (p[1] - p[0]).cross(p[2] - p[0])
+            if n.length < 1e-10:
+                continue
+            n.normalize()
+            # Normale canonique (premier axe non nul positif) : faces dos à dos dans le même groupe.
+            sgn = 1.0
+            for comp in n:
+                if abs(comp) > 1e-6:
+                    sgn = 1.0 if comp > 0 else -1.0
+                    break
+            cn = n * sgn
+            tris.append((obj, cn, sgn, cn.dot(p[0]), p, double))
+    bins: dict = {}
+    for t in tris:
+        key = (round(t[1].x * 100), round(t[1].y * 100), round(t[1].z * 100), math.floor(t[3] / (2 * tol)))
+        bins.setdefault(key, []).append(t)
+    found: dict = {}
+    mine_set = set(mine)
+    seen = set()
+    for key, group in bins.items():
+        nb = []
+        for dk in (-1, 0, 1):
+            nb += bins.get((key[0], key[1], key[2], key[3] + dk), [])
+        for ta in group:
+            if ta[0] not in mine_set:
+                continue
+            n = ta[1]
+            u = n.orthogonal().normalized()
+            v = n.cross(u)
+            pa = [(q.dot(u), q.dot(v)) for q in ta[4]]
+            ax0, ax1 = min(q[0] for q in pa), max(q[0] for q in pa)
+            ay0, ay1 = min(q[1] for q in pa), max(q[1] for q in pa)
+            for tb in nb:
+                if tb[0] is ta[0] or abs(tb[3] - ta[3]) > tol or ta[1].dot(tb[1]) < COPLANAR_DOT:
+                    continue
+                pair = (id(ta), id(tb)) if id(ta) < id(tb) else (id(tb), id(ta))
+                if pair in seen:
+                    continue
+                seen.add(pair)
+                pb = [(q.dot(u), q.dot(v)) for q in tb[4]]
+                if max(q[0] for q in pb) <= ax0 or min(q[0] for q in pb) >= ax1:
+                    continue
+                if max(q[1] for q in pb) <= ay0 or min(q[1] for q in pb) >= ay1:
+                    continue
+                # Sens trigonométrique pour le polygone de découpe.
+                if (pb[1][0] - pb[0][0]) * (pb[2][1] - pb[0][1]) - (pb[1][1] - pb[0][1]) * (pb[2][0] - pb[0][0]) < 0:
+                    pb = [pb[0], pb[2], pb[1]]
+                area = _clip_area(pa, pb)
+                if area <= 1e-9:
+                    continue
+                names = sorted((ta[0].name, tb[0].name))
+                sense = "same" if ta[2] == tb[2] else "opposite"
+                k = (names[0], names[1], sense, round(ta[3], 3), (round(n.x, 2), round(n.y, 2), round(n.z, 2)))
+                rec = found.setdefault(k, {"a": names[0], "b": names[1], "sense": sense, "double": ta[5] or tb[5],
+                                           "area": 0.0, "where": sum(ta[4], Vector()) / 3, "normal": tuple(n * ta[2])})
+                rec["area"] += area
+    out = [r for r in found.values() if r["area"] >= min_area]
+    return sorted(out, key=lambda r: (r["sense"] != "same", not r["double"], -r["area"]))
+
+
+def coplanar_summary(cid: str, found: list[dict], contacts: bool = False) -> tuple[list[str], list[dict]]:
+    """Bilan du contrôle de coplanarité d'une cellule : (lignes à imprimer, paires fautives faites
+    par ce script). Paire fautive : même sens, ou dos à dos avec un matériau double face ; elle
+    est « du kit » si ses deux objets viennent du kit (`KIT_OBJECTS`), « du script » sinon.
+    `contacts` : liste aussi les faces de contact dos à dos (cachées)."""
+    bad = [r for r in found if r["sense"] == "same" or r["double"]]
+    mine = [r for r in bad if not (r["a"] in KIT_OBJECTS and r["b"] in KIT_OBJECTS)]
+    hidden = [r for r in found if r not in bad]
+    lines = [f"coplanarité {cid} : {len(mine)} paires fautives faites par ce script, {len(bad) - len(mine)} par le kit "
+             f"(même sens, ou dos à dos avec un matériau double face) ; {len(hidden)} faces de contact dos à dos "
+             f"(cachées, matériaux simple face)"]
+    for r in found:
+        if r in hidden and not contacts:
+            continue
+        w = r["where"]
+        tag = "MÊME SENS" if r["sense"] == "same" else ("DOS À DOS, double face" if r["double"] else "contact")
+        who = "kit" if r["a"] in KIT_OBJECTS and r["b"] in KIT_OBJECTS else "script"
+        lines.append(f"  [{tag}, {who}] {r['a']} / {r['b']} : {r['area'] * 1e4:.1f} cm², normale "
+                     f"({r['normal'][0]:.2f}, {r['normal'][1]:.2f}, {r['normal'][2]:.2f}), vers ({w.x:.2f}, {w.y:.2f}, {w.z:.3f})")
+    return lines, mine
+
+
+def report_coplanar(cid: str, found: list[dict], contacts: bool = False) -> list[dict]:
+    """Imprime le bilan (`coplanar_summary`) ; renvoie les paires fautives faites par ce script."""
+    lines, mine = coplanar_summary(cid, found, contacts)
+    print("\n".join(lines))
+    return mine
+
+
+def sector_meta() -> dict:
+    """`meta` du descripteur (`sector_tools.sector_ron`, `export_sector`) ; M11 : aussi pour
+    régénérer le descripteur sans export (`sector_ron(sector_meta(), CELLS, PORTALS, SPAWNS, …)`
+    puis `dock_normal_text`)."""
+    return {
+        "script": "tools/blender/places/spaceport.py",
+        "comment": ("Le spatioport par défaut, hangar et salles (proposition P7 ; M9) : cellules, portails, apparitions. "
+                    f"Vaisseau : boîte {SHIP_BBOX}, sas {SHIP_HATCH} normale {SHIP_HATCH_NORMAL} (intérieur type corvette)."),
+        "id": SECTOR,
+        "kind": "District",
+        "name_key": f"sector.{SECTOR}",
+        "status": 'Proposition("P7")',
+        "door_model": "models/kit/ship_interior/door_station.gltf",
+        "models": f"models/places/{SECTOR}",
+        "lightmaps": f"textures/lightmaps/{SECTOR}",
+        "rooms": ROOMS,
+        "windows": WINDOW_VIEWS,
+    }
+
+
+def dock_normal_text(text: str) -> str:
     """`portal_record` tourne la normale d'un point d'attache « @… » vers l'extérieur de la
     cellule ; celle du hangar doit regarder le vaisseau (`sh_data::dock` retourne le sas contre
-    elle)."""
-    path = c.ROOT / ron_rel
-    text = path.read_text(encoding="utf-8")
+    elle) : texte du descripteur corrigé."""
     normal = st.fmt(c.to_bevy(LAYOUT["dock_normal"]))
     pat = re.compile(r'(id: "hangar__ship",[^()]*center: \([^)]*\),\s*normal: )\([^)]*\)', re.S)
     new, n = pat.subn(lambda mt: mt.group(1) + normal, text, count=1)
     if n != 1:
         raise RuntimeError("portail hangar__ship introuvable dans le descripteur")
-    path.write_text(new, encoding="utf-8", newline="\n")
+    return new
+
+
+def patch_dock_normal(ron_rel: str) -> None:
+    """`dock_normal_text` appliqué au descripteur écrit par `export_sector`."""
+    path = c.ROOT / ron_rel
+    path.write_text(dock_normal_text(path.read_text(encoding="utf-8")), encoding="utf-8", newline="\n")
 
 
 def report(cells: dict, result: dict) -> None:
@@ -2107,6 +2482,8 @@ def report(cells: dict, result: dict) -> None:
               f"{len(s['materials'])} matériaux, {len(s['merged'])} maillages, lampes {lamps}, lightmap {s['res']} px "
               f"({s['density']:.1f} texels/m)")
     print(f"îlots de lightmap épaissis (≥ {MIN_ISLAND_TEXELS} texels), par cellule : {dict(zip(cells, _THICKENED))}")
+    for line in _COPLANAR_REPORT:
+        print(line)
     L = LAYOUT
     print(f"vaisseau : quarts de tour {L['turns']}, origine {tuple(round(v, 3) for v in L['origin'])}, sas {L['hatch']}, "
           f"coque {tuple(round(v, 2) for v in L['hull'])} z {L['hull_z']}, fosse {tuple(round(v, 2) for v in L['pit'])}, "
@@ -2184,6 +2561,16 @@ def shots() -> dict:
         "banque_coffre": s((-10.9, -2.4, EYE), (-8.2, -11.6, 1.3), GAME_LENS),
         "banque_guichet": s((-8.6, -4.0, EYE), (-6.2, -4.7, 1.3), 18.0),
         "banque_ensemble": s((-11.7, -2.0, 3.6), (-6.4, -8.6, 0.6), 12.0),
+        # M11 (coffre sans faces coplanaires) : gonds et bras, pênes et gâches de près, deux vues
+        # rasantes sur la face de la porte depuis les bouts de la barrière (au plus près où le
+        # joueur peut aller, là où le scintillement se voyait), le coffre de plus loin en biais,
+        # le guichet en biais.
+        "banque_coffre_gonds": s((-7.9, -9.2, 1.55), (-9.5, -11.0, 1.45), 20.0),
+        "banque_coffre_penes": s((-7.7, -9.8, 1.6), (-6.85, -11.05, 1.45), 20.0),
+        "banque_coffre_rasant_e": s((-6.1, -10.3, EYE), (-8.6, -10.92, 1.45), 20.0),
+        "banque_coffre_rasant_o": s((-10.3, -10.3, EYE), (-7.8, -10.92, 1.45), 20.0),
+        "banque_coffre_loin": s((-11.3, -8.4, EYE), (-8.2, -10.92, 1.45), 22.0),
+        "banque_guichet_biais": s((-7.9, -6.3, EYE), (-6.6, -4.6, 1.5), 16.0),
         # Berceau en coupe : un sabot vu de profil sous la coque grise (dessus du patin = −1,70).
         # Vue orthographique de profil (vers +Y), 2,4 m de large : sabots, patins, fond de fosse et
         # coque grise seuls, à la lumière d'ambiance (`--quick` : noms des objets non fusionnés).
@@ -2317,6 +2704,53 @@ def _arg(argv, name, default):
     return argv[argv.index(name) + 1] if name in argv else default
 
 
+def _neighbours(cids) -> list[str]:
+    """Cellules reliées à `cids` par un portail (pour les contrôles entre cellules)."""
+    out = set()
+    for a, b, *_ in WALL_PORTALS:
+        if a in cids and b in CELLS:
+            out.add(b)
+        if b in cids and a in CELLS:
+            out.add(a)
+    return sorted(out - set(cids))
+
+
+def _cull_like_export(k: Cell) -> int:
+    """Faces cachées retirées comme le fait `sector_tools.export_sector` (mêmes bornes, mêmes
+    passages) : le contrôle porte sur ce qui sera exporté."""
+    x0, x1, y0, y1, h = CELLS[k.cid]
+    doors = [(x, y) for a, b, _kind, x, y, _axis, *_ in PORTALS if k.cid in (a, b)]
+    k.visual, n = lm.cull_hidden_faces(k.visual, (x0, y0, 0.0), (x1, y1, h), keep_near=doors)
+    return n
+
+
+def check_cells(cells: dict, targets, contacts: bool = False) -> dict:
+    """Contrôle de coplanarité (`--check`) : faces cachées retirées comme à l'export, puis
+    `coplanar_faces` sur chaque cellule de `targets`, avec les objets des cellules voisines à
+    moins de 0,5 m de ses bornes (cadres de porte, cloisons mitoyennes). `contacts` : liste aussi
+    les faces de contact cachées."""
+    for k in cells.values():
+        _cull_like_export(k)
+    bpy.context.view_layer.update()
+    results = {}
+    for cid in targets:
+        x0, x1, y0, y1, h = CELLS[cid]
+        near = []
+        for other, k in cells.items():
+            if other == cid:
+                continue
+            for o in k.visual:
+                if o.type != "MESH":
+                    continue
+                pts = [o.matrix_world @ Vector(b) for b in o.bound_box]
+                if (min(p.x for p in pts) < x1 + 0.5 and max(p.x for p in pts) > x0 - 0.5
+                        and min(p.y for p in pts) < y1 + 0.5 and max(p.y for p in pts) > y0 - 0.5):
+                    near.append(o)
+        results[cid] = coplanar_faces(cells[cid].visual, near)
+        report_coplanar(cid, results[cid], contacts)
+    return results
+
+
 def main(argv) -> None:
     bake = "--no-bake" not in argv
     samples = int(_arg(argv, "--samples", "32"))
@@ -2326,10 +2760,18 @@ def main(argv) -> None:
     quick = "--quick" in argv
     keep_cells = _arg(argv, "--cells", None)
     keep_cells = keep_cells.split(",") if keep_cells else None
+    unknown = sorted(set(keep_cells or ()) - set(CELLS))
+    if unknown:
+        raise ValueError(f"--cells : cellules inconnues {unknown} ({', '.join(CELLS)})")
+    check = "--check" in argv
     c.reset_scene()
     m = palette()
     proxy = ship_proxy() if BAKE_SHIP_OCCLUDER or "--lit" in argv or "--previews" in argv else []
-    if quick and keep_cells:
+    if check:
+        targets = keep_cells or list(COPLANAR_STRICT)
+        wanted = set(targets) | set(_neighbours(targets))
+        cells = {cid: build(m) for cid, build in BUILDERS.items() if cid in wanted}
+    elif quick and keep_cells:
         cells = {cid: build(m) for cid, build in BUILDERS.items() if cid in keep_cells}
     else:
         cells = {cid: build(m) for cid, build in BUILDERS.items()}
@@ -2339,6 +2781,13 @@ def main(argv) -> None:
     if "hangar" in cells:
         print(f"berceau : dessus des patins à {check_saddles(cells):.3f} m (dessous de la coque {LAYOUT['hull_z'][0]:.3f} m)")
     check_marks(cells)
+    if check:
+        # Contrôle seul (`--check [--cells a,b]`, défaut COPLANAR_STRICT) : rien n'est écrit.
+        for k in cells.values():
+            if k.cid in targets:
+                print(f"cellule {k.cid} : {kit._tris(k.visual)} triangles (avant fusion et faces cachées)")
+        check_cells(cells, targets, contacts="--contacts" in argv)
+        return
     if quick:
         # Itération (`--quick [--cells a,b]`) : ni export ni bake, aperçus éclairés (Cycles, lampes)
         # des objets bruts ; rien n'est écrit dans assets/.
@@ -2353,20 +2802,16 @@ def main(argv) -> None:
         preview_lit(shots(), visual, marks, proxy, samples, (rw, rh), only, plan_objs=visual + doors)
         return
     built = {cid: k.parts() for cid, k in cells.items()}
+    global _ONLY
+    if keep_cells:
+        # Export partiel (`--cells a,b` sans `--quick`) : voir `_export_gltf_only`, `_bake_cells_only`.
+        if not bake:
+            raise ValueError("--cells sans --quick : export partiel avec bake obligatoire (sans lui, le descripteur perdrait les lightmaps)")
+        _ONLY = set(keep_cells)
+        print(f"export partiel : modèles et lightmaps de {sorted(_ONLY)} seulement ; les autres cellules sont construites "
+              f"(bake : occultation, rebonds, lampes) mais ni réexportées ni recuites")
     L = LAYOUT
-    meta = {
-        "script": "tools/blender/places/spaceport.py",
-        "comment": ("Le spatioport par défaut, hangar et salles (proposition P7 ; M9) : cellules, portails, apparitions. "
-                    f"Vaisseau : boîte {SHIP_BBOX}, sas {SHIP_HATCH} normale {SHIP_HATCH_NORMAL} (intérieur type corvette)."),
-        "id": SECTOR,
-        "kind": "District",
-        "name_key": f"sector.{SECTOR}",
-        "status": 'Proposition("P7")',
-        "door_model": "models/kit/ship_interior/door_station.gltf",
-        "models": f"models/places/{SECTOR}",
-        "lightmaps": f"textures/lightmaps/{SECTOR}",
-        "rooms": ROOMS,
-    }
+    meta = sector_meta()
     if not BAKE_SHIP_OCCLUDER:
         for obj in proxy:
             obj.hide_render = True

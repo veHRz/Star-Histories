@@ -159,12 +159,24 @@ def sector_ron(meta: dict, cells: dict, portals: list, spawns: list, lightmaps: 
     """Descripteur RON. `meta` : id, kind, name_key, status, door_model, models, comment ;
     `model_ext` facultatif (défaut `MODEL_EXT`, glTF séparé) ; `rooms` facultatif (M9) :
     {cellule: usage} → `name_key: Some("room.<usage>")` dans la cellule ; `door_models`
-    facultatif (M10) : {id du portail: chemin} → `door_model: Some("…")` dans le portail."""
+    facultatif (M10) : {id du portail: chemin} → `door_model: Some("…")` dans le portail ;
+    `windows` facultatif (M11) : {cellule: [cellules vues par une vitre, ou "@outside" pour
+    l'extérieur du vaisseau]} → `windows: [...]` dans chaque cellule, juste après sa lightmap
+    (`windows: []` pour une cellule sans vitre) ; le streaming cache les cellules invisibles
+    derrière les portes fermées et lit ce champ pour ce qui se voit à travers une vitre. Sans
+    clé `windows`, le champ n'est pas écrit (le jeu garde l'ancienne règle prudente)."""
     ext = meta.get("model_ext", MODEL_EXT)
     rooms = meta.get("rooms", {})
     unknown = sorted(set(rooms) - set(cells))
     if unknown:
         raise ValueError(f"meta['rooms'] cite des cellules inconnues : {unknown}")
+    windows = meta.get("windows")
+    if windows is not None:
+        bad = sorted(set(windows) - set(cells)) + sorted(
+            {v for vs in windows.values() for v in vs if v != "@outside" and v not in cells}
+        )
+        if bad:
+            raise ValueError(f"meta['windows'] cite des cellules inconnues : {bad}")
     lines = [
         f"// Généré par {meta['script']} : NE PAS ÉDITER À LA MAIN.",
         f"// {meta['comment']}",
@@ -196,6 +208,9 @@ def sector_ron(meta: dict, cells: dict, portals: list, spawns: list, lightmaps: 
         if cell in lightmaps:
             lmap = lightmaps[cell]
             lines.append(f'            lightmap: (image: "{lmap["image"]}", exposure: {lmap["exposure"]:.3f}),')
+        if windows is not None:
+            seen = ", ".join(f'"{v}"' for v in windows.get(cell, []))
+            lines.append(f"            windows: [{seen}],")
         lines.append("        ),")
     lines.append("    ],")
     lines.append("    portals: [")

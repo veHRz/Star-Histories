@@ -16,6 +16,7 @@
             min: (-4.200, -0.200, -32.200),
             max: (32.200, 12.200, 34.200),
             lightmap: (image: "textures/lightmaps/spaceport/hangar.png", exposure: 1609.298),
+            windows: ["chantier"],
         ),
         (
             id: "couloir",
@@ -25,6 +26,7 @@
             min: (-12.200, -0.200, -1.400),
             max: (-4.200, 2.800, 1.400),
             lightmap: (image: "textures/lightmaps/spaceport/couloir.png", exposure: 1524.449),
+            windows: [],
         ),
         (
             id: "chantier",
@@ -34,6 +36,7 @@
             min: (-11.200, -0.200, -7.800),
             max: (-4.200, 3.200, -1.400),
             lightmap: (image: "textures/lightmaps/spaceport/chantier.png", exposure: 1169.003),
+            windows: ["hangar"],
         ),
         (
             id: "hall",
@@ -43,6 +46,7 @@
             min: (-26.200, -0.200, -7.200),
             max: (-12.200, 5.200, 7.200),
             lightmap: (image: "textures/lightmaps/spaceport/hall.png", exposure: 2285.669),
+            windows: [],
         ),
         (
             id: "bureau",
@@ -52,6 +56,7 @@
             min: (-24.200, -0.200, -13.600),
             max: (-15.800, 3.200, -7.200),
             lightmap: (image: "textures/lightmaps/spaceport/bureau.png", exposure: 1305.045),
+            windows: [],
         ),
         (
             id: "taverne",
@@ -61,6 +66,7 @@
             min: (-24.200, -0.200, 7.200),
             max: (-15.800, 3.400, 13.600),
             lightmap: (image: "textures/lightmaps/spaceport/taverne.png", exposure: 1184.581),
+            windows: [],
         ),
         (
             id: "marche",
@@ -70,6 +76,7 @@
             min: (-40.200, -0.200, -6.200),
             max: (-26.200, 4.700, 6.200),
             lightmap: (image: "textures/lightmaps/spaceport/marche.png", exposure: 1800.751),
+            windows: [],
         ),
         (
             id: "banque",
@@ -78,7 +85,8 @@
             lod: "models/places/spaceport/banque_lod.gltf",
             min: (-12.200, -0.200, 1.400),
             max: (-4.200, 4.200, 11.800),
-            lightmap: (image: "textures/lightmaps/spaceport/banque.png", exposure: 1236.923),
+            lightmap: (image: "textures/lightmaps/spaceport/banque.png", exposure: 1364.958),
+            windows: [],
         ),
     ],
     portals: [

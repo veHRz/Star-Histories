@@ -160,6 +160,11 @@ META = {
     # kit ; les autres portes gardent `door_model` du secteur. Id calculé par `portal_record`
     # (« @ » retiré), réécrit « sas__@dock » par `write_ron`.
     "door_models": {"sas__dock": st.AIRLOCK_DOOR},
+    # M11 (streaming) : ce qui se voit par une vitre (`sector_tools.sector_ron`, champ `windows`).
+    # Seule la verrière du cockpit (WINDOWS : vitrages nord, est, ouest, tous sur la coque) donne
+    # sur une autre zone, l'extérieur ; les hublots de la chambre sont opaques (verre fumé du
+    # kit), le verre du carré (carafe) et les visières restent dans leur cellule.
+    "windows": {"cockpit": ["@outside"]},
 }
 
 COOL = [0.78, 0.88, 1.0]
