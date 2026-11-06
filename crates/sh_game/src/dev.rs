@@ -17,9 +17,10 @@
 //! - `SH_WINDOW=<L>x<H>|fullscreen` : taille de la fenêtre, ou plein écran sans bordure (les
 //!   mesures de la machine de référence se font en 1080p).
 //! - `SH_TUTORIAL=1` : le tutoriel guidé tourne (coupé sinon, comme les conseils) ;
-//!   `SH_TUTORIAL_STEP=<n>` le fait commencer à l'étape n, de 1 (la chambre) à 10 (captures du
-//!   panneau). Le scénario `SH_SCENARIO=tutorial` le joue en entier, de la chambre et du tour du
-//!   vaisseau à la sauvegarde.
+//!   `SH_TUTORIAL_STEP=<n>` le fait commencer à l'étape n, de 1 (la chambre) à 11 (la
+//!   sauvegarde), 12 : terminé (captures du panneau ; M11 : la Banque est l'étape 7). Le scénario
+//!   `SH_SCENARIO=tutorial` le joue en entier, de la chambre et du tour du vaisseau à la
+//!   sauvegarde, en passant par le guichet de la Banque.
 //! - `SH_SCREEN=inventory|skills` : ouvre l'écran du personnage sur cet onglet, 3 s après
 //!   l'entrée en partie (comme `SH_TERMINAL` pour le terminal ; captures).
 //! - `SH_TERMINAL=<écran>` : ouvre cet écran du terminal 3 s après l'entrée en partie (captures) :
@@ -57,6 +58,12 @@
 //!   captures `m10-saisie-nom.png`, `m10-plaque.png`, `m10-plaque-rechargee.png`.
 //! - `SH_SCENARIO=airlock_space` (M10, avec `SH_START=global:hexis SH_RAID=0`) : en vol, au
 //!   sas, la porte extérieure annonce le vide et ne bouge pas ; capture `m10-sas-vide.png`.
+//! - `SH_SCENARIO=airlock_dock` (M11, avec `SH_START=sector:spaceport
+//!   SH_SPAWN_AT=11.0,0,0,-90,0`) : immobile 10 s dans le sas du vaisseau amarré, tourné vers
+//!   l'intérieur : portes fermées, seul le sas est affiché (occultation par les portails,
+//!   `CellStates::shown`), temps de frame du séjour journalisé ; puis la porte extérieure
+//!   demandée (`Door::request_open`) : le hangar est affiché dès la frame où elle n'est plus
+//!   fermée, et la coque du vaisseau avec lui une fois la porte ouverte.
 //! - Avec `SH_START=new`, la partie commence debout dans la chambre (M9) : `map_key` prend
 //!   d'abord les commandes ; `save_load` sauvegarde debout et recharge aux commandes (une
 //!   sauvegarde en vol reprend au poste de pilotage) ; `menu_return` et `pause_escape` n'ont
@@ -1297,7 +1304,7 @@ enum Step {
     /// un PNJ de comptoir) ; gardée pour un scénario qui viserait une console.
     #[allow(dead_code)]
     UseConsole(&'static str),
-    /// Vérifier que le tutoriel est arrivé à l'étape n (11 : terminé).
+    /// Vérifier que le tutoriel est arrivé à l'étape n (12 : terminé, M11).
     Tutorial(usize),
     /// Sauvegarde rapide (comme `F5`).
     QuickSave,
@@ -1362,8 +1369,15 @@ const fn w(x: f32, y: f32, door: Option<&'static str>) -> Step {
 /// amarrage, et retour au quai (critère de M2). Le vaisseau repose dans son berceau (M9) : on
 /// longe la passerelle jusqu'à la porte extérieure du sas (x = −7,7 dans le repère du vaisseau,
 /// portail `sas__hangar` une fois amarré), le sas de 6 m, le couloir, le cockpit ; au retour, le
-/// quai est au-delà de la coque (x < −7,8), au pied de la passerelle.
+/// quai est au-delà de la coque (x < −7,8), au pied de la passerelle. M11 (streaming, lot S) : au
+/// hangar, à l'arrivée comme au retour, le vaisseau n'est chargé que par son sas
+/// ([`m11_script::ship_unloaded`]) ; enfin, devant la porte du couloir, le hall est prêt avant
+/// qu'elle ne quitte l'état fermé ([`m11_script::hall_ready_before_door`]), et on la franchit.
 const PORT_LOOP: &[Step] = &[
+    Step::Script(
+        "au hangar, du vaisseau amarré seul le sas est chargé",
+        m11_script::ship_unloaded,
+    ),
     w(-6.4, -3.0, Some("sas__hangar")),
     w(-5.4, -3.0, None),
     w(-2.4, -3.0, Some("couloir_arriere__sas")),
@@ -1394,6 +1408,19 @@ const PORT_LOOP: &[Step] = &[
     w(-13.5, -3.0, None),
     w(-13.5, 4.0, None),
     Step::Shot("m9-port-hangar"),
+    // M11 : sorti du vaisseau, ses portes se referment et ses salles se déchargent, sauf le sas.
+    Step::Script(
+        "de retour au hangar, du vaisseau seul le sas reste chargé",
+        m11_script::ship_unloaded,
+    ),
+    // Vers le couloir du spatioport (repère du quartier) : le hall derrière lui est déjà prêt.
+    Step::WalkDistrict(3.0, 0.0, None),
+    Step::WalkDistrict(-3.0, 0.0, None),
+    Step::Script(
+        "le hall prêt avant que la porte du couloir ne s'ouvre",
+        m11_script::hall_ready_before_door,
+    ),
+    Step::WalkDistrict(-6.0, 0.0, Some("couloir__hangar")),
 ];
 
 /// `voyage` : Hexis → Cygnara par Portail, puis retour par l'hyperespace (critère de M3) ; enfin
@@ -1630,7 +1657,10 @@ const FIREFIGHT_LOSE: &[Step] = &[
 /// chambre (−1,4 ; 11,0), quartiers (−1,4 ; 4,6), carré (1,4 ; 5,6) ; du couloir arrière : sas
 /// (−1,4 ; −3), soute (1,4 ; −7), machines (0 ; −14,2) ; cockpit (0 ; 14,2)), jusqu'au siège du
 /// pilote. À quai, le chemin de `port_loop` jusqu'au hangar, puis le couloir, le hall et le
-/// bureau, où l'on vise le guichetier.
+/// bureau, où l'on vise le guichetier ; M11 : le contrat pris, la Banque (porte `hall__banque`,
+/// x = −12,2, z = 4,6 dans le repère du quartier), où l'on vise l'employé et ouvre son compte
+/// (étape 7, captures `m11-tuto-banque.png`, `m11-tuto-guichet.png`), puis les écrans, et le
+/// retour au vaisseau part de la Banque.
 const TUTORIAL: &[Step] = &[
     Step::Wait(2.0),
     Step::Tutorial(1),
@@ -1733,7 +1763,30 @@ const TUTORIAL: &[Step] = &[
     Step::Tutorial(7),
     Step::Choose("close"),
     Step::Wait(0.5),
-    // 7. Le journal, l'écran du personnage (vraie touche I), le codex.
+    // 7. La Banque (M11) : du bureau au hall, le long du mur est jusqu'à la porte de la Banque,
+    // l'employé du guichet, le compte et l'hypothèque (payer n'est pas exigé).
+    Step::WalkDistrict(-20.0, -8.6, Some("hall__bureau")),
+    Step::WalkDistrict(-20.0, 0.0, None),
+    Step::WalkDistrict(-15.0, 0.0, None),
+    Step::WalkDistrict(-13.6, 0.0, None),
+    Step::WalkDistrict(-13.6, 4.6, None),
+    // Face à la porte (la marche arrive tournée vers le nord) : le repère du tutoriel est dessus.
+    Step::Script("regarder la porte de la Banque", |w| {
+        tutorial_script::look_at_portal(w, "hall__banque")
+    }),
+    Step::Wait(0.5),
+    Step::Shot("m11-tuto-banque"),
+    Step::WalkDistrict(-11.2, 4.6, Some("hall__banque")),
+    Step::Script(
+        "parler à l'employé de la Banque",
+        tutorial_script::talk_to_teller,
+    ),
+    Step::Shot("m11-tuto-guichet"),
+    Step::Choose("say:dlg.bank.show_account"),
+    Step::Tutorial(8),
+    Step::Choose("close"),
+    Step::Wait(0.5),
+    // 8. Le journal, l'écran du personnage (vraie touche I), le codex.
     Step::Open(Terminal::Journal),
     Step::Choose("close"),
     Step::Wait(0.5),
@@ -1746,12 +1799,11 @@ const TUTORIAL: &[Step] = &[
     Step::Open(Terminal::Codex),
     Step::Choose("close"),
     Step::Wait(0.5),
-    Step::Tutorial(8),
+    Step::Tutorial(9),
     Step::Shot("m8-tuto-6-depart"),
-    // 8. Retour au cockpit, départ, la carte, la destination du contrat.
-    Step::WalkDistrict(-20.0, -8.6, Some("hall__bureau")),
-    Step::WalkDistrict(-20.0, 0.0, None),
-    Step::WalkDistrict(-15.0, 0.0, None),
+    // 9. Retour au cockpit (depuis la Banque), départ, la carte, la destination du contrat.
+    Step::WalkDistrict(-13.6, 4.6, Some("hall__banque")),
+    Step::WalkDistrict(-13.6, 0.0, None),
     Step::WalkDistrict(-6.0, 0.0, None),
     Step::WalkDistrict(-3.0, 0.0, Some("couloir__hangar")),
     Step::WalkDistrict(5.0, 0.0, None),
@@ -1770,23 +1822,23 @@ const TUTORIAL: &[Step] = &[
     Step::Route("sys_cygnara"),
     Step::Wait(1.0),
     Step::Shot("m8-tuto-6-carte"),
-    Step::Tutorial(9),
-    // 9. Par Portail, livraison en orbite près du hub, paiement.
+    Step::Tutorial(10),
+    // 10. Par Portail, livraison en orbite près du hub, paiement.
     Step::Depart(sh_sim::travel::TravelMode::Portal),
     Step::Wait(1.0),
     Step::Shot("m8-tuto-7-hub"),
     Step::Hail,
-    Step::Tutorial(10),
-    Step::Shot("m8-tuto-8-sauvegarde"),
-    // 10. Sauvegarder : fin.
-    Step::QuickSave,
     Step::Tutorial(11),
+    Step::Shot("m8-tuto-8-sauvegarde"),
+    // 11. Sauvegarder : fin (12, terminé).
+    Step::QuickSave,
+    Step::Tutorial(12),
     Step::Wait(1.0),
     Step::Shot("m8-tuto-fin"),
 ];
 
 /// Les actions propres au scénario `tutorial` ([`Step::Script`]) : ce qu'un joueur fait dans la
-/// chambre et au bureau, que les étapes ordinaires ne savent pas faire. Viser se fait d'une
+/// chambre, au bureau et à la Banque (M11), que les étapes ordinaires ne savent pas faire. Viser se fait d'une
 /// place d'où le rayon de visée touche l'objet ([`aim_spot`], raccourci : le joueur y est posé,
 /// dans la salle où il se trouve), puis la touche d'interaction comme `E` ; l'inventaire et la
 /// fermeture des écrans passent par de vrais messages clavier (I, Échap), tenus ≈ 150 ms.
@@ -1959,6 +2011,41 @@ mod tutorial_script {
                     .is_some_and(|t| t.page.is_some())
             },
         )
+    }
+
+    /// L'employé du guichet de la Banque (PNJ de comptoir, M11) : sa conversation s'ouvre.
+    pub(super) fn talk_to_teller(world: &mut World) -> Result<bool, String> {
+        interact_with(
+            world,
+            |i| matches!(i, Interactable::Npc { role, .. } if role == "bank"),
+            |world, _| {
+                world
+                    .get_resource::<crate::ui::terminal::Terminal>()
+                    .is_some_and(|t| t.page.is_some())
+            },
+        )
+    }
+
+    /// Tourne le regard du joueur, sans qu'il bouge, vers le centre d'un portail du secteur
+    /// (raccourci de la souris) : une marche arrive tournée dans le sens du dernier pas, et une
+    /// capture veut la porte et son repère dans le champ.
+    pub(super) fn look_at_portal(world: &mut World, portal: &str) -> Result<bool, String> {
+        let center = world
+            .get_resource::<crate::sector::ActiveSector>()
+            .and_then(|a| {
+                a.sector
+                    .portals
+                    .iter()
+                    .find(|p| p.id == portal)
+                    .map(|p| crate::sector::v3(p.center))
+            })
+            .ok_or_else(|| format!("portail {portal} absent du secteur"))?;
+        let feet = world
+            .query_filtered::<&Transform, With<crate::player::Player>>()
+            .single(world)
+            .map(|t| t.translation)
+            .map_err(|err| format!("joueur introuvable : {err}"))?;
+        Ok(place_player(world, feet, Some(center)))
     }
 
     /// La touche de l'inventaire (I) : l'écran du personnage, sur l'inventaire.
@@ -2604,16 +2691,427 @@ mod m10_script {
     struct PressCount(u32);
 }
 
+/// Les vérifications du streaming de M11 (`docs/m11.md` §2, lot S) : vu du quai, le vaisseau
+/// amarré n'est chargé que par son sas, et le hall est prêt avant que la porte du couloir ne
+/// s'ouvre ([`Step::Script`] de `port_loop`) ; le scénario `airlock_dock`, l'occultation par les
+/// portails dans le sas amarré. Les portes s'ouvrent par `Door::request_open`, comme à la touche
+/// d'interaction (la porte de chargement fait le reste), jamais en écrivant leur ouverture.
+mod m11_script {
+    use bevy::prelude::*;
+
+    use super::{Scenario, cell_local_ready};
+    use crate::sector::doors::{Door, DoorState};
+    use crate::sector::streaming::{CellInstance, CellStates};
+    use crate::sector::{ActiveSector, ShipHull};
+
+    /// Le sas du vaisseau du joueur (intérieur type `corvette`) et sa porte extérieure une fois
+    /// amarré (`sh_data::dock` : `<sas>__<passerelle>`).
+    const AIRLOCK: &str = "sas";
+    const AIRLOCK_DOOR: &str = "sas__hangar";
+    /// Le hangar du spatioport, le hall derrière le couloir (par une ouverture), et la porte du
+    /// couloir côté hangar.
+    const HANGAR: &str = "hangar";
+    const HALL: &str = "hall";
+    const CORRIDOR_DOOR: &str = "couloir__hangar";
+    /// Délai (s) pour trouver le vaisseau réduit à son sas : l'arrivée au hangar ; au retour, la
+    /// fermeture seule de ses portes (4 s sans personne auprès, puis le glissement), le délai de
+    /// grâce du streaming (`UNLOAD_GRACE`, 2 s) et un modèle retiré par frame. Sous la limite d'une
+    /// étape (`TRANSITION_SECONDS`).
+    const UNLOAD_SECONDS: f32 = 25.0;
+    /// Tolérance (s) pour le hall devant la porte du couloir : il est dans la base Locale du
+    /// hangar (une porte et une ouverture, M11), où le joueur marche depuis longtemps.
+    const HALL_SECONDS: f32 = 2.0;
+    /// Le séjour immobile dans le sas amarré (s).
+    const STAY_SECONDS: f32 = 10.0;
+    /// Délai maximal du scénario `airlock_dock` (s), chargement compris.
+    const AIRLOCK_TIMEOUT: f32 = 120.0;
+    /// Étape finale de `airlock_dock` : plus rien à faire.
+    const DONE: u8 = u8::MAX;
+
+    fn elapsed(world: &World) -> f32 {
+        world.resource::<Scenario>().step_time
+    }
+
+    /// L'état et l'ouverture de la porte de ce portail.
+    fn door_state(world: &mut World, portal: &str) -> Option<(DoorState, f32)> {
+        world
+            .query::<&Door>()
+            .iter(world)
+            .find(|d| d.portal == portal)
+            .map(|d| (d.state, d.openness))
+    }
+
+    /// Demande l'ouverture de la porte de ce portail, comme la touche d'interaction. Faux si elle
+    /// n'existe pas.
+    fn request_open(world: &mut World, portal: &str) -> bool {
+        let mut doors = world.query::<&mut Door>();
+        let Some(mut door) = doors.iter_mut(world).find(|d| d.portal == portal) else {
+            return false;
+        };
+        door.request_open();
+        true
+    }
+
+    /// Au hangar, le vaisseau amarré n'est chargé que par son sas : aucune autre de ses salles n'a
+    /// de modèle complet, et seule une salle qu'on voit de dehors garde sa coque simplifiée (le
+    /// cockpit, par sa verrière, `Sector::seen_from`). À l'arrivée, c'est vrai d'emblée ; au
+    /// retour, une fois ses portes refermées et le délai de grâce passé.
+    pub(super) fn ship_unloaded(world: &mut World) -> Result<bool, String> {
+        let t = elapsed(world);
+        let (Some(states), Some(active)) = (
+            world.get_resource::<CellStates>(),
+            world.get_resource::<ActiveSector>(),
+        ) else {
+            return Ok(false);
+        };
+        let at_hangar = states.current.as_deref() == Some(HANGAR);
+        let mut loaded = Vec::new();
+        let mut seen_from_outside = Vec::new();
+        for cell in active.ship_cells.iter().filter(|c| c.as_str() != AIRLOCK) {
+            let Some(slot) = states.slots.get(cell) else {
+                continue;
+            };
+            if slot.full.is_some() {
+                loaded.push(format!("{cell} (modèle complet)"));
+            } else if slot.lod.is_some() && !states.shown.contains(cell) {
+                loaded.push(format!("{cell} (coque simplifiée hors de vue)"));
+            } else if slot.lod.is_some() {
+                seen_from_outside.push(cell.clone());
+            }
+        }
+        let current = states.current.clone();
+        let airlock_ready = cell_local_ready(world, AIRLOCK);
+        let ready = at_hangar && cell_local_ready(world, HANGAR) && airlock_ready;
+        if ready && loaded.is_empty() {
+            info!(
+                "scénario {} : au hangar, du vaisseau amarré seul le sas est chargé (coques simplifiées vues de dehors : {seen_from_outside:?}), constaté après {t:.1} s",
+                world.resource::<Scenario>().name
+            );
+            return Ok(true);
+        }
+        if t > UNLOAD_SECONDS {
+            return Err(format!(
+                "cellule courante {current:?}, sas prêt {airlock_ready}, salles du vaisseau encore chargées : {loaded:?}"
+            ));
+        }
+        Ok(false)
+    }
+
+    /// Devant la porte du couloir, côté hangar : le hall, derrière le couloir et son ouverture,
+    /// est prêt en qualité Locale (`CellReady`) avant que la porte ne quitte l'état fermé (M11,
+    /// retour n° 9 : on le voyait se charger). Le hall vérifié, la porte est demandée ; fini quand
+    /// elle s'ouvre, le hall toujours prêt.
+    pub(super) fn hall_ready_before_door(world: &mut World) -> Result<bool, String> {
+        let t = elapsed(world);
+        // `issued` : la porte a été demandée à cette étape (remis à zéro par l'étape suivante).
+        let requested = world.resource::<Scenario>().issued.is_some();
+        let hall_ready = cell_local_ready(world, HALL);
+        let Some((state, openness)) = door_state(world, CORRIDOR_DOOR) else {
+            return Err(format!("porte {CORRIDOR_DOOR} absente du secteur"));
+        };
+        if requested {
+            return match state {
+                DoorState::Closed if t > HALL_SECONDS + 3.0 => {
+                    Err(format!("la porte {CORRIDOR_DOOR} ne s'ouvre pas"))
+                }
+                DoorState::Closed => Ok(false),
+                _ if !hall_ready => Err(format!(
+                    "le hall n'est plus prêt pendant l'ouverture (porte {state:?})"
+                )),
+                _ => {
+                    info!(
+                        "scénario {} : hall prêt avant la porte {CORRIDOR_DOOR}, qui s'ouvre ({state:?}) après {t:.1} s",
+                        world.resource::<Scenario>().name
+                    );
+                    Ok(true)
+                }
+            };
+        }
+        if state != DoorState::Closed || openness > 0.0 {
+            return Err(format!(
+                "la porte {CORRIDOR_DOOR} n'était pas fermée ({state:?}) : rien à vérifier"
+            ));
+        }
+        if !hall_ready {
+            return if t > HALL_SECONDS {
+                Err(format!(
+                    "le hall n'est pas prêt (CellReady) après {t:.1} s devant la porte {CORRIDOR_DOOR}"
+                ))
+            } else {
+                Ok(false)
+            };
+        }
+        if !request_open(world, CORRIDOR_DOOR) {
+            return Err(format!("porte {CORRIDOR_DOOR} absente du secteur"));
+        }
+        world.resource_mut::<Scenario>().issued = Some(None);
+        Ok(false)
+    }
+
+    /// `airlock_dock` : l'étape, le temps passé (dans l'étape, en tout) et les mesures du séjour
+    /// immobile dans le sas.
+    #[derive(Resource, Default)]
+    pub(super) struct AirlockCheck {
+        step: u8,
+        since: f32,
+        total: f32,
+        frames: u32,
+        total_ms: f64,
+        worst_ms: f64,
+        over_33ms: u32,
+        /// L'état de la porte extérieure à la première frame où elle n'était plus fermée.
+        first_open: Option<DoorState>,
+    }
+
+    /// Les cellules affichées (`CellStates::shown`), triées.
+    fn shown_cells(world: &World) -> Vec<String> {
+        world
+            .get_resource::<CellStates>()
+            .map(|s| s.shown.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// `airlock_dock` (avec `SH_START=sector:spaceport SH_SPAWN_AT=11.0,0,0,-90,0`) : le joueur
+    /// immobile [`STAY_SECONDS`] dans le sas du vaisseau amarré, tourné vers l'intérieur (le lag du
+    /// sas, `docs/m11.md` §1, n° 8) : portes fermées, seul le sas est affiché, rien d'autre ne se
+    /// dessine (ni le hangar ni la coque) ; le temps de frame du séjour est journalisé. Puis la
+    /// porte extérieure est demandée : dès la frame où le streaming la voit quitter l'état fermé,
+    /// le hangar est affiché (il passe après le streaming, qui passe après l'animation des
+    /// portes : même état de porte pour les trois) ; ouverte, le hangar et la coque se dessinent.
+    pub(super) fn airlock_dock(world: &mut World) {
+        let (dt, ms) = {
+            let time = world.resource::<Time<Real>>();
+            (time.delta_secs(), time.delta_secs_f64() * 1000.0)
+        };
+        let ready = world.contains_resource::<ActiveSector>()
+            && world.contains_resource::<crate::career::Career>();
+        if ready {
+            // Immobile : ni la souris ni le clavier ne bougent le joueur ou son regard.
+            if let Some(mut scripted) = world.get_resource_mut::<crate::player::ScriptedControl>() {
+                scripted.0 = true;
+            }
+            if let Some(mut intent) = world.get_resource_mut::<crate::player::PlayerIntent>() {
+                *intent = default();
+            }
+        }
+        let (step, since, total) = {
+            let mut check = world.resource_mut::<AirlockCheck>();
+            if check.step == DONE {
+                return;
+            }
+            check.since += dt;
+            check.total += dt;
+            (check.step, check.since, check.total)
+        };
+        let fail = |world: &mut World, message: String| {
+            error!("scénario airlock_dock : {message}");
+            world.write_message(AppExit::error());
+            world.resource_mut::<AirlockCheck>().step = DONE;
+        };
+        let next = |world: &mut World| {
+            let mut check = world.resource_mut::<AirlockCheck>();
+            (check.step, check.since) = (check.step + 1, 0.0);
+        };
+        if total > AIRLOCK_TIMEOUT {
+            fail(world, format!("bloqué à l'étape {step}"));
+            return;
+        }
+        match step {
+            // L'arrivée : le joueur dans le sas, le sas prêt en qualité Locale.
+            0 => {
+                if !ready {
+                    return;
+                }
+                let current = world
+                    .get_resource::<CellStates>()
+                    .and_then(|s| s.current.clone());
+                if current.as_deref() == Some(AIRLOCK) && cell_local_ready(world, AIRLOCK) {
+                    info!(
+                        "scénario airlock_dock : dans le sas amarré, séjour immobile de {STAY_SECONDS} s"
+                    );
+                    next(world);
+                } else if since > 60.0 {
+                    fail(
+                        world,
+                        format!(
+                            "pas dans le sas prêt (cellule {current:?}) : lancer avec SH_SPAWN_AT=11.0,0,0,-90,0"
+                        ),
+                    );
+                }
+            }
+            // Le séjour : portes fermées, seul le sas est affiché, à chaque frame.
+            1 => {
+                let shown = shown_cells(world);
+                if shown != [AIRLOCK] {
+                    fail(
+                        world,
+                        format!(
+                            "portes fermées, cellules affichées {shown:?} (seul le sas attendu)"
+                        ),
+                    );
+                    return;
+                }
+                let open: Vec<String> = world
+                    .query::<&Door>()
+                    .iter(world)
+                    .filter(|d| d.state != DoorState::Closed || d.openness > 0.0)
+                    .map(|d| d.portal.clone())
+                    .collect();
+                if !open.is_empty() {
+                    fail(
+                        world,
+                        format!("portes ouvertes pendant le séjour : {open:?}"),
+                    );
+                    return;
+                }
+                {
+                    let mut check = world.resource_mut::<AirlockCheck>();
+                    check.frames += 1;
+                    check.total_ms += ms;
+                    check.worst_ms = check.worst_ms.max(ms);
+                    if ms > 33.0 {
+                        check.over_33ms += 1;
+                    }
+                }
+                if since < STAY_SECONDS {
+                    return;
+                }
+                // Ce qui se dessine vraiment : toute instance d'une autre cellule est cachée, la
+                // coque du vaisseau aussi (son berceau, le hangar, n'est pas affiché).
+                let drawn: Vec<String> = world
+                    .query::<(&CellInstance, &Visibility)>()
+                    .iter(world)
+                    .filter(|(c, v)| c.cell != AIRLOCK && **v != Visibility::Hidden)
+                    .map(|(c, _)| c.cell.clone())
+                    .collect();
+                let hull_drawn = world
+                    .query_filtered::<&Visibility, With<ShipHull>>()
+                    .iter(world)
+                    .any(|v| *v != Visibility::Hidden);
+                if !drawn.is_empty() || hull_drawn {
+                    fail(
+                        world,
+                        format!(
+                            "portes fermées, instances non cachées hors du sas : {drawn:?}, coque du vaisseau dessinée {hull_drawn}"
+                        ),
+                    );
+                    return;
+                }
+                let c = world.resource::<AirlockCheck>();
+                info!(
+                    "scénario airlock_dock : séjour immobile de {STAY_SECONDS} s dans le sas, seul le sas affiché ; temps de frame moyen {:.2} ms, pire {:.2} ms, {} frame(s) > 33 ms, sur {} frames",
+                    c.total_ms / f64::from(c.frames.max(1)),
+                    c.worst_ms,
+                    c.over_33ms,
+                    c.frames
+                );
+                if !request_open(world, AIRLOCK_DOOR) {
+                    fail(world, format!("porte {AIRLOCK_DOOR} absente du secteur"));
+                    return;
+                }
+                next(world);
+            }
+            // La porte demandée (une frame plus tôt) : dès que le streaming la voit ouverte, en
+            // attente ou en mouvement, le hangar est affiché, son modèle montré.
+            2 => {
+                let Some((state, openness)) = door_state(world, AIRLOCK_DOOR) else {
+                    fail(world, format!("porte {AIRLOCK_DOOR} disparue"));
+                    return;
+                };
+                if state == DoorState::Closed && openness <= 0.0 {
+                    if since > 3.0 {
+                        fail(
+                            world,
+                            "la porte extérieure ne quitte pas l'état fermé".into(),
+                        );
+                    }
+                    return;
+                }
+                let (hangar_shown, hangar_drawn) = world
+                    .get_resource::<CellStates>()
+                    .map(|s| {
+                        (
+                            s.shown.contains(HANGAR),
+                            s.slots
+                                .get(HANGAR)
+                                .is_some_and(|slot| slot.full_visible || slot.lod_visible),
+                        )
+                    })
+                    .unwrap_or_default();
+                if !(hangar_shown && hangar_drawn) {
+                    fail(
+                        world,
+                        format!(
+                            "porte extérieure {state:?} (ouverture {openness:.2}) : hangar affiché {hangar_shown}, modèle montré {hangar_drawn}"
+                        ),
+                    );
+                    return;
+                }
+                world
+                    .resource_mut::<AirlockCheck>()
+                    .first_open
+                    .get_or_insert(state);
+                if state == DoorState::Open {
+                    next(world);
+                } else if since > 5.0 {
+                    fail(
+                        world,
+                        format!("la porte extérieure ne s'ouvre pas en entier ({state:?})"),
+                    );
+                }
+            }
+            // Ouverte : les visibilités posées par le streaming sont appliquées, le hangar et la
+            // coque du vaisseau se dessinent.
+            3 => {
+                let hangar_drawn = world
+                    .query::<(&CellInstance, &Visibility)>()
+                    .iter(world)
+                    .any(|(c, v)| c.cell == HANGAR && *v != Visibility::Hidden);
+                let hulls: Vec<bool> = world
+                    .query_filtered::<&Visibility, With<ShipHull>>()
+                    .iter(world)
+                    .map(|v| *v != Visibility::Hidden)
+                    .collect();
+                if !(hangar_drawn && hulls.iter().all(|drawn| *drawn)) {
+                    if since > 1.0 {
+                        fail(
+                            world,
+                            format!(
+                                "porte ouverte : hangar dessiné {hangar_drawn}, coques dessinées {hulls:?}"
+                            ),
+                        );
+                    }
+                    return;
+                }
+                let c = world.resource::<AirlockCheck>();
+                info!(
+                    "scénario airlock_dock terminé : séjour immobile de {STAY_SECONDS} s dans le sas amarré, portes fermées, seul le sas affiché ; temps de frame moyen {:.2} ms, pire {:.2} ms, {} frame(s) > 33 ms, sur {} frames ; porte extérieure : hangar affiché dès qu'elle n'est plus fermée ({:?}), coque du vaisseau ({}) affichée une fois ouverte",
+                    c.total_ms / f64::from(c.frames.max(1)),
+                    c.worst_ms,
+                    c.over_33ms,
+                    c.frames,
+                    c.first_open,
+                    hulls.len()
+                );
+                world.write_message(AppExit::Success);
+                world.resource_mut::<AirlockCheck>().step = DONE;
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Distance horizontale (m) à laquelle l'autopilote s'arrête devant une console pour l'utiliser.
 const CONSOLE_DISTANCE: f32 = 1.4;
 
 /// Délai maximal d'une transition de vue (amarrage, départ) dans un scénario.
 const TRANSITION_SECONDS: f32 = 30.0;
 /// Durée maximale d'un trajet de l'autopilote dans un système (s). D'une planète à l'autre de
-/// Vorrh (≈ 3,7 millions de km) : ≈ 4 min mesurées (05/11/2026), dont ≈ 2 min de croisière
-/// plafonnée à 30 000 km/s et ≈ 1 min à chaque bout (limite de croisière proportionnelle à la
-/// distance à la surface) ; marge de 50 %.
-const AUTOPILOT_SECONDS: f32 = 360.0;
+/// Vorrh (≈ 3,7 millions de km) : ≈ 4 min mesurées en M10 (05/11/2026) ; M11 (lot V, P33) : la
+/// croisière plafonne à 0,05 c (15 000 km/s) et monte plus doucement (`cruise_rate` 0,10), le
+/// trajet est estimé à ≈ 416 s (≈ 6,9 min, l'approche finale aussi se fait en croisière) ; marge
+/// de 50 %.
+const AUTOPILOT_SECONDS: f32 = 630.0;
 
 /// Les phases de vol du scénario `fly_ship`, chronométrées.
 #[derive(Default)]
@@ -2685,6 +3183,15 @@ impl Plugin for ScenarioPlugin {
                 .add_systems(Update, pickup_persist);
             return;
         }
+        // Après le streaming (lui-même après l'animation des portes) : ce scénario voit, dans la
+        // même frame, l'état des portes et les cellules affichées qui en découlent.
+        if name == "airlock_dock" {
+            app.init_resource::<m11_script::AirlockCheck>().add_systems(
+                Update,
+                m11_script::airlock_dock.after(crate::sector::streaming::StreamCells),
+            );
+            return;
+        }
         // Touches tenues comme par un joueur : la touche est relâchée avant que le scénario
         // regarde la suite.
         if name == "key_help" {
@@ -2740,7 +3247,7 @@ impl Plugin for ScenarioPlugin {
                 | "airlock_space"
         ) {
             error!(
-                "SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage, voyage_isolated, contract_loop, deliver_vorrh, raid_win, raid_flee, raid_lose, firefight, firefight_lose, tutorial, terminal_tour, fridge, locker_name, airlock_space, menu_return, save_load, pause_escape, map_key, pickup_persist, key_help, character)"
+                "SH_SCENARIO inconnu : « {name} » (walk_ship, fly_ship, port_loop, voyage, voyage_isolated, contract_loop, deliver_vorrh, raid_win, raid_flee, raid_lose, firefight, firefight_lose, tutorial, terminal_tour, fridge, locker_name, airlock_space, airlock_dock, menu_return, save_load, pause_escape, map_key, pickup_persist, key_help, character)"
             );
             app.add_systems(Startup, |mut exit: MessageWriter<AppExit>| {
                 exit.write(AppExit::error());
@@ -4354,8 +4861,11 @@ fn fly_phase(
     let (start, start_rot) = *flight.start.get_or_insert((pos, rot));
     flight.t += dt;
     let speed = motion.velocity.length();
-    // (durée, commande) de chaque phase ; la vérification se fait à la fin de la phase.
-    let duration = [6.0, 4.0, 22.0, 5.0, 2.5][usize::from(flight.step)];
+    // (durée, commande) de chaque phase ; la vérification se fait à la fin de la phase. M11 (lot
+    // V, P33) : la poussée monte à 1 km/s (≈ 5,6 s jusqu'à 250 m/s, puis trois fois plus vite :
+    // ≈ 11 s en tout) ; le retour au calme ralentit depuis la croisière, puis depuis 1 km/s
+    // (≈ 20 s de freinage).
+    let duration = [12.0, 4.0, 35.0, 5.0, 2.5][usize::from(flight.step)];
     match flight.step {
         0 => pilot.thrust = Vec3::NEG_Z,
         1 => pilot.cruise = true,
@@ -4371,7 +4881,7 @@ fn fly_phase(
     }
     let check = match flight.step {
         0 => (
-            (240.0..=251.0).contains(&speed),
+            (990.0..=1001.0).contains(&speed),
             format!(
                 "vol assisté : {speed:.1} m/s, {:.0} m parcourus",
                 pos.distance(start)
@@ -4959,9 +5469,9 @@ fn raid_step(world: &mut World, step: Step) {
         }
         Some(None) => {}
     }
-    let Some(root) = world
+    let Some((root, ship)) = world
         .get_resource::<crate::sector::ActiveSector>()
-        .map(|s| s.root)
+        .map(|s| (s.root, s.sector.id.to_string()))
     else {
         return;
     };
@@ -5067,6 +5577,18 @@ fn raid_step(world: &mut World, step: Step) {
             fire.decoy = incoming;
         }
         _ => {}
+    }
+    // M11 (lot V) : le vol ne borne la poussée à la vitesse de combat que sous `CruiseLock`
+    // (hostiles proches). Le combattant scripté s'y tient toujours, sans quoi, pillards encore
+    // loin ou en dégagement, il monterait à 1 km/s et l'engagement réglé en M6 ne serait plus le
+    // même ; la fuite (`Flee`) garde la poussée et la croisière d'un joueur.
+    if matches!(play, RaidPlay::Fight) {
+        intent.speed_cap = world
+            .resource::<Data>()
+            .flight
+            .ships
+            .get(ship.as_str())
+            .map(|handling| handling.combat_max_speed);
     }
     *world.resource_mut::<crate::ship::PilotIntent>() = intent;
     *world.resource_mut::<FireIntent>() = fire;

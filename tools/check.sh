@@ -65,6 +65,30 @@ done
 step "fumée sector:corvette sans lightmaps" \
     run_game "ERROR|panicked|temps de frame" SH_START=sector:corvette SH_BAKED_LIGHTING=0 SH_EXIT_AFTER_FRAMES=150
 
+# M11 : la limite d'images tient 60 i/s (le limiteur l'annonce, le temps de frame moyen reste près
+# de 16,7 ms). Préréglage bas, petite fenêtre et 1 500 frames (≈ 25 s) : c'est le limiteur qu'on
+# mesure, pas le GPU, et les pics de l'arrivée (pipelines, envois) pèsent peu dans la moyenne.
+fps_limit_smoke() {
+    local log code mean
+    log=$(env SH_START=sector:spaceport SH_FPS_LIMIT=60 SH_PRESET=low SH_WINDOW=960x540 \
+        SH_EXIT_AFTER_FRAMES=1500 cargo dev 2>&1)
+    code=$?
+    grep -E "ERROR|panicked|limite d.images|temps de frame : moyenne" <<<"$log" | sed 's/^/   /'
+    if [ "$code" -ne 0 ]; then
+        return "$code"
+    fi
+    if ! grep -qE "limite d.images : 60 i/s" <<<"$log"; then
+        echo "${red}   limite d'images de 60 i/s absente du journal${reset}"
+        return 1
+    fi
+    mean=$(grep -oE "temps de frame : moyenne [0-9.]+ ms" <<<"$log" | head -n 1 | grep -oE "[0-9]+(\.[0-9]+)?")
+    if ! awk -v m="${mean:-0}" 'BEGIN { exit !(m >= 15.5 && m <= 18.0) }'; then
+        echo "${red}   temps de frame moyen ${mean:-absent} ms hors de [15,5 ; 18] ms${reset}"
+        return 1
+    fi
+}
+step "fumée sector:spaceport limitée à 60 i/s" fps_limit_smoke
+
 # Nouvelle partie, Échap vers le menu principal, puis nouvelle partie repartie de zéro.
 step "scénario menu_return" \
     run_game "ERROR|panicked|menu_return" SH_START=new SH_SCENARIO=menu_return
@@ -119,6 +143,11 @@ step "scénario airlock_space" \
 # Critère de M2 : quai du hangar → sas → cockpit → départ → vol → amarrage → hangar.
 step "scénario port_loop" \
     run_game "ERROR|panicked|sc.{1,3}nario .*termin" SH_START=sector:spaceport SH_SCENARIO=port_loop
+
+# M11 : immobile dans le sas du vaisseau amarré, portes fermées, seul le sas est affiché ; la porte
+# extérieure demandée, le hangar l'est dès qu'elle n'est plus fermée.
+step "scénario airlock_dock" \
+    run_game "ERROR|panicked|sc.{1,3}nario airlock_dock" SH_START=sector:spaceport SH_SPAWN_AT=11.0,0,0,-90,0 SH_SCENARIO=airlock_dock
 
 # M9 : chaque PNJ de comptoir du spatioport, le service qu'il ouvre, puis la tablette.
 step "scénario terminal_tour" \

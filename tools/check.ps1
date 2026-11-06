@@ -67,6 +67,37 @@ Step "fumée sector:corvette sans lightmaps" {
     $global:LASTEXITCODE = $code
 }
 
+# M11 : la limite d'images tient 60 i/s (le limiteur l'annonce, le temps de frame moyen reste près
+# de 16,7 ms). Préréglage bas, petite fenêtre et 1 500 frames (≈ 25 s) : c'est le limiteur qu'on
+# mesure, pas le GPU, et les pics de l'arrivée (pipelines, envois) pèsent peu dans la moyenne.
+Step "fumée sector:spaceport limitée à 60 i/s" {
+    $env:SH_START = "sector:spaceport"
+    $env:SH_FPS_LIMIT = "60"
+    $env:SH_PRESET = "low"
+    $env:SH_WINDOW = "960x540"
+    $env:SH_EXIT_AFTER_FRAMES = "1500"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_START, Env:SH_FPS_LIMIT, Env:SH_PRESET, Env:SH_WINDOW, Env:SH_EXIT_AFTER_FRAMES
+    $log | Select-String -Pattern "ERROR|panicked|limite d.images|temps de frame : moyenne" | ForEach-Object { "   $_" }
+    if ($code -eq 0) {
+        $limited = $log | Select-String -Pattern "limite d.images : 60 i/s" -Quiet
+        $found = $log | Select-String -Pattern "temps de frame : moyenne ([0-9.]+) ms" | Select-Object -First 1
+        $mean = $null
+        if ($found) {
+            $mean = [double]::Parse($found.Matches[0].Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture)
+        }
+        if (-not $limited) {
+            Write-Host "   limite d'images de 60 i/s absente du journal" -ForegroundColor Red
+            $code = 1
+        } elseif ($null -eq $mean -or $mean -lt 15.5 -or $mean -gt 18.0) {
+            Write-Host "   temps de frame moyen $mean ms hors de [15,5 ; 18] ms" -ForegroundColor Red
+            $code = 1
+        }
+    }
+    $global:LASTEXITCODE = $code
+}
+
 # Nouvelle partie, Échap vers le menu principal, puis nouvelle partie repartie de zéro.
 Step "scénario menu_return" {
     $env:SH_START = "new"
@@ -219,6 +250,19 @@ Step "scénario port_loop" {
     $code = $LASTEXITCODE
     Remove-Item Env:SH_START, Env:SH_SCENARIO, Env:SH_RAID -ErrorAction SilentlyContinue
     $log | Select-String -Pattern "ERROR|panicked|sc.{1,3}nario .*termin" | ForEach-Object { "   $_" }
+    $global:LASTEXITCODE = $code
+}
+
+# M11 : immobile dans le sas du vaisseau amarré, portes fermées, seul le sas est affiché ; la porte
+# extérieure demandée, le hangar l'est dès qu'elle n'est plus fermée.
+Step "scénario airlock_dock" {
+    $env:SH_START = "sector:spaceport"
+    $env:SH_SPAWN_AT = "11.0,0,0,-90,0"
+    $env:SH_SCENARIO = "airlock_dock"
+    $log = & cargo dev 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:SH_START, Env:SH_SPAWN_AT, Env:SH_SCENARIO -ErrorAction SilentlyContinue
+    $log | Select-String -Pattern "ERROR|panicked|sc.{1,3}nario airlock_dock" | ForEach-Object { "   $_" }
     $global:LASTEXITCODE = $code
 }
 

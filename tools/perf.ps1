@@ -26,6 +26,8 @@ $runs = @(
     @{ Name = "walk_ship_sans_lightmaps"; Env = @{ SH_START = "sector:corvette"; SH_SCENARIO = "walk_ship"; SH_BAKED_LIGHTING = "0" } },
     @{ Name = "fly_ship"; Env = @{ SH_START = "global:hexis"; SH_SCENARIO = "fly_ship" } },
     @{ Name = "port_loop"; Env = @{ SH_START = "sector:spaceport"; SH_SCENARIO = "port_loop" } },
+    # M11 : immobile dans le sas du vaisseau amarré, portes fermées (le lag du sas), puis la porte extérieure.
+    @{ Name = "airlock_dock"; Env = @{ SH_START = "sector:spaceport"; SH_SPAWN_AT = "11.0,0,0,-90,0"; SH_SCENARIO = "airlock_dock" } },
     @{ Name = "raid_win"; Env = @{ SH_START = "global:cygnara"; SH_SCENARIO = "raid_win"; SH_RAID = "1" } },
     @{ Name = "firefight"; Env = @{ SH_START = "sector:corvette"; SH_SPAWN = "soute"; SH_BOARDING = "2"; SH_SCENARIO = "firefight" } },
     @{ Name = "firefight_lose"; Env = @{ SH_START = "sector:corvette"; SH_SPAWN = "soute"; SH_BOARDING = "3"; SH_SCENARIO = "firefight_lose" } }
@@ -58,7 +60,9 @@ foreach ($run in $runs) {
     $log = & cargo run --release -q 2>&1 | ForEach-Object { "$_" }
     $code = $LASTEXITCODE
     foreach ($key in $vars.Keys) { Remove-Item "Env:$key" -ErrorAction SilentlyContinue }
-    $lines = $log | Select-String -Pattern "ERROR|panicked|sc.{1,3}nario .*(termin|raid fini|combat . pied)|temps de frame :" |
+    # Les deux lignes « temps de frame : » (moyenne, puis centiles et chutes) et les trois pires
+    # frames avec leur contexte (le jeu en journalise dix, « pire frame k/10 : »).
+    $lines = $log | Select-String -Pattern "ERROR|panicked|sc.{1,3}nario .*(termin|raid fini|combat . pied)|temps de frame :|pire frame [1-3]/" |
         ForEach-Object { ($_.Line -replace '^.*?(sh_game|star_histories)\S*: ', '').Trim() }
     if ($code -ne 0) {
         $failed = $true

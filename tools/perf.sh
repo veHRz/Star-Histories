@@ -25,6 +25,8 @@ runs=(
     "walk_ship_sans_lightmaps|SH_START=sector:corvette SH_SCENARIO=walk_ship SH_BAKED_LIGHTING=0"
     "fly_ship|SH_START=global:hexis SH_SCENARIO=fly_ship"
     "port_loop|SH_START=sector:spaceport SH_SCENARIO=port_loop"
+    # M11 : immobile dans le sas du vaisseau amarré, portes fermées (le lag du sas), puis la porte extérieure.
+    "airlock_dock|SH_START=sector:spaceport SH_SPAWN_AT=11.0,0,0,-90,0 SH_SCENARIO=airlock_dock"
     "raid_win|SH_START=global:cygnara SH_SCENARIO=raid_win SH_RAID=1"
     "firefight|SH_START=sector:corvette SH_SPAWN=soute SH_BOARDING=2 SH_SCENARIO=firefight"
     "firefight_lose|SH_START=sector:corvette SH_SPAWN=soute SH_BOARDING=3 SH_SCENARIO=firefight_lose"
@@ -51,7 +53,9 @@ for run in "${runs[@]}"; do
     # shellcheck disable=SC2086 # les variables du scénario sont séparées par des espaces, voulu.
     log=$(env $vars SH_PRESET="$preset" SH_WINDOW="$window" cargo run --release -q 2>&1)
     code=$?
-    lines=$(grep -E "ERROR|panicked|sc.{1,3}nario .*(termin|raid fini|combat . pied)|temps de frame :" <<<"$log" \
+    # Les deux lignes « temps de frame : » (moyenne, puis centiles et chutes) et les trois pires
+    # frames avec leur contexte (le jeu en journalise dix, « pire frame k/10 : »).
+    lines=$(grep -E "ERROR|panicked|sc.{1,3}nario .*(termin|raid fini|combat . pied)|temps de frame :|pire frame [1-3]/" <<<"$log" \
         | sed -E 's/^.*(sh_game|star_histories)[^ ]*: //')
     if [ "$code" -ne 0 ]; then
         failed=1

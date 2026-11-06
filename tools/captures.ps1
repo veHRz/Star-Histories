@@ -90,6 +90,16 @@ $views = [ordered]@{
     "coque-nez"        = @{ SH_START = "sector:spaceport"; SH_SPAWN_AT = "11.0,0,-31.0,-143,8"; SH_SCREENSHOT_FRAME = $sectorFrame }
     "pnj-invite"       = @{ SH_START = "sector:spaceport"; SH_SPAWN_AT = "-8.4,0,4.6,-90,-8"; SH_SCREENSHOT_FRAME = $sectorFrame }
     "conversation"     = @{ SH_START = "sector:spaceport"; SH_SPAWN = "banque"; SH_TALK = "bank"; SH_SCREENSHOT_FRAME = $screenFrame }
+    # M11 : le coffre de la banque (sans z-fighting), le hall vu du couloir du spatioport (déjà
+    # chargé), le sas du vaisseau amarré tourné vers l'intérieur (portes fermées : seul le sas), les
+    # options d'affichage (limite d'images, synchronisation verticale), le compteur d'i/s, le
+    # tutoriel à l'étape de la Banque. Les repères des objets du système : `station`, `global-hexis`.
+    "coffre"           = @{ SH_START = "sector:spaceport"; SH_SPAWN_AT = "-10.9,0,2.4,200,-8"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "couloir-vers-hall" = @{ SH_START = "sector:spaceport"; SH_SPAWN_AT = "-5.0,0,0,90,0"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "sas-amarre"       = @{ SH_START = "sector:spaceport"; SH_SPAWN_AT = "11.0,0,0,-90,0"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "options-affichage" = @{ SH_START = "menu"; SH_OPTIONS = "display"; SH_SCREENSHOT_FRAME = "200" }
+    "compteur-fps"     = @{ SH_START = "sector:corvette"; SH_SPAWN = "cockpit"; SH_FPS_COUNTER = "1"; SH_SCREENSHOT_FRAME = $sectorFrame }
+    "tuto-banque"      = @{ SH_START = "new"; SH_TUTORIAL = "1"; SH_TUTORIAL_STEP = "7"; SH_RAID = "0"; SH_SCREENSHOT_FRAME = $sectorFrame }
 }
 
 $failed = @()
