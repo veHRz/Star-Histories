@@ -191,7 +191,7 @@ But : traiter la liste de l'auteur du 06/11/2026 (étape Banque du tutoriel, sur
 - [x] Vague 1 : coffre de la Banque (D), tutoriel et comptoirs (U), fluidité et mesure (P), streaming et occultation par portails (S), vol (V).
 - [x] Vague 2 : branchement et scénarios (B), interface sans écriture inutile à chaque frame (B2).
 - [x] Intégration et tests par l'orchestrateur à chaque vague : `tools/check.ps1`, captures avant / après, `tools/perf.ps1 -Preset low -Window fullscreen`. *Sas amarré : 52 → 84 i/s, aucune frame > 33 ms ; limite de 60 i/s par défaut (frames régulières à 0,1 ms près).*
-- [x] Vague 3 (retours de l'auteur sur la vague 2) : croisière qui monte en douceur aux vitesses d'avant (V2, Q19 tranchée), résolution dynamique et préréglage Bas sur GPU intégré (R). *Limite à 60 + résolution dynamique : 16,7 ms partout, ≤ 0,3 % de frames > 25 ms, en Moyenne comme en Basse.*
+- [x] Vague 3 (retours de l'auteur sur la vague 2) : croisière qui monte en douceur aux vitesses d'avant (V2, Q19 tranchée), préréglage Bas proposé sur GPU intégré (R). *La résolution dynamique de R, essayée, a été refusée par l'auteur (3D trop floue en Haut) et retirée (R2).*
 - [ ] Validation de l'auteur : captures avant / après, fluidité en jeu, Q20 (restes de M10).
 
 **Fini quand** : chaque point de la liste est traité ou tranché avec l'auteur ; plus de lag dans le sas amarré ni de hall qui se charge sous les yeux ; `tools/check.ps1` vert ; ≥ 60 i/s en Bas 1080p sur la machine de référence, aucune chute périodique ; l'auteur valide les captures avant / après.
