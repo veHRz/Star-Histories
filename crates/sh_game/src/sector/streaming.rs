@@ -776,8 +776,9 @@ mod tests {
         sh_data::dock(ship, SHIP_PORT, port, DISTRICT_PORT).unwrap_or_else(|e| panic!("{e}"))
     }
 
-    /// Les secteurs du jeu (vitrages non déclarés, données d'avant M11) : le vaisseau seul (en
-    /// vol), et amarré au spatioport, avec ses salles.
+    /// Les secteurs du jeu, avec leurs vitrages déclarés (la verrière du cockpit, la fenêtre entre
+    /// le chantier et le hangar) : le vaisseau seul (en vol), et amarré au spatioport, avec ses
+    /// salles.
     fn sectors() -> (Sector, Sector, Vec<String>) {
         let ship = read("corvette.ron");
         let docked = dock(&ship, &read("spaceport.ron"));
@@ -813,10 +814,10 @@ mod tests {
         let mut local = plan.local.clone();
         local.sort();
         assert_eq!(local, ["chantier", "couloir", "hall", "hangar", "sas"]);
-        // Portes fermées : on voit le hangar ; ses voisines directes sont affichées (la fenêtre du
-        // chantier), le hall reste caché derrière la porte du couloir.
-        assert_eq!(plan.seen, set(&["hangar"]));
-        assert_eq!(plan.shown, set(&["chantier", "couloir", "hangar", "sas"]));
+        // Portes fermées : on voit le hangar, le chantier par sa fenêtre et le cockpit par la
+        // verrière ; le hall, le couloir et le sas restent cachés derrière leurs portes.
+        assert_eq!(plan.seen, set(&["chantier", "cockpit", "hangar"]));
+        assert_eq!(plan.shown, plan.seen);
         assert_eq!(plan.berth.as_deref(), Some("hangar"));
         // La porte du couloir s'ouvre : on voit le couloir et le hall d'un coup, tous deux voulus.
         let opening = doors(
@@ -837,13 +838,11 @@ mod tests {
         for room in ["hall", "hangar", "bureau", "taverne", "marche", "banque"] {
             assert!(has(&plan.local, room), "{room} : {:?}", plan.local);
         }
-        // Dans le hall : le hangar est chargé (une porte, par le couloir) mais caché.
+        // Dans le hall : le hangar est chargé (une porte, par le couloir) mais caché, comme les
+        // salles derrière leurs portes ; on voit le couloir par l'ouverture.
         let plan = plan_cells(&docked, "hall", &ship, &closed, &none);
         assert!(has(&plan.local, "hangar") && !plan.shown.contains("hangar"));
-        assert_eq!(
-            plan.shown,
-            set(&["banque", "bureau", "couloir", "hall", "marche", "taverne"])
-        );
+        assert_eq!(plan.shown, set(&["couloir", "hall"]));
     }
 
     #[test]
@@ -853,13 +852,21 @@ mod tests {
         let closed = doors(&[], &[], &[]);
         let others: Vec<&String> = ship.iter().filter(|c| *c != "sas").collect();
         for current in ["hangar", "couloir", "hall", "chantier", "marche"] {
-            // Même à la porte du sas, les salles du vaisseau ne sont ni voulues ni affichées.
+            // Même à la porte du sas, les salles du vaisseau ne sont pas voulues ; seul le cockpit
+            // s'affiche, en coque simplifiée, là où l'on voit le hangar (sa verrière perce la
+            // coque : sans lui, on verrait la coque vide).
             let near_hatch = doors(&[], &[], &["sas__hangar"]);
             for view in [&closed, &near_hatch] {
                 let plan = plan_cells(&docked, current, &ship, view, &none);
                 for room in &others {
                     assert!(!has(&plan.wanted, room), "{current} : {room} voulu");
-                    assert!(!plan.shown.contains(*room), "{current} : {room} affiché");
+                    let canopy = *room == "cockpit" && plan.shown.contains("hangar");
+                    assert_eq!(
+                        plan.shown.contains(*room),
+                        canopy,
+                        "{current} : {room} affiché ? {:?}",
+                        plan.shown
+                    );
                 }
             }
         }
@@ -879,24 +886,22 @@ mod tests {
         assert!(plan.shown.contains("couloir_arriere") && plan.shown.contains("couloir_avant"));
     }
 
-    /// Les vitrages que déclareront les scripts Blender : la verrière du cockpit sur l'extérieur,
-    /// la fenêtre du chantier sur le hangar, aucun ailleurs.
-    fn with_windows(mut sector: Sector) -> Sector {
+    /// Le même secteur sans vitrages déclarés (données d'avant M11).
+    fn undeclared(mut sector: Sector) -> Sector {
         for cell in &mut sector.cells {
-            cell.windows = Some(match cell.id.as_str() {
-                "cockpit" => vec![OUTSIDE.to_owned()],
-                "chantier" => vec!["hangar".to_owned()],
-                _ => Vec::new(),
-            });
+            cell.windows = None;
         }
         sector
     }
 
     #[test]
     fn occultation_par_les_portails() {
-        let ship = with_windows(read("corvette.ron"));
-        let docked = dock(&ship, &with_windows(read("spaceport.ron")));
-        let cells: Vec<String> = ship.cells.iter().map(|c| c.id.clone()).collect();
+        let (ship, docked, cells) = sectors();
+        // Les vitrages des données : la verrière sur l'extérieur, la fenêtre des deux côtés.
+        let windows = |id: &str| docked.cell(id).and_then(|c| c.windows.clone());
+        assert_eq!(windows("cockpit"), Some(vec![OUTSIDE.to_owned()]));
+        assert_eq!(windows("chantier"), Some(vec!["hangar".to_owned()]));
+        assert_eq!(windows("sas"), Some(Vec::new()));
         let none = BTreeSet::new();
         let closed = doors(&[], &[], &[]);
         // Dans le sas amarré, portes fermées : rien d'autre ne se dessine, ni le hangar, ni la
@@ -945,12 +950,13 @@ mod tests {
         let (_, docked, ship) = sectors();
         let none = BTreeSet::new();
         let closed = doors(&[], &[], &[]);
-        // Dans le sas : le hangar (voisin et contenant), le couloir arrière et l'avant d'un bloc.
+        // Dans le sas : le hangar, le couloir arrière et l'avant d'un bloc sont chargés ; portes
+        // fermées, le sas n'a pas de vitrage : on ne voit que lui.
         let plan = plan_cells(&docked, "sas", &ship, &closed, &none);
         let mut local = plan.local.clone();
         local.sort();
         assert_eq!(local, ["couloir_arriere", "couloir_avant", "hangar", "sas"]);
-        assert!(plan.seen.contains("hangar"));
+        assert_eq!(plan.seen, set(&["sas"]));
         assert!(!has(&plan.wanted, "quartiers") && !plan.shown.contains("quartiers"));
         // À la porte intérieure du sas : tout le vaisseau s'annonce.
         let near = doors(&[], &[], &["couloir_arriere__sas"]);
@@ -958,8 +964,9 @@ mod tests {
         for room in &ship {
             assert!(has(&plan.wanted, room), "{room} : {:?}", plan.wanted);
         }
-        // Au poste de pilotage : le hangar se voit par la verrière, en coque simplifiée, avec la
-        // coque du vaisseau ; il n'est pas chargé.
+        // Au poste de pilotage : la verrière (« @outside ») donne sur ce qui entoure le vaisseau
+        // amarré, le hangar, vu en coque simplifiée avec la coque du vaisseau ; il n'est pas
+        // chargé.
         let plan = plan_cells(&docked, "cockpit", &ship, &closed, &none);
         assert!(plan.seen.contains("hangar") && !has(&plan.wanted, "hangar"));
         assert_eq!(plan.berth.as_deref(), Some("hangar"));
@@ -973,9 +980,44 @@ mod tests {
         let (ship_sector, _, ship) = sectors();
         let none = BTreeSet::new();
         let closed = doors(&[], &[], &[]);
-        // Dans un couloir : les deux couloirs d'un bloc, et toutes les salles à une porte d'eux.
+        // Dans un couloir : les deux couloirs d'un bloc, et toutes les salles à une porte d'eux,
+        // chargées ; portes fermées, on ne voit que les deux couloirs.
         let plan = plan_cells(&ship_sector, "couloir_avant", &ship, &closed, &none);
         assert_eq!(plan.local.len(), ship.len());
+        assert_eq!(plan.seen, set(&["couloir_arriere", "couloir_avant"]));
+        assert_eq!(plan.shown, plan.seen);
+        assert!(plan.berth.is_none());
+        // Dans la chambre : sa porte mène au couloir avant, l'arrière vient avec lui.
+        let plan = plan_cells(&ship_sector, "chambre", &ship, &closed, &none);
+        let mut local = plan.local.clone();
+        local.sort();
+        assert_eq!(local, ["chambre", "couloir_arriere", "couloir_avant"]);
+        assert_eq!(plan.local.first().map(String::as_str), Some("chambre"));
+    }
+
+    #[test]
+    fn vitrages_non_declares_regle_prudente() {
+        // Données d'avant M11 : sans vitrages déclarés, ce qui entoure une salle est vu et ses
+        // voisines directes sont affichées (une fenêtre pourrait les montrer).
+        let ship = undeclared(read("corvette.ron"));
+        let docked = dock(&ship, &undeclared(read("spaceport.ron")));
+        let cells: Vec<String> = ship.cells.iter().map(|c| c.id.clone()).collect();
+        let none = BTreeSet::new();
+        let closed = doors(&[], &[], &[]);
+        let plan = plan_cells(&docked, "hangar", &cells, &closed, &none);
+        assert_eq!(plan.seen, set(&["hangar"]));
+        assert_eq!(plan.shown, set(&["chantier", "couloir", "hangar", "sas"]));
+        let plan = plan_cells(&docked, "hall", &cells, &closed, &none);
+        assert_eq!(
+            plan.shown,
+            set(&["banque", "bureau", "couloir", "hall", "marche", "taverne"])
+        );
+        let plan = plan_cells(&docked, "sas", &cells, &closed, &none);
+        assert_eq!(plan.seen, set(&["hangar", "sas"]));
+        // Hors du bord, aucune salle du vaisseau (sauf le sas) n'est affichée, même le cockpit.
+        let plan = plan_cells(&docked, "hangar", &cells, &closed, &none);
+        assert!(!plan.shown.contains("cockpit"));
+        let plan = plan_cells(&ship, "couloir_avant", &cells, &closed, &none);
         assert_eq!(
             plan.shown,
             set(&[
@@ -988,13 +1030,6 @@ mod tests {
             ])
         );
         assert_eq!(plan.seen, set(&["couloir_arriere", "couloir_avant"]));
-        assert!(plan.berth.is_none());
-        // Dans la chambre : sa porte mène au couloir avant, l'arrière vient avec lui.
-        let plan = plan_cells(&ship_sector, "chambre", &ship, &closed, &none);
-        let mut local = plan.local.clone();
-        local.sort();
-        assert_eq!(local, ["chambre", "couloir_arriere", "couloir_avant"]);
-        assert_eq!(plan.local.first().map(String::as_str), Some("chambre"));
     }
 
     #[test]

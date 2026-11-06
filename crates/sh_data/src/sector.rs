@@ -822,12 +822,22 @@ mod tests {
         let port = real("spaceport.ron");
         let closed = |_: &Portal| false;
         let set = |ids: &[&'static str]| ids.iter().copied().collect::<BTreeSet<&str>>();
-        assert_eq!(port.seen_from(&["hangar"], closed), set(&["hangar"]));
+        // Portes fermées : du hangar, on passe nulle part, mais on voit le chantier par sa
+        // fenêtre (vitrages des données) ; du hall, le couloir par l'ouverture.
+        assert_eq!(port.reached_from(&["hangar"], closed), set(&["hangar"]));
+        assert_eq!(
+            port.seen_from(&["hangar"], closed),
+            set(&["chantier", "hangar"])
+        );
         assert_eq!(port.seen_from(&["hall"], closed), set(&["couloir", "hall"]));
         let open = |p: &Portal| p.id == "couloir__hangar" || p.id == "hall__bureau";
         assert_eq!(
-            port.seen_from(&["hangar"], open),
+            port.reached_from(&["hangar"], open),
             set(&["bureau", "couloir", "hall", "hangar"])
+        );
+        assert_eq!(
+            port.seen_from(&["hangar"], open),
+            set(&["bureau", "chantier", "couloir", "hall", "hangar"])
         );
     }
 
