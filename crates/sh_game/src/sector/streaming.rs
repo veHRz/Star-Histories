@@ -75,12 +75,20 @@ impl Plugin for StreamingPlugin {
                 // Condition sur chaque système d'un groupe chaîné (AGENTS.md §4).
                 (
                     track_current_cell.run_if(resource_exists::<ActiveSector>),
-                    stream_cells.run_if(resource_exists::<ActiveSector>),
+                    stream_cells
+                        .run_if(resource_exists::<ActiveSector>)
+                        .in_set(StreamCells),
                 )
                     .chain(),
             );
     }
 }
+
+/// Le plan du streaming et la visibilité des cellules. Les portes s'animent avant lui
+/// (`doors::animate_doors`) : une porte qui bouge dans une frame a déjà sa salle d'en face
+/// affichée dans cette même frame.
+#[derive(SystemSet, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct StreamCells;
 
 fn reset_states(mut states: ResMut<CellStates>) {
     *states = CellStates::default();

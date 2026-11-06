@@ -1,8 +1,13 @@
 //! Portes coulissantes des portails de genre `Door`.
 //!
-//! Une porte est aussi une **porte de chargement** : elle ne s'ouvre que lorsque la cellule de
-//! l'autre côté est prête en qualité Locale ; l'animation d'ouverture couvre la fin d'un
-//! chargement si nécessaire. Elle se referme seule quand plus personne n'est à proximité.
+//! Une porte est aussi une **porte de chargement** (M11) : elle ne s'ouvre que lorsque ses deux
+//! côtés sont prêts en qualité Locale, avec ce qu'on voit derrière eux par des ouvertures
+//! (`CellStates::is_side_ready` : le hall derrière le couloir du spatioport). Prêts, elle s'ouvre
+//! dans la frame même de l'appui ; sinon elle attend, au plus [`UNLOCK_MAX_WAIT`], puis s'ouvre
+//! quand même sur la coque simplifiée d'en face (jamais bloquante : un modèle manquant ne ferme
+//! pas une salle pour toujours). Elle s'anime avant le streaming (`streaming::StreamCells`) : dès
+//! qu'elle quitte l'état fermé, la salle d'en face est affichée, avant que le panneau ne bouge.
+//! Elle se referme seule quand plus personne n'est à proximité.
 //!
 //! **Modèle** (M10) : chaque porte prend le modèle de son portail s'il en a un (la porte
 //! blindée du sas), sinon celui du secteur ; à quai, les portes du vaisseau gardent ainsi le
@@ -21,7 +26,7 @@ use bevy::world_serialization::{WorldAsset, WorldAssetRoot};
 
 use crate::player::Player;
 use crate::sector::gltf::ColliderLayer;
-use crate::sector::streaming::{CellReady, CellStates};
+use crate::sector::streaming::{CellReady, CellStates, StreamCells};
 use crate::sector::{ActiveSector, Layer, v3};
 
 pub struct DoorsPlugin;
@@ -31,13 +36,21 @@ impl Plugin for DoorsPlugin {
         app.add_systems(Update, spawn_doors.run_if(resource_added::<ActiveSector>))
             .add_systems(
                 Update,
-                (animate_doors, auto_close).run_if(resource_exists::<ActiveSector>),
+                (
+                    animate_doors
+                        .run_if(resource_exists::<ActiveSector>)
+                        .before(StreamCells),
+                    auto_close.run_if(resource_exists::<ActiveSector>),
+                ),
             );
     }
 }
 
 /// Durée d'ouverture ou de fermeture, en secondes.
 const SLIDE_TIME: f32 = 0.55;
+/// Attente maximale des deux côtés d'une porte de chargement, en secondes : au-delà, elle
+/// s'ouvre sur la coque simplifiée d'en face.
+pub const UNLOCK_MAX_WAIT: f32 = 2.0;
 /// Délai avant fermeture automatique quand plus personne n'est près.
 const AUTO_CLOSE_AFTER: f32 = 4.0;
 /// Distance sous laquelle une porte reste ouverte (et ne se referme pas sur le joueur).
@@ -88,6 +101,47 @@ impl Door {
         }
         if matches!(self.state, DoorState::Closed | DoorState::Closing) {
             self.state = DoorState::Unlocking;
+            // L'attente de la cellule d'en face se compte à partir de l'appui.
+            self.idle = 0.0;
+        }
+    }
+
+    /// La porte est-elle en train de changer d'état (attente, ouverture, fermeture) ?
+    pub fn is_moving(&self) -> bool {
+        matches!(
+            self.state,
+            DoorState::Unlocking | DoorState::Opening | DoorState::Closing
+        )
+    }
+
+    /// Un pas d'animation de `dt` secondes. `sides_ready` : ses deux côtés sont prêts en qualité
+    /// Locale (bloc d'ouvertures compris). En attente, la porte s'ouvre dès qu'ils le sont, ou
+    /// après [`UNLOCK_MAX_WAIT`], et commence à coulisser dans la même frame : une porte dont la
+    /// salle d'en face est déjà là s'ouvre sans délai à l'appui.
+    pub fn advance(&mut self, sides_ready: bool, dt: f32) {
+        if self.state == DoorState::Unlocking {
+            self.idle += dt;
+            if !(sides_ready || self.idle >= UNLOCK_MAX_WAIT) {
+                return;
+            }
+            self.state = DoorState::Opening;
+        }
+        let step = dt / SLIDE_TIME;
+        match self.state {
+            DoorState::Opening => {
+                self.openness = (self.openness + step).min(1.0);
+                if self.openness >= 1.0 {
+                    self.state = DoorState::Open;
+                    self.idle = 0.0;
+                }
+            }
+            DoorState::Closing => {
+                self.openness = (self.openness - step).max(0.0);
+                if self.openness <= 0.0 {
+                    self.state = DoorState::Closed;
+                }
+            }
+            DoorState::Unlocking | DoorState::Open | DoorState::Closed => {}
         }
     }
 
@@ -174,38 +228,28 @@ fn animate_doors(
     mut doors: Query<&mut Door>,
     mut panels: Query<&mut Transform, With<DoorPanel>>,
 ) {
-    let step = time.delta_secs() / SLIDE_TIME;
+    let dt = time.delta_secs();
     for mut door in &mut doors {
-        match door.state {
-            DoorState::Unlocking => {
-                // Porte de chargement : les deux côtés doivent être en qualité Locale.
-                let both_ready = states.is_local_ready(&door.a, &ready)
-                    && states.is_local_ready(&door.b, &ready);
-                if both_ready {
-                    door.state = DoorState::Opening;
-                }
-            }
-            DoorState::Opening => {
-                door.openness = (door.openness + step).min(1.0);
-                if door.openness >= 1.0 {
-                    door.state = DoorState::Open;
-                    door.idle = 0.0;
-                }
-            }
-            DoorState::Closing => {
-                door.openness = (door.openness - step).max(0.0);
-                if door.openness <= 0.0 {
-                    door.state = DoorState::Closed;
-                }
-            }
-            DoorState::Open | DoorState::Closed => {}
+        // Une porte immobile n'est pas modifiée : aucun changement signalé chaque frame (sons de
+        // `audio`, qui suivent `Changed<Door>`).
+        if door.is_moving() {
+            // Porte de chargement : ses deux côtés, et ce qu'on voit derrière eux par des
+            // ouvertures.
+            let sides_ready = door.state == DoorState::Unlocking
+                && states.is_side_ready(&door.a, &ready)
+                && states.is_side_ready(&door.b, &ready);
+            door.advance(sides_ready, dt);
         }
         if let Some(panel) = door.panel
             && let Ok(mut t) = panels.get_mut(panel)
         {
-            // Le panneau coulisse dans la cloison ; courbe douce aux extrémités.
+            // Le panneau coulisse dans la cloison ; courbe douce aux extrémités. Écrit seulement
+            // s'il bouge (pas de propagation de transformée pour les portes au repos).
             let eased = door.openness * door.openness * (3.0 - 2.0 * door.openness);
-            t.translation.x = eased * (door.width + 0.05);
+            let x = eased * (door.width + 0.05);
+            if t.translation.x != x {
+                t.translation.x = x;
+            }
         }
     }
 }
@@ -262,6 +306,44 @@ mod tests {
         hatch.toggle();
         assert_eq!(hatch.state, DoorState::Closed);
         assert!(!door("sas", "couloir").sealed);
+    }
+
+    #[test]
+    fn porte_de_chargement() {
+        let frame = 1.0 / 60.0;
+        // Les deux côtés déjà prêts : elle coulisse dès la frame de l'appui.
+        let mut d = door("couloir", "hangar");
+        d.request_open();
+        assert_eq!(d.state, DoorState::Unlocking);
+        d.advance(true, frame);
+        assert_eq!(d.state, DoorState::Opening);
+        assert!(d.openness > 0.0);
+        for _ in 0..60 {
+            d.advance(false, frame);
+        }
+        assert!(d.state == DoorState::Open && d.openness >= 1.0);
+        // La salle d'en face pas prête : elle attend, fermée, au plus UNLOCK_MAX_WAIT…
+        let mut d = door("couloir", "hangar");
+        d.idle = 3.0; // reste d'une ouverture précédente : l'attente part de l'appui
+        d.request_open();
+        d.advance(false, UNLOCK_MAX_WAIT - 0.1);
+        assert!(d.state == DoorState::Unlocking && d.openness <= 0.0);
+        assert!(d.is_moving());
+        // … puis s'ouvre quand même (sur la coque simplifiée d'en face).
+        d.advance(false, 0.2);
+        assert!(d.state == DoorState::Opening && d.openness > 0.0);
+        // La fermeture va jusqu'au bout, puis la porte ne bouge plus.
+        d.request_close();
+        assert_eq!(d.state, DoorState::Closing);
+        for _ in 0..60 {
+            d.advance(false, frame);
+        }
+        assert!(d.state == DoorState::Closed && d.openness <= 0.0 && !d.is_moving());
+        // La porte du sas sur le vide reste inerte, sans état d'attente.
+        let mut hatch = door("sas", "@dock");
+        hatch.request_open();
+        hatch.advance(true, UNLOCK_MAX_WAIT + 1.0);
+        assert!(hatch.state == DoorState::Closed && !hatch.is_moving());
     }
 
     #[test]
