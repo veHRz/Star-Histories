@@ -2,6 +2,19 @@
 
 > Une entrée courte par session (2 à 5 lignes) : ce qui a été fait, ce qui reste en suspens, les décisions prises. Le plus récent en haut.
 
+## 06/11/2026 — Poste Windows : fin de M10 sous Windows, M11 (troisième passe de retours)
+
+- **M10** : `tools/check.ps1` vert sous Windows et mesures en Bas 1080p (≥ 52 i/s de moyenne dans chaque scénario avec lightmaps, « avant » de M11). Reste la validation des captures par l'auteur.
+- **M11 fait** (plan, causes, mesures : `docs/m11.md`), sept lots en deux vagues, tous dans des arbres de travail :
+  - étape Banque du tutoriel (7 sur 11), montant de l'échéance au guichet, bureau des contrats sans l'hypothèque, survol de l'inventaire stable ;
+  - coffre de la Banque sans faces coplanaires, export et bake de la seule cellule `banque` ;
+  - limite d'images (60 i/s par défaut), vsync et compteur d'i/s en options, trace par frame ;
+  - hall chargé avant d'être vu (une ouverture ne compte pas comme une porte), vaisseau amarré réduit à son sas hors du bord, **occultation par les portails** (cellules cachées derrière les portes fermées, vitrages déclarés), porte de chargement ;
+  - poussée à 1 km/s, vitesse de combat, croisière plus lente, repères des objets du système ;
+  - interface sans écriture inutile à chaque frame.
+- **Trouvé** : à quai, tout ce qui était instancié se dessinait derrière les cloisons (sas : 52 → 84 i/s) ; les « chutes une fois sur deux » sont des frames qui alternent 2,5 / 20,8 ms sans limite, que la limite à 60 rend régulières (écart-type 0,09 ms) ; mesurer pendant que des sous-agents compilent fausse tous les pics (AGENTS.md §4).
+- **À trancher par l'auteur** : Q19 (croisière plus lente ⇒ Vorrh en 6,9 min au lieu de 4,1 : l'autopilote fait toute l'approche en croisière ; vitesse de combat à 250 m/s), Q20 (nez de la corvette, dépôt de fret). **En suspens** : pic isolé de ≈ 110 ms à l'arrivée à quai ; l'invite d'interaction et le panneau du tutoriel restent visibles à côté d'un terminal ouvert (déjà en M10) ; défauts de coplanarité du kit relevés par D (lambris et cadres de porte du style station).
+
 ## 06/11/2026 — Poste Linux : M10, deuxième passe de retours de l'auteur (vagues 1 et 2)
 
 - **Fait** (plan et causes : `docs/m10.md`) : portes du vaisseau non jaunes à quai (modèle par portail), sas inerte dans le vide et porte blindée, noms de salle aux portes ; sous-catégories cachées, frigo (nourriture seulement, « Rations : N »), casiers d'un même style (verrouillés ou à plaque de nom), noms et contenus par vaisseau (sauvegardes migrées) ; corvette sans sacs ni « boîte », compteurs électriques reconnaissables, pochoirs entiers (fin du « 03 07 ») ; nez de la corvette en coin ; station orbitale du spatioport (P31) ; hall refait, taverne dégagée, salle de banque ; invite des PNJ, encart des touches dans tous les menus, C ouvre la fiche, codex à la conversation, « Hexa-Corp Finance » ; points de livraison dans tous les systèmes (P32, Vorrh, Ferrok, Ambroise, Ostrag, hub générique), repère de destination, autopilote (carte ou `SH_AUTOPILOT`) ; carte avec le détail d'un système au zoom et les contrats en cours. Points ouverts de M9 : berceau recalé, combat à pied sur la bonne salle. Bakes finals à 512 échantillons ; `tools/check.sh` vert (dont `deliver_vorrh`, `fridge`, `locker_name`, `airlock_space`).

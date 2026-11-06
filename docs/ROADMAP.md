@@ -177,7 +177,7 @@ But : traiter la liste de l'auteur du 05/11/2026 après M9 (sas et casiers, frig
 
 - [x] Vague 1 : kit (A), nez de la corvette (C), station orbitale (S), spatioport (D), portes (L1), rangements et interactions (L2), écrans et codex (L3), livraison et autopilote (L4).
 - [x] Vague 2 : intérieur de la corvette (B), carte (L5), branchement et scénarios (L6) ; bakes finals de `corvette` et `spaceport`. *`tools/check.sh` vert (poste Linux).*
-- [ ] Intégration et tests par l'orchestrateur à chaque vague : `tools/check.sh` (Linux) puis `tools/check.ps1`, captures avant / après, `tools/perf.ps1 -Preset low -Window fullscreen` sous Windows.
+- [ ] Intégration et tests par l'orchestrateur à chaque vague : `tools/check.sh` (Linux) puis `tools/check.ps1`, captures avant / après, `tools/perf.ps1 -Preset low -Window fullscreen` sous Windows. *Fait le 06/11 sous Windows : `check.ps1` vert (arbre 9969aa1), mesures en Bas 1080p (≥ 52 i/s de moyenne dans chaque scénario avec lightmaps, 79 dans le vaisseau ; « avant » de M11, `docs/m11.md` §5). Reste : validation des captures par l'auteur.*
 
 **Fini quand** : chaque point de la liste est traité ou tranché avec l'auteur ; une livraison vers Vorrh se fait de bout en bout (scénario) ; `tools/check.ps1` vert ; ≥ 60 i/s en Bas 1080p sur la machine de référence ; l'auteur valide les captures avant / après.
 
@@ -187,10 +187,11 @@ But : traiter la liste de l'auteur du 05/11/2026 après M9 (sas et casiers, frig
 
 But : traiter la liste de l'auteur du 06/11/2026 (étape Banque du tutoriel, survol de l'inventaire, montant de l'échéance, bureau des contrats sans l'hypothèque, limite d'images en option, coffre de la Banque, chutes de FPS et lag du sas amarré, hall chargé sous les yeux du joueur, vaisseau déchargé hors du bord, poussée à 1 km/s, croisière plus lente, repères des objets du système). Plan, causes, conventions entre lots et avancement : `docs/m11.md`.
 
-- [ ] Mesures de l'avant sous Windows : `tools/perf.ps1 -Preset low -Window fullscreen`, sas amarré, captures `m11-avant-*`.
-- [ ] Vague 1 : coffre de la Banque (D), tutoriel et comptoirs (U), fluidité et mesure (P), streaming (S), vol (V).
-- [ ] Vague 2 : branchement et scénarios (B).
-- [ ] Intégration et tests par l'orchestrateur à chaque vague : `tools/check.ps1`, captures avant / après, `tools/perf.ps1 -Preset low -Window fullscreen`.
+- [x] Mesures de l'avant sous Windows : `tools/perf.ps1 -Preset low -Window fullscreen`, sas amarré, captures `m11-avant-*`. *Machine au repos (`docs/m11.md` §5).*
+- [x] Vague 1 : coffre de la Banque (D), tutoriel et comptoirs (U), fluidité et mesure (P), streaming et occultation par portails (S), vol (V).
+- [x] Vague 2 : branchement et scénarios (B), interface sans écriture inutile à chaque frame (B2).
+- [x] Intégration et tests par l'orchestrateur à chaque vague : `tools/check.ps1`, captures avant / après, `tools/perf.ps1 -Preset low -Window fullscreen`. *Sas amarré : 52 → 84 i/s, aucune frame > 33 ms ; limite de 60 i/s par défaut (frames régulières à 0,1 ms près).*
+- [ ] Validation de l'auteur : captures avant / après, réponses à Q19 (vitesses de vol, Vorrh) et Q20 (restes de M10).
 
 **Fini quand** : chaque point de la liste est traité ou tranché avec l'auteur ; plus de lag dans le sas amarré ni de hall qui se charge sous les yeux ; `tools/check.ps1` vert ; ≥ 60 i/s en Bas 1080p sur la machine de référence, aucune chute périodique ; l'auteur valide les captures avant / après.
 
