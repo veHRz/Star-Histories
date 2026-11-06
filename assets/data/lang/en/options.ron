@@ -62,14 +62,17 @@
     "options.preset.medium": "Medium",
     "options.preset.high": "High",
     "options.fullscreen": "Fullscreen",
+    // Résolution dynamique (M11, `graphics`) : l'échelle de rendu de la 3D suit la charge du GPU.
+    "options.dynamic_resolution": "Dynamic resolution",
     // Limite d'images, synchronisation verticale et compteur d'images (M11, `frame_pace`).
     "options.fps_limit": "Frame rate limit",
     "options.fps_limit.unlimited": "Unlimited",
     "options.vsync": "Vertical sync",
     "options.show_fps": "Show FPS",
     // Le compteur du coin bas droit : images par seconde, temps moyen et pire temps d'une image.
-    "options.fps.counter": "{fps} FPS · {ms} ms (worst {worst})",
-    "options.note.display": "Graphics quality fully applies from the next place loaded. The frame rate limit (60 by default) keeps a steady pace and spares the processor; with vertical sync, leave it unlimited or below the screen's refresh rate.",
+    // `{scale}` : l'échelle de rendu de la 3D, en pour cent (résolution dynamique ou préréglage).
+    "options.fps.counter": "{fps} FPS · {ms} ms (worst {worst}) · {scale}%",
+    "options.note.display": "Graphics quality fully applies from the next place loaded. Dynamic resolution lowers 3D sharpness when the graphics card is saturated, to keep the pace; the frame rate limit (60 by default) steadies it and spares the processor; with vertical sync, leave it unlimited or below the screen's refresh rate.",
 
     "options.tutorial": "Tutorial",
     "options.tips": "Tips",

@@ -29,10 +29,14 @@
 //!
 //! Limite d'images, synchronisation verticale et compteur d'images (M11) : réglés ici, appliqués
 //! par `frame_pace` (qui laisse `SH_FPS_LIMIT` et `SH_VSYNC` décider pour l'autopilote).
+//! Résolution dynamique (M11) : réglée ici, appliquée par `graphics` ; coupée pour l'autopilote
+//! sauf `SH_DYNRES=1`. Sans fichier de réglages (première partie), le préréglage suit le GPU :
+//! Bas sur un GPU intégré, Moyen ailleurs ([`default_preset_for_gpu`]).
 
 use std::collections::BTreeMap;
 
 use bevy::prelude::*;
+use bevy::render::renderer::RenderAdapterInfo;
 use bevy::window::{MonitorSelection, PrimaryWindow, WindowMode};
 use bevy_enhanced_input::prelude::{
     Action, ActionOf, Binding, BindingOf, Negate, Scale, SwizzleAxis,
@@ -53,8 +57,15 @@ pub struct OptionsPlugin;
 
 impl Plugin for OptionsPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(load())
+        let (settings, first_launch) = load();
+        if first_launch {
+            app.insert_resource(FirstLaunch);
+        }
+        app.insert_resource(settings)
             .insert_resource(SteerBase(read_steer_base()))
+            // Au premier frame, l'adaptateur graphique est connu (`RenderPlugin::finish`) ; le
+            // préréglage n'est lu qu'ensuite (chargement des textures, `graphics`).
+            .add_systems(Startup, preset_for_gpu)
             .add_systems(
                 PostUpdate,
                 (
@@ -115,6 +126,10 @@ pub struct UserSettings {
     pub vsync: bool,
     /// Compteur d'images par seconde dans le coin de l'écran (M11).
     pub show_fps: bool,
+    /// Résolution dynamique (M11, `graphics`) : l'échelle de rendu de la 3D descend sous celle
+    /// du préréglage quand le GPU n'a plus de marge. Activée par défaut (aussi pour un fichier
+    /// plus ancien, qui n'a pas ce champ).
+    pub dynamic_resolution: bool,
 }
 
 impl Default for UserSettings {
@@ -137,7 +152,50 @@ impl Default for UserSettings {
             fps_limit: DEFAULT_FPS_LIMIT,
             vsync: false,
             show_fps: false,
+            dynamic_resolution: true,
         }
+    }
+}
+
+/// Le préréglage d'une première partie, selon le type de l'adaptateur graphique (nom de la
+/// variante `wgpu::DeviceType`, que Bevy ne réexporte pas) : **Bas** sur un GPU intégré, la
+/// cible de la machine de référence (AGENTS.md §10, Q15) ; Moyen ailleurs.
+pub fn default_preset_for_gpu(device_type: &str) -> PresetLevel {
+    if device_type == "IntegratedGpu" {
+        PresetLevel::Low
+    } else {
+        PresetLevel::Medium
+    }
+}
+
+/// Aucun fichier de réglages au lancement : le préréglage suivra le GPU ([`preset_for_gpu`]).
+#[derive(Resource)]
+struct FirstLaunch;
+
+/// Première partie : le préréglage suit le GPU. Le fichier n'est pas écrit pour autant (il ne
+/// l'est qu'au premier réglage changé) : tant que le joueur n'a rien choisi, chaque lancement
+/// refait ce choix. Un fichier existant garde le sien ; l'autopilote n'est jamais concerné.
+fn preset_for_gpu(
+    mut commands: Commands,
+    first: Option<Res<FirstLaunch>>,
+    adapter: Option<Res<RenderAdapterInfo>>,
+    mut settings: ResMut<UserSettings>,
+) {
+    if first.is_none() {
+        return;
+    }
+    commands.remove_resource::<FirstLaunch>();
+    let Some(adapter) = adapter else {
+        return;
+    };
+    let kind = format!("{:?}", adapter.device_type);
+    let preset = default_preset_for_gpu(&kind);
+    info!(
+        "premier lancement : préréglage {preset:?} pour {} ({kind})",
+        adapter.name
+    );
+    if settings.preset != preset {
+        settings.preset = preset;
     }
 }
 
@@ -527,8 +585,9 @@ fn settings_path() -> std::path::PathBuf {
 /// d'environnement. `SH_KEYS=KeyE:KeyF,foot_jump:KeyB+KeyN,…` : un remappage imposé, pour le
 /// vérifier. L'autopilote est muet (il tourne pendant que l'auteur travaille), sauf `SH_AUDIO=1`,
 /// et sans conseils ni tutoriel (captures propres), sauf `SH_TIPS=1` et `SH_TUTORIAL=1`. Il n'a
-/// **pas de limite d'images** : ses mesures voient le vrai coût d'une image et restent
-/// comparables d'un jalon à l'autre (`SH_FPS_LIMIT` en pose une, `frame_pace`).
+/// **ni limite d'images ni résolution dynamique** : ses mesures voient le vrai coût d'une image
+/// et restent comparables d'un jalon à l'autre (`SH_FPS_LIMIT` pose une limite, `frame_pace` ;
+/// `SH_DYNRES=1` la résolution dynamique, `graphics`).
 fn autopilot_settings(env: impl Fn(&str) -> Option<String>) -> UserSettings {
     let defaults = UserSettings::default();
     let mut settings = UserSettings {
@@ -540,28 +599,30 @@ fn autopilot_settings(env: impl Fn(&str) -> Option<String>) -> UserSettings {
             0.0
         },
         fps_limit: 0,
+        dynamic_resolution: env("SH_DYNRES").is_some_and(|v| v.trim() == "1"),
         ..defaults
     };
     settings.apply_key_spec(&env("SH_KEYS").unwrap_or_default());
     settings
 }
 
-fn load() -> UserSettings {
+/// Les réglages du lancement, et s'il n'y avait pas encore de fichier (premier lancement).
+fn load() -> (UserSettings, bool) {
     if crate::dev::autopilot_active() {
-        return autopilot_settings(|name| std::env::var(name).ok());
+        return (autopilot_settings(|name| std::env::var(name).ok()), false);
     }
     let path = settings_path();
     if !path.exists() {
-        return UserSettings::default();
+        return (UserSettings::default(), true);
     }
     match sh_data::read_ron::<UserSettings>(&path) {
         Ok(mut settings) => {
             settings.migrate();
-            settings
+            (settings, false)
         }
         Err(err) => {
             warn!("réglages illisibles, valeurs par défaut : {err}");
-            UserSettings::default()
+            (UserSettings::default(), false)
         }
     }
 }
@@ -1151,21 +1212,49 @@ mod tests {
     fn reglages_de_l_autopilote() {
         let s = autopilot_settings(|_| None);
         assert_eq!(s.fps_limit, 0);
+        assert!(!s.dynamic_resolution);
         assert_eq!(s.master_volume, 0.0);
         assert!(!s.tips && !s.tutorial);
         let s = autopilot_settings(|name| match name {
-            "SH_AUDIO" | "SH_TIPS" => Some("1".into()),
+            "SH_AUDIO" | "SH_TIPS" | "SH_DYNRES" => Some("1".into()),
             "SH_TUTORIAL" => Some("0".into()),
             "SH_KEYS" => Some("foot_interact:KeyF".into()),
             _ => None,
         });
         assert_eq!(s.fps_limit, 0);
+        assert!(s.dynamic_resolution);
         assert_eq!(s.master_volume, UserSettings::default().master_volume);
         assert!(s.tips && !s.tutorial);
         assert_eq!(
             s.slots(action("foot_interact")).primary,
             Some(KeyCode::KeyF)
         );
+    }
+
+    /// Première partie : Bas sur un GPU intégré, Moyen ailleurs (et sur un type inconnu).
+    #[test]
+    fn prereglage_selon_le_gpu() {
+        assert_eq!(default_preset_for_gpu("IntegratedGpu"), PresetLevel::Low);
+        for other in ["DiscreteGpu", "VirtualGpu", "Cpu", "Other", ""] {
+            assert_eq!(
+                default_preset_for_gpu(other),
+                PresetLevel::Medium,
+                "{other}"
+            );
+        }
+        // Le défaut de la structure (fichier illisible, autopilote) reste Moyen.
+        assert_eq!(UserSettings::default().preset, PresetLevel::Medium);
+        assert!(UserSettings::default().dynamic_resolution);
+    }
+
+    /// Le choix du joueur, gardé : « Non » écrit dans le fichier se relit « Non ».
+    #[test]
+    fn resolution_dynamique_coupee_gardee() {
+        let path = temp_file("dynres");
+        std::fs::write(&path, "(dynamic_resolution: false)").unwrap_or_else(|e| panic!("{e}"));
+        let back: UserSettings = sh_data::read_ron(&path).unwrap_or_else(|e| panic!("{e}"));
+        let _ = std::fs::remove_file(&path);
+        assert!(!back.dynamic_resolution);
     }
 
     /// Un fichier de M7 (une touche par touche d'origine) se relit sans erreur.
@@ -1202,6 +1291,8 @@ mod tests {
             (s.fps_limit, s.vsync, s.show_fps),
             (DEFAULT_FPS_LIMIT, false, false)
         );
+        // Résolution dynamique (M11) absente du fichier : activée.
+        assert!(s.dynamic_resolution);
         assert!(s.legacy_keys.is_empty());
         // L'ancienne touche E (interagir, roulis à droite) est sur F partout, et F sur E.
         for (id, key) in [

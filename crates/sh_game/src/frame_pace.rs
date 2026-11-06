@@ -29,6 +29,12 @@
 //! **Synchronisation verticale** : `PresentMode::AutoVsync` ou `AutoNoVsync`, posé à chaud sur la
 //! fenêtre (Bevy reconfigure la surface quand le mode change).
 //!
+//! **Travail du GPU** (M11, pour la résolution dynamique de `graphics`) : la marge que voit le
+//! limiteur est celle du **processeur** (le GPU travaille pendant qu'il attend) ; elle ne dit pas
+//! si le GPU tient le rythme. Chaque image enregistre un rappel de fin de travail
+//! (`Queue::on_submitted_work_done`) ; le limiteur dort par tranches de 1 ms et relève les rappels
+//! entre deux (`RenderDevice::poll`, sans attendre) : la fin du travail est datée à 1 ms près.
+//!
 //! Réglages du joueur : `options::UserSettings` (`fps_limit`, `vsync`, `show_fps`). L'autopilote
 //! ne lit pas ces réglages : `SH_FPS_LIMIT=<n>` (0 : illimitée), `SH_VSYNC=1` et
 //! `SH_FPS_COUNTER=1` (le compteur, pour une capture) décident pour lui, sans rien écrire dans le
@@ -42,11 +48,13 @@ use bevy::prelude::*;
 use bevy::render::render_asset::{
     RenderAssetBytesPerFrameLimiter, reset_render_asset_bytes_per_frame,
 };
-use bevy::render::render_resource::PipelineCache;
+use bevy::render::render_resource::{PipelineCache, PollType};
+use bevy::render::renderer::{RenderDevice, RenderQueue};
 use bevy::render::{Render, RenderApp, RenderSystems};
 use bevy::window::{PresentMode, PrimaryWindow};
 
 use crate::data::Texts;
+use crate::graphics::DynamicResolution;
 use crate::options::UserSettings;
 use crate::ui::theme::{self, UiFonts};
 
@@ -240,8 +248,12 @@ pub struct PaceShared(Arc<PaceStats>);
 struct PaceStats {
     /// Période en nanosecondes ; 0 : pas de limite.
     period_ns: AtomicU64,
+    /// Images passées par le limiteur : une lecture du monde principal sait si la mesure est neuve.
+    frames: AtomicU64,
     /// Durée du programme de rendu (préparation, envoi au GPU, présentation), attente exclue.
     render_ns: AtomicU64,
+    /// Travail du GPU pour l'image précédente (voir [`RenderSample::gpu_ms`]).
+    gpu_ns: AtomicU64,
     /// Attente du limiteur.
     wait_ns: AtomicU64,
     late: AtomicBool,
@@ -255,7 +267,14 @@ struct PaceStats {
 /// Les mesures de la dernière image rendue (en pipeline : une image derrière le monde principal).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct RenderSample {
+    /// Numéro de l'image rendue (0 : aucune encore).
+    pub frame: u64,
     pub render_ms: f64,
+    /// Travail du GPU pour l'image d'avant : de la remise de ses commandes à leur fin (rappel
+    /// `Queue::on_submitted_work_done`, relevé pendant l'attente du limiteur, à 1 ms près). Sans
+    /// limite, ou si le GPU finit après l'échéance, le rappel ne passe qu'à l'image suivante : la
+    /// valeur est alors trop forte (jamais trop faible). 0 : pas encore de mesure.
+    pub gpu_ms: f64,
     pub wait_ms: f64,
     pub late: bool,
     pub pipelines: u32,
@@ -282,7 +301,9 @@ impl PaceShared {
     pub fn sample(&self) -> RenderSample {
         let ms = |a: &AtomicU64| a.load(Ordering::Relaxed) as f64 / 1e6;
         RenderSample {
+            frame: self.0.frames.load(Ordering::Relaxed),
             render_ms: ms(&self.0.render_ns),
+            gpu_ms: ms(&self.0.gpu_ns),
             wait_ms: ms(&self.0.wait_ns),
             late: self.0.late.load(Ordering::Relaxed),
             pipelines: self.0.pipelines.load(Ordering::Relaxed),
@@ -359,14 +380,27 @@ fn sleep_duration(now: Instant, until: Instant, margin: Duration) -> Duration {
     until.saturating_duration_since(now).saturating_sub(margin)
 }
 
-/// Attend `until` : sommeil du système, puis attente active. Renvoie le dépassement du réveil.
-fn wait_until(until: Instant, margin: Duration) -> Duration {
+/// Tranche de sommeil du limiteur : entre deux tranches, il relève si le GPU a fini l'image
+/// (`poll`), ce qui date la fin de son travail à 1 ms près.
+const POLL_SLICE: Duration = Duration::from_millis(1);
+
+/// Attend `until` : sommeil du système par tranches (`poll` entre deux), puis attente active.
+/// Renvoie le dépassement du réveil.
+fn wait_until(until: Instant, margin: Duration, mut poll: impl FnMut()) -> Duration {
     let start = Instant::now();
     let sleep = sleep_duration(start, until, margin);
     let mut overshoot = Duration::ZERO;
     if !sleep.is_zero() {
-        std::thread::sleep(sleep);
-        overshoot = Instant::now().saturating_duration_since(start + sleep);
+        let wake = start + sleep;
+        loop {
+            let now = Instant::now();
+            if now >= wake {
+                overshoot = now - wake;
+                break;
+            }
+            std::thread::sleep((wake - now).min(POLL_SLICE));
+            poll();
+        }
     }
     while Instant::now() < until {
         std::hint::spin_loop();
@@ -374,13 +408,48 @@ fn wait_until(until: Instant, margin: Duration) -> Duration {
     overshoot
 }
 
+/// Emplacements des fins de travail du GPU, un par image en vol : chaque image a le sien, une
+/// fin tardive d'une image ancienne ne passe donc jamais pour celle d'une image récente.
+const GPU_SLOTS: usize = 4;
+
 /// État du limiteur, dans le monde de rendu.
-#[derive(Resource, Default)]
+#[derive(Resource)]
 struct RenderPace {
     pacer: Pacer,
     oversleep: Duration,
     /// Début du programme de rendu de l'image en cours.
     frame_start: Option<Instant>,
+    frames: u64,
+    /// Origine des instants de [`Self::gpu_done`] et [`Self::submitted`].
+    origin: Instant,
+    /// Fin du travail du GPU par emplacement, posée par le rappel (ns depuis `origin`).
+    gpu_done: Arc<[AtomicU64; GPU_SLOTS]>,
+    /// Emplacement et remise des commandes de l'image précédente (ns depuis `origin`).
+    submitted: Option<(usize, u64)>,
+}
+
+impl Default for RenderPace {
+    fn default() -> Self {
+        Self {
+            pacer: Pacer::default(),
+            oversleep: Duration::ZERO,
+            frame_start: None,
+            frames: 0,
+            origin: Instant::now(),
+            gpu_done: Arc::default(),
+            submitted: None,
+        }
+    }
+}
+
+/// Le travail du GPU pour l'image remise à `submitted` : jusqu'à sa fin si le rappel est passé,
+/// sinon jusqu'à `now` (il travaille encore : une borne basse). Instants en ns depuis l'origine.
+fn gpu_busy_ns(submitted: u64, done: u64, now: u64) -> u64 {
+    if done >= submitted {
+        done - submitted
+    } else {
+        now.saturating_sub(submitted)
+    }
 }
 
 fn mark_render_start(mut pace: ResMut<RenderPace>) {
@@ -409,14 +478,19 @@ fn read_render_stats(
     }
 }
 
-/// Le limiteur : exclusif, pour dormir sur le fil du rendu (voir l'en-tête du module).
+/// Le limiteur : exclusif, pour dormir sur le fil du rendu (voir l'en-tête du module). Il mesure
+/// aussi le travail du GPU, que lit la résolution dynamique (`graphics`) : un rappel de fin de
+/// travail par image, relevé pendant l'attente.
 fn pace_frame(world: &mut World) {
     let Some(shared) = world.get_resource::<PaceShared>().cloned() else {
         return;
     };
+    let queue = world.get_resource::<RenderQueue>().cloned();
+    let device = world.get_resource::<RenderDevice>().cloned();
     let Some(mut pace) = world.get_resource_mut::<RenderPace>() else {
         return;
     };
+    let pace = &mut *pace;
     let now = Instant::now();
     if let Some(start) = pace.frame_start.take() {
         shared.0.render_ns.store(
@@ -424,10 +498,39 @@ fn pace_frame(world: &mut World) {
             Ordering::Relaxed,
         );
     }
+    // Le travail du GPU pour l'image précédente, puis le rappel de celle-ci : ses commandes
+    // viennent d'être remises (`render_system`, juste avant).
+    let now_ns = nanos(now.saturating_duration_since(pace.origin));
+    if let Some((slot, submitted)) = pace.submitted {
+        let done = pace.gpu_done[slot].load(Ordering::Relaxed);
+        shared
+            .0
+            .gpu_ns
+            .store(gpu_busy_ns(submitted, done, now_ns), Ordering::Relaxed);
+    }
+    let slot = (pace.frames % GPU_SLOTS as u64) as usize;
+    if let Some(queue) = &queue {
+        let done = pace.gpu_done.clone();
+        let origin = pace.origin;
+        queue.on_submitted_work_done(move || {
+            done[slot].store(nanos(origin.elapsed()), Ordering::Relaxed);
+        });
+        pace.submitted = Some((slot, now_ns));
+    }
     let step = pace.pacer.step(now, shared.period());
     let waited = match step {
         PaceStep::Wait(until) => {
-            let overshoot = wait_until(until, spin_margin(pace.oversleep));
+            let done = pace.gpu_done.clone();
+            // Relever la fin du travail du GPU tant qu'elle n'est pas arrivée : `poll` passe les
+            // rappels prêts, sans attendre.
+            let poll = || {
+                if done[slot].load(Ordering::Relaxed) < now_ns
+                    && let Some(device) = &device
+                {
+                    let _ = device.poll(PollType::Poll);
+                }
+            };
+            let overshoot = wait_until(until, spin_margin(pace.oversleep), poll);
             pace.oversleep = next_oversleep(pace.oversleep, overshoot);
             Instant::now().saturating_duration_since(now)
         }
@@ -438,6 +541,8 @@ fn pace_frame(world: &mut World) {
         .0
         .late
         .store(step == PaceStep::Late, Ordering::Relaxed);
+    pace.frames += 1;
+    shared.0.frames.store(pace.frames, Ordering::Relaxed);
 }
 
 // --- Compteur d'images pour le joueur --------------------------------------------------------
@@ -503,6 +608,7 @@ fn fps_counter(
     env: Res<PaceOverride>,
     texts: Option<Res<Texts>>,
     fonts: Option<Res<UiFonts>>,
+    render_scale: Option<Res<DynamicResolution>>,
     mut counter: ResMut<FpsCounter>,
     mut shown: Query<(Entity, &mut Text), With<FpsCounterText>>,
 ) {
@@ -544,12 +650,15 @@ fn fps_counter(
     else {
         return;
     };
+    // L'échelle de rendu de la 3D (résolution dynamique, sinon celle du préréglage).
+    let scale = render_scale.map_or(1.0, |r| r.scale());
     let line = texts.format(
         "options.fps.counter",
         &[
             ("fps", &texts.number(reading.fps, 0)),
             ("ms", &texts.number(reading.mean_ms, 1)),
             ("worst", &texts.number(reading.worst_ms, 1)),
+            ("scale", &texts.number(f64::from(scale) * 100.0, 0)),
         ],
     );
     for (_, mut text) in &mut shown {
@@ -699,6 +808,16 @@ mod tests {
             next_oversleep(Duration::ZERO, Duration::from_secs(1)),
             MAX_MARGIN
         );
+    }
+
+    /// Le travail du GPU : jusqu'à sa fin signalée, sinon jusqu'à maintenant (borne basse) ; une
+    /// fin plus ancienne que la remise (emplacement d'une image d'avant) ne compte pas.
+    #[test]
+    fn travail_du_gpu() {
+        let ms = 1_000_000;
+        assert_eq!(gpu_busy_ns(10 * ms, 22 * ms, 30 * ms), 12 * ms);
+        assert_eq!(gpu_busy_ns(10 * ms, 4 * ms, 30 * ms), 20 * ms);
+        assert_eq!(gpu_busy_ns(10 * ms, 0, 5 * ms), 0);
     }
 
     #[test]
