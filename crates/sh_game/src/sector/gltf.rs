@@ -32,6 +32,13 @@
 //! Une cellule qui a une lightmap (et si le préréglage l'active) la reçoit sur tous ses
 //! maillages qui ont un 2e jeu d'UV ; ses lumières n'y ajoutent plus que le spéculaire et
 //! l'éclairage des objets mobiles (portes), sans carte d'ombre : les ombres sont précalculées.
+//!
+//! **Hors de la vue** (M11) : une instance de cellule naît cachée (`streaming::spawn_cell`). Ce
+//! post-traitement se fait donc sans rien montrer, dans la frame de l'instanciation ; la cellule
+//! n'apparaît qu'à la frame suivante, complète, quand le streaming la voit prête (`CellReady`) :
+//! jamais une cellule à moitié préparée, et le coût de l'instanciation et celui du premier
+//! affichage tombent sur deux frames. Une préparation plus longue que [`SLOW_SETUP_MS`] est
+//! journalisée (mesures du streaming).
 
 use std::collections::BTreeSet;
 
@@ -60,6 +67,10 @@ impl Plugin for GltfSetupPlugin {
 
 /// Rayon du capteur d'un `INTERACT_*` sans `half_extents`.
 pub const INTERACT_RADIUS: f32 = 0.35;
+
+/// Durée (ms) au-delà de laquelle la préparation d'une cellule est journalisée : un tiers du
+/// budget d'une frame à 60 i/s (AGENTS.md §10).
+pub const SLOW_SETUP_MS: f32 = 5.0;
 
 /// Hauteur d'un repère `INTERACT_*` de ramassage au-dessus de la surface où l'objet est posé
 /// (convention du kit, `tools/blender/kit/ship_interior.py`, fonction `pickup`) : l'origine d'un
@@ -334,10 +345,13 @@ fn on_instance_ready(
     meshes: Query<(&Mesh3d, Option<&MeshMaterial3d<StandardMaterial>>)>,
     mut assets: CellAssets,
 ) {
+    let started = std::time::Instant::now();
     let root = event.entity;
     let Ok((cell, layer)) = instances.get(root) else {
         return;
     };
+    // Un seul parcours de l'arbre de l'instance, relu par chaque passe.
+    let descendants: Vec<Entity> = children.iter_descendants(root).collect();
     let sector_quality = cell.is_some_and(|c| c.quality == Quality::Sector);
     let layer = layer.map_or(Layer::Static, |l| l.0);
     let lightmap = cell.and_then(|c| assets.for_cell(c));
@@ -354,7 +368,7 @@ fn on_instance_ready(
     let mut dropped = Vec::new();
     let mut skip = BTreeSet::new();
     if let (Some(cell), Some(home), Some(picked)) = (cell, &home, &assets.picked) {
-        for node in children.iter_descendants(root) {
+        for &node in &descendants {
             let Some(rest) = nodes
                 .get(node)
                 .ok()
@@ -372,7 +386,7 @@ fn on_instance_ready(
 
     if let Some((image, exposure)) = &lightmap {
         let mut lit = Vec::new();
-        for node in children.iter_descendants(root) {
+        for &node in &descendants {
             if skip.contains(&node) {
                 continue;
             }
@@ -411,9 +425,9 @@ fn on_instance_ready(
     // éclairé mélangé sur une grande surface (le hublot du cockpit occupe un tiers de l'écran).
     let lit_glass = assets.settings.as_ref().is_some_and(|s| s.preset.lit_glass);
     if !lit_glass {
-        let mut glass: Vec<_> = children
-            .iter_descendants(root)
-            .filter_map(|node| meshes.get(node).ok())
+        let mut glass: Vec<_> = descendants
+            .iter()
+            .filter_map(|&node| meshes.get(node).ok())
             .filter_map(|(_, material)| material.map(|m| m.id()))
             .collect();
         glass.sort_unstable();
@@ -438,7 +452,7 @@ fn on_instance_ready(
         }
     }
 
-    for node in children.iter_descendants(root) {
+    for &node in &descendants {
         if skip.contains(&node) {
             continue;
         }
@@ -609,15 +623,25 @@ fn on_instance_ready(
         if cell.quality == Quality::Local {
             commands.entity(root).insert(RigidBody::Static);
         }
+        let ms = started.elapsed().as_secs_f32() * 1000.0;
         debug!(
-            "cellule {} ({:?}) prête : {} collisions, {} lumières, {} interactions, lightmap {}",
+            "cellule {} ({:?}) prête en {ms:.2} ms : {} nœuds, {} collisions, {} lumières, {} interactions, lightmap {}",
             cell.cell,
             cell.quality,
+            descendants.len(),
             stats.0,
             stats.1,
             stats.2,
             lightmap.is_some()
         );
+        if ms > SLOW_SETUP_MS {
+            info!(
+                "cellule {} ({:?}) : préparation longue, {ms:.1} ms pour {} nœuds",
+                cell.cell,
+                cell.quality,
+                descendants.len()
+            );
+        }
     }
     commands.entity(root).insert(CellReady);
 }

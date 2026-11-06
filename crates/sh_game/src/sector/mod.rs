@@ -1,15 +1,17 @@
 //! Secteurs jouables : vues Sectorielle et Locale (AGENTS.md §6.2).
 //!
 //! Un secteur est un graphe de cellules reliées par des portails. Autour du joueur, les cellules
-//! sont en qualité **Locale** (modèle complet, collisions, lumières, interactions) ; ailleurs en
-//! qualité **Sectorielle** (coque simplifiée, rien d'autre). Le passage de l'une à l'autre est un
-//! streaming invisible ([`streaming`]), les portes servent de portes de chargement ([`doors`]) et
-//! portent le nom de la salle où elles mènent ([`door_signs`]).
+//! sont en qualité **Locale** (modèle complet, collisions, lumières, interactions) ; là où l'on
+//! voit plus loin, en qualité **Sectorielle** (coque simplifiée, rien d'autre) ; ailleurs, rien
+//! n'est affiché (les portes fermées occultent). Le passage de l'une à l'autre est un streaming
+//! invisible ([`streaming`]), les portes servent de portes de chargement ([`doors`]) et portent le
+//! nom de la salle où elles mènent ([`door_signs`]).
 //!
 //! **Le vaisseau du joueur** (M9) est l'intérieur type de sa classe (`Start::interior`,
 //! `corvette`) : en vue Globale, c'est tout le secteur chargé ; à quai, ses cellules sont placées
 //! dans le quartier qui l'accueille (`sh_data::dock`), et sa coque extérieure (`Start::hull`) est
-//! posée avec lui dans le berceau du hangar ([`ShipHull`]). Où que l'on soit,
+//! posée avec lui dans le berceau du hangar ([`ShipHull`]), affichée avec lui (M11 : cachée quand
+//! on ne voit pas le hangar). Hors du bord, seul son sas est chargé (`streaming`). Où que l'on soit,
 //! [`ActiveSector::aboard_cell`] dit si le joueur est dans son propre vaisseau et dans quelle
 //! cellule, sans qu'aucun appelant ne cite d'identifiant de secteur ; le bandeau l'appelle
 //! « Votre vaisseau » ([`PLAYER_SHIP_NAME_KEY`]).
@@ -161,7 +163,8 @@ impl Docked {
     }
 }
 
-/// La coque extérieure du vaisseau amarré, posée avec lui dans le berceau du hangar.
+/// La coque extérieure du vaisseau amarré, posée avec lui dans le berceau du hangar. Sa
+/// visibilité suit celle du berceau (`streaming::CellPlan::berth`) ; ses collisions restent.
 #[derive(Component)]
 pub struct ShipHull;
 

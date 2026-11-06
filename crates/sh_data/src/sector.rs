@@ -14,7 +14,16 @@
 //! **Cellules imbriquées** (M9) : à quai, le vaisseau repose dans le hangar, et les boîtes de
 //! ses cellules sont à l'intérieur de celle du hangar. Une position appartient à la cellule la
 //! plus petite qui la contient ([`Sector::cell_at`]) : dans le sas, on est dans le sas, pas dans
-//! le hangar qui l'entoure.
+//! le hangar qui l'entoure ; le hangar est son **contenant** ([`Sector::containers`]).
+//!
+//! **Profondeur de streaming** (M11) : la distance d'une cellule à une autre, pour le streaming,
+//! est le nombre de **portes** à franchir ([`Sector::door_depths`]) ; une ouverture ne compte
+//! pas, les cellules qu'elle relie se voient d'un bloc. [`Sector::seen_from`] suit les ouvertures,
+//! les portes ouvertes et les **vitrages** déclarés ([`Cell::windows`] : la fenêtre du chantier
+//! sur le hangar, la verrière du cockpit sur l'extérieur) : ce qu'on peut voir d'un endroit. Le
+//! jeu en tire ce qu'il charge et ce qu'il affiche (`sh_game::sector::streaming`).
+
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use serde::{Deserialize, Serialize};
 use sh_core::Id;
@@ -68,7 +77,19 @@ pub struct Cell {
     /// boîtes sont déjà exprimées dans le repère du secteur.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub placement: Option<Placement>,
+    /// Ce qu'on voit par les vitrages de la salle (M11) : des cellules du secteur (la fenêtre du
+    /// chantier sur le hangar) et [`OUTSIDE`] pour l'extérieur (la verrière du cockpit). Une
+    /// fenêtre se voit des deux côtés ([`Sector::window_neighbors`]). `None` : non déclaré (données
+    /// d'avant M11) ; le streaming suppose alors qu'une voisine directe peut se voir par une
+    /// fenêtre et que l'extérieur se voit. `Some([])` : aucun vitrage, les portes fermées
+    /// occultent tout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub windows: Option<Vec<String>>,
 }
+
+/// Ce que montre une fenêtre sur l'extérieur ([`Cell::windows`]) : ce qui entoure le vaisseau ou le
+/// bâtiment (le hangar, à quai) ; et, vue de dehors, la salle derrière elle.
+pub const OUTSIDE: &str = "@outside";
 
 /// Translation et rotation (quarts de tour autour de la verticale, sens direct vu d'en haut).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -127,6 +148,27 @@ impl Cell {
     /// Volume de la boîte (m³) : départage des cellules imbriquées.
     pub fn volume(&self) -> f32 {
         (self.max.0 - self.min.0) * (self.max.1 - self.min.1) * (self.max.2 - self.min.2)
+    }
+
+    /// La boîte de `inner` est-elle dans celle-ci, et plus petite ? Le hangar autour des salles du
+    /// vaisseau qui y est amarré.
+    pub fn encloses(&self, inner: &Cell) -> bool {
+        let inside = |p: (f32, f32, f32)| {
+            p.0 >= self.min.0
+                && p.1 >= self.min.1
+                && p.2 >= self.min.2
+                && p.0 <= self.max.0
+                && p.1 <= self.max.1
+                && p.2 <= self.max.2
+        };
+        inside(inner.min) && inside(inner.max) && inner.volume() < self.volume()
+    }
+
+    /// La salle a-t-elle un vitrage sur l'extérieur ([`OUTSIDE`]) ? `None` : non déclaré.
+    pub fn sees_outside(&self) -> Option<bool> {
+        self.windows
+            .as_ref()
+            .map(|w| w.iter().any(|c| c == OUTSIDE))
     }
 
     pub fn center(&self) -> (f32, f32, f32) {
@@ -254,6 +296,148 @@ impl Sector {
         found
     }
 
+    /// Profondeur de streaming des cellules atteignables depuis `from` (profondeur 0) : le nombre
+    /// de **portes** à franchir pour y aller. Une ouverture (`PortalKind::Opening`) ne compte pas :
+    /// les cellules qu'elle relie se voient l'une de l'autre, elles se chargent d'un bloc (le
+    /// couloir du spatioport et le hall). `pass` écarte des portails, comme s'ils n'existaient pas
+    /// (les portes intérieures d'un vaisseau amarré, vu du quai) ; un point d'attache externe ne
+    /// mène nulle part. Les identifiants de `from` qui ne sont pas des cellules sont ignorés.
+    pub fn door_depths<'a>(
+        &'a self,
+        from: &[&str],
+        pass: impl Fn(&Portal) -> bool,
+    ) -> BTreeMap<&'a str, usize> {
+        let mut depths: BTreeMap<&'a str, usize> = BTreeMap::new();
+        let mut queue = VecDeque::new();
+        for id in from {
+            if let Some(cell) = self.cell(id)
+                && depths.insert(cell.id.as_str(), 0).is_none()
+            {
+                queue.push_back(cell.id.as_str());
+            }
+        }
+        // Parcours « 0-1 » : un pas gratuit (ouverture) passe en tête de file, une porte en queue ;
+        // une cellule revue plus près est reprise.
+        while let Some(cell) = queue.pop_front() {
+            let Some(&depth) = depths.get(cell) else {
+                continue;
+            };
+            for portal in self.portals.iter().filter(|p| pass(p)) {
+                let Some(next) = portal.other(cell) else {
+                    continue;
+                };
+                if is_external(next) {
+                    continue;
+                }
+                let step = usize::from(portal.kind == PortalKind::Door);
+                let reached = depth + step;
+                if depths.get(next).is_none_or(|&d| reached < d) {
+                    depths.insert(next, reached);
+                    if step == 0 {
+                        queue.push_front(next);
+                    } else {
+                        queue.push_back(next);
+                    }
+                }
+            }
+        }
+        depths
+    }
+
+    /// Les cellules où l'on passe depuis `from` (elles comprises) sans franchir de porte fermée :
+    /// par les ouvertures et les portes que `open` dit ouvertes.
+    pub fn reached_from<'a>(
+        &'a self,
+        from: &[&str],
+        open: impl Fn(&Portal) -> bool,
+    ) -> BTreeSet<&'a str> {
+        self.door_depths(from, |p| p.kind == PortalKind::Opening || open(p))
+            .into_keys()
+            .collect()
+    }
+
+    /// Les cellules qu'on voit depuis `from` (elles comprises), de proche en proche : par les
+    /// ouvertures, les portes que `open` dit ouvertes et les vitrages déclarés
+    /// ([`Sector::window_neighbors`]) ; par un vitrage sur l'extérieur ([`OUTSIDE`]), la cellule
+    /// qui entoure (le hangar vu de la verrière du vaisseau amarré) et, en sens inverse, la salle
+    /// derrière la verrière, vue de dehors. Une salle aux vitrages non déclarés ne voit, et ne se
+    /// voit, que par ses portails.
+    pub fn seen_from<'a>(
+        &'a self,
+        from: &[&str],
+        open: impl Fn(&Portal) -> bool,
+    ) -> BTreeSet<&'a str> {
+        let mut seen: BTreeSet<&'a str> = BTreeSet::new();
+        let mut queue: Vec<&'a str> = from
+            .iter()
+            .filter_map(|id| self.cell(id))
+            .map(|c| c.id.as_str())
+            .collect();
+        while let Some(id) = queue.pop() {
+            if !seen.insert(id) {
+                continue;
+            }
+            let Some(cell) = self.cell(id) else {
+                continue;
+            };
+            for portal in &self.portals {
+                if (portal.kind == PortalKind::Opening || open(portal))
+                    && let Some(next) = portal.other(id)
+                    && self.cell(next).is_some()
+                {
+                    queue.push(next);
+                }
+            }
+            queue.extend(self.window_neighbors(id).unwrap_or_default());
+            // Par une verrière : ce qui entoure ; vue de dehors : ce qui est derrière une verrière.
+            if cell.sees_outside() == Some(true) {
+                queue.extend(self.containers(id).into_iter().map(|c| c.id.as_str()));
+            }
+            queue.extend(
+                self.cells
+                    .iter()
+                    .filter(|inner| inner.sees_outside() == Some(true) && cell.encloses(inner))
+                    .map(|inner| inner.id.as_str()),
+            );
+        }
+        seen
+    }
+
+    /// Les cellules qu'on voit par les vitrages de `cell` : celles qu'elle déclare, et celles qui
+    /// la déclarent (une fenêtre se voit des deux côtés), triées. `None` si `cell` ne déclare pas
+    /// ses vitrages ([`Cell::windows`]).
+    pub fn window_neighbors(&self, cell: &str) -> Option<Vec<&str>> {
+        let declared = self.cell(cell)?.windows.as_ref()?;
+        let mut out: Vec<&str> = declared
+            .iter()
+            .map(String::as_str)
+            .filter(|c| *c != OUTSIDE && *c != cell && self.cell(c).is_some())
+            .collect();
+        for other in &self.cells {
+            let sees_us = other
+                .windows
+                .as_ref()
+                .is_some_and(|w| w.iter().any(|c| c == cell));
+            if sees_us && other.id != cell {
+                out.push(&other.id);
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+        Some(out)
+    }
+
+    /// Les cellules qui entourent `cell` (sa boîte est dans la leur : le hangar autour des salles
+    /// du vaisseau amarré), de la plus petite à la plus grande.
+    pub fn containers(&self, cell: &str) -> Vec<&Cell> {
+        let Some(inner) = self.cell(cell) else {
+            return Vec::new();
+        };
+        let mut out: Vec<&Cell> = self.cells.iter().filter(|c| c.encloses(inner)).collect();
+        out.sort_by(|a, b| a.volume().total_cmp(&b.volume()));
+        out
+    }
+
     /// Erreurs de cohérence internes du secteur.
     pub fn problems(&self) -> Vec<String> {
         let mut out = Vec::new();
@@ -277,6 +461,12 @@ impl Sector {
                     "cellule {} : exposition de lightmap invalide",
                     cell.id
                 ));
+            }
+            // Un vitrage donne sur l'extérieur ou sur une autre cellule du secteur.
+            for seen in cell.windows.iter().flatten() {
+                if seen != OUTSIDE && (*seen == cell.id || self.cell(seen).is_none()) {
+                    out.push(format!("cellule {} : vitrage sur {seen} inconnu", cell.id));
+                }
             }
         }
         for p in &self.portals {
@@ -444,6 +634,7 @@ mod tests {
             max,
             lightmap: None,
             placement: None,
+            windows: None,
         }
     }
 
@@ -586,6 +777,128 @@ mod tests {
         assert_eq!(at((1.0, 1.0, 0.0)), Some("sas"));
         assert_eq!(at((-5.0, 1.0, 0.0)), Some("hangar"));
         assert_eq!(at((50.0, 1.0, 0.0)), None);
+    }
+
+    /// Les secteurs du jeu (générés par les scripts Blender), et le vaisseau amarré au spatioport.
+    fn real(file: &str) -> Sector {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../assets/data/propositions/sectors")
+            .join(file);
+        crate::read_ron(&path).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    #[test]
+    fn une_ouverture_ne_compte_pas_comme_une_porte() {
+        let port = real("spaceport.ron");
+        let all = |_: &Portal| true;
+        let depths = port.door_depths(&["hangar"], all);
+        // Le hall est derrière le couloir, par une ouverture : à une porte du hangar, comme lui.
+        assert_eq!(depths.get("couloir"), Some(&1));
+        assert_eq!(depths.get("hall"), Some(&1));
+        assert_eq!(depths.get("bureau"), Some(&2));
+        // Depuis le hall, le couloir est à zéro porte, le hangar à une.
+        let depths = port.door_depths(&["hall"], all);
+        assert_eq!(depths.get("couloir"), Some(&0));
+        assert_eq!(depths.get("hangar"), Some(&1));
+        // Un portail écarté n'existe pas ; une source inconnue est ignorée.
+        let depths = port.door_depths(&["hangar", "nulle_part"], |p| p.id != "couloir__hangar");
+        assert!(!depths.contains_key("couloir") && !depths.contains_key("nulle_part"));
+        // Le vaisseau seul : les deux couloirs d'un bloc, toutes les salles à une porte d'eux.
+        let ship = real("corvette.ron");
+        let depths = ship.door_depths(&["couloir_avant"], all);
+        assert_eq!(depths.get("couloir_arriere"), Some(&0));
+        assert!(
+            ship.cells
+                .iter()
+                .all(|c| depths.get(c.id.as_str()).is_some_and(|&d| d <= 1))
+        );
+    }
+
+    #[test]
+    fn ce_qu_on_voit_suit_les_ouvertures_et_les_portes_ouvertes() {
+        let port = real("spaceport.ron");
+        let closed = |_: &Portal| false;
+        let set = |ids: &[&'static str]| ids.iter().copied().collect::<BTreeSet<&str>>();
+        assert_eq!(port.seen_from(&["hangar"], closed), set(&["hangar"]));
+        assert_eq!(port.seen_from(&["hall"], closed), set(&["couloir", "hall"]));
+        let open = |p: &Portal| p.id == "couloir__hangar" || p.id == "hall__bureau";
+        assert_eq!(
+            port.seen_from(&["hangar"], open),
+            set(&["bureau", "couloir", "hall", "hangar"])
+        );
+    }
+
+    #[test]
+    fn le_hangar_entoure_le_vaisseau_amarre() {
+        let docked = dock(
+            &real("corvette.ron"),
+            "@dock",
+            &real("spaceport.ron"),
+            "@ship",
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        let ids = |cells: Vec<&Cell>| cells.iter().map(|c| c.id.clone()).collect::<Vec<_>>();
+        assert_eq!(ids(docked.containers("sas")), vec!["hangar"]);
+        assert_eq!(ids(docked.containers("cockpit")), vec!["hangar"]);
+        assert!(docked.containers("hangar").is_empty());
+        assert!(docked.containers("hall").is_empty());
+        let (hangar, sas) = (docked.cell("hangar"), docked.cell("sas"));
+        assert!(
+            hangar
+                .zip(sas)
+                .is_some_and(|(h, s)| h.encloses(s) && !s.encloses(h))
+        );
+    }
+
+    /// Déclare les vitrages d'une cellule (ce qu'écriront les scripts Blender).
+    fn declare(sector: &mut Sector, cell: &str, windows: &[&str]) {
+        for c in &mut sector.cells {
+            if c.id == cell {
+                c.windows = Some(windows.iter().map(|w| (*w).to_owned()).collect());
+            }
+        }
+    }
+
+    #[test]
+    fn on_voit_par_les_vitrages_declares() {
+        let mut ship = real("corvette.ron");
+        let mut port = real("spaceport.ron");
+        declare(&mut ship, "cockpit", &[OUTSIDE]);
+        declare(&mut ship, "sas", &[]);
+        declare(&mut port, "chantier", &["hangar"]);
+        let docked = dock(&ship, "@dock", &port, "@ship").unwrap_or_else(|e| panic!("{e}"));
+        assert!(
+            !docked.problems().iter().any(|p| p.contains("vitrage")),
+            "{:?}",
+            docked.problems()
+        );
+        let closed = |_: &Portal| false;
+        let set = |ids: &[&'static str]| ids.iter().copied().collect::<BTreeSet<&str>>();
+        // Une fenêtre se voit des deux côtés ; le hangar ne déclare rien lui-même.
+        assert_eq!(docked.window_neighbors("hangar"), None);
+        assert_eq!(docked.window_neighbors("chantier"), Some(vec!["hangar"]));
+        declare(&mut port, "hangar", &[]);
+        assert_eq!(port.window_neighbors("hangar"), Some(vec!["chantier"]));
+        // Du hangar : la fenêtre du chantier, et le cockpit par la verrière.
+        assert_eq!(
+            docked.seen_from(&["hangar"], closed),
+            set(&["chantier", "cockpit", "hangar"])
+        );
+        // Du cockpit : le hangar par la verrière (et, par lui, le chantier).
+        assert_eq!(
+            docked.seen_from(&["cockpit"], closed),
+            set(&["chantier", "cockpit", "hangar"])
+        );
+        // Du sas, portes fermées : rien d'autre ; porte extérieure ouverte : le hangar et ce
+        // qu'on en voit.
+        assert_eq!(docked.seen_from(&["sas"], closed), set(&["sas"]));
+        assert_eq!(
+            docked.seen_from(&["sas"], |p| p.id == "sas__hangar"),
+            set(&["chantier", "cockpit", "hangar", "sas"])
+        );
+        // Un vitrage sur une cellule inconnue est une erreur.
+        declare(&mut port, "hall", &["nulle_part"]);
+        assert_eq!(port.problems().len(), 1, "{:?}", port.problems());
     }
 
     #[test]
