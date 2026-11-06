@@ -143,15 +143,24 @@ pub struct SystemScale {
     pub parking_orbit_radii: f64,
     /// Croisière : vitesse limite = `cruise_rate` × distance à la surface la plus proche,
     /// bornée par `cruise_min_speed` et `cruise_max_speed` (m/s). `cruise_min_speed` reste
-    /// au-dessus de toute poussée ([`Self::manoeuvre_max_speed`]) : la croisière va toujours plus
-    /// vite que les moteurs seuls (le bandeau et le tutoriel s'en servent pour la reconnaître).
+    /// au-dessus de toute poussée ([`Self::manoeuvre_max_speed`]) : la croisière finit toujours
+    /// plus vite que les moteurs seuls (le tutoriel la reconnaît à sa vitesse).
     pub cruise_rate: f64,
     pub cruise_min_speed: f64,
     pub cruise_max_speed: f64,
+    /// Montée de la croisière (M11, réponse de l'auteur à Q19 : pas d'accélération brutale d'un
+    /// coup) : l'accélération part de `cruise_spool_accel` (m/s²) et se multiplie par e toutes
+    /// les `cruise_spool_time` secondes ([`Self::cruise_climb`]) : douce au départ, de plus en
+    /// plus vive, jusqu'à la vitesse limite. La descente, elle, suit la limite sans délai.
+    pub cruise_spool_accel: f64,
+    pub cruise_spool_time: f64,
     /// Vitesse maximale en poussée de tout vaisseau, hors croisière (m/s) : le plafond des
-    /// `max_speed` de `flight.ron` (P33).
+    /// `max_speed` de `flight.ron` (P33). La montée de la croisière compte à partir d'elle.
     pub manoeuvre_max_speed: f64,
 }
+
+/// Au plus e^60 : la montée d'une longue croisière ne déborde pas (elle suit alors sa limite).
+const MAX_SPOOL_EXPONENT: f64 = 60.0;
 
 impl SystemScale {
     /// Rayon orbital (m) du rang `rank` (1 = le plus proche de l'étoile).
@@ -165,20 +174,53 @@ impl SystemScale {
         (self.cruise_rate * distance.max(0.0)).clamp(self.cruise_min_speed, self.cruise_max_speed)
     }
 
+    /// Le niveau de montée (s) qui correspond à `speed` : le temps qu'il faut à la montée, partie
+    /// de la poussée maximale, pour l'atteindre (0 jusqu'à elle). Une croisière engagée ou suivie
+    /// à cette vitesse reprend sa montée de là : ni saut, ni reprise trop molle.
+    pub fn cruise_spool_level(&self, speed: f64) -> f64 {
+        let over = (speed - self.manoeuvre_max_speed).max(0.0);
+        let tau = self.cruise_spool_time.max(1e-6);
+        tau * (over / (self.cruise_spool_accel.max(1e-6) * tau)).ln_1p()
+    }
+
+    /// Un pas de montée de la croisière : de `speed` vers `target` (plus haute), au niveau de
+    /// montée `spool` (s). L'accélération vaut `cruise_spool_accel` × e^(spool / τ) : depuis la
+    /// poussée maximale, la vitesse gagnée est a₀·τ·(e^(t/τ) − 1). Rend la vitesse et le niveau
+    /// suivants ; rattrapée par sa consigne, la montée se recale sur la vitesse atteinte
+    /// ([`Self::cruise_spool_level`]). Logique pure (vol et durées de trajet).
+    pub fn cruise_climb(&self, speed: f64, spool: f64, target: f64, dt: f64) -> (f64, f64) {
+        let tau = self.cruise_spool_time.max(1e-6);
+        let accel = self.cruise_spool_accel * (spool / tau).min(MAX_SPOOL_EXPONENT).exp();
+        let next = (speed + accel * dt).min(target);
+        let spool = if next >= target {
+            (spool + dt).min(self.cruise_spool_level(next))
+        } else {
+            spool + dt
+        };
+        (next, spool)
+    }
+
     /// Durée (s) d'un trajet en croisière en ligne droite, de `start` mètres de la surface du
-    /// départ à `end` mètres de celle de l'arrivée, sur `length` mètres, à la vitesse limite
+    /// départ à `end` mètres de celle de l'arrivée, sur `length` mètres : départ arrêté, montée
+    /// progressive ([`Self::cruise_climb`]) sous la vitesse limite, qu'on suit ensuite
     /// (intégration numérique ; sert à l'équilibrage et aux tests).
     pub fn cruise_time(&self, length: f64, start: f64, end: f64) -> f64 {
         let span = length - start - end;
         if span <= 0.0 {
             return 0.0;
         }
-        let (mut travelled, mut time) = (0.0, 0.0);
+        let (mut travelled, mut time, mut v, mut spool) = (0.0, 0.0, 0.0f64, 0.0);
         while travelled < span {
             let nearest = (start + travelled).min(span - travelled + end);
-            let v = self.cruise_speed_limit(nearest);
+            let target = self.cruise_speed_limit(nearest);
             // Pas adaptatif : au plus 1 % de la distance au plus proche ou 0,1 s.
-            let dt = (0.01 * nearest.max(1.0) / v).clamp(1e-3, 0.1);
+            let dt = (0.01 * nearest.max(1.0) / v.max(1.0)).clamp(1e-3, 0.1);
+            if target > v {
+                (v, spool) = self.cruise_climb(v, spool, target, dt);
+            } else {
+                v = target;
+                spool = (spool + dt).min(self.cruise_spool_level(v));
+            }
             travelled += v * dt;
             time += dt;
         }
@@ -322,5 +364,64 @@ mod tests {
         // Repères de P33 : de 1 000 m/s, ≈ 7,5 km ; de 250 m/s, 1,25 km comme avant M11.
         assert!((h.brake_distance(1000.0) - 7500.0).abs() < 1.0);
         assert!((h.brake_distance(250.0) - 1250.0).abs() < 1e-6);
+    }
+
+    /// L'échelle de `space.ron` (croisière de P2, montée de M11).
+    fn scale() -> SystemScale {
+        SystemScale {
+            au: 1.496e9,
+            first_orbit_au: 0.4,
+            orbit_ratio: 1.7,
+            star_radius: 7.0e7,
+            planet_radius: 6.4e5,
+            gas_giant_radius: 7.0e6,
+            moon_radius: 1.7e5,
+            moon_orbit_radii: 12.0,
+            parking_orbit_radii: 1.5,
+            cruise_rate: 0.15,
+            cruise_min_speed: 2000.0,
+            cruise_max_speed: 3.0e7,
+            cruise_spool_accel: 30.0,
+            cruise_spool_time: 1.5,
+            manoeuvre_max_speed: 1000.0,
+        }
+    }
+
+    #[test]
+    fn la_montee_suit_sa_loi_et_se_recale_sur_la_vitesse() {
+        let s = scale();
+        // Depuis la poussée maximale, au pas fin : 1 000 + a₀·τ·(e^(t/τ) − 1).
+        let (mut v, mut spool, dt) = (1000.0, 0.0, 1e-4);
+        for _ in 0..30_000 {
+            (v, spool) = s.cruise_climb(v, spool, f64::MAX, dt);
+        }
+        let expected = 1000.0 + 30.0 * 1.5 * (2.0f64).exp_m1();
+        assert!((v - expected).abs() < 0.01 * expected, "{v} / {expected}");
+        // Le niveau correspond à la vitesse : son inverse la redonne.
+        assert!((spool - s.cruise_spool_level(v)).abs() < 0.01, "{spool}");
+        assert_eq!(s.cruise_spool_level(800.0), 0.0);
+        // Rattrapée par sa consigne, la montée se recale sur la vitesse atteinte.
+        let (v, spool) = s.cruise_climb(5.0e4, 40.0, 5.0e4 + 1.0, 0.1);
+        assert_eq!(v, 5.0e4 + 1.0);
+        assert!((spool - s.cruise_spool_level(v)).abs() < 1e-9);
+        // Une très longue montée ne déborde pas.
+        let (v, _) = s.cruise_climb(1.0e6, 1.0e6, 3.0e7, 1.0 / 60.0);
+        assert_eq!(v, 3.0e7);
+    }
+
+    #[test]
+    fn la_montee_ajoute_quelques_secondes_aux_trajets() {
+        let s = scale();
+        let instant = SystemScale {
+            cruise_spool_accel: 1.0e12,
+            ..scale()
+        };
+        let parking = s.parking_orbit_radii * s.planet_radius;
+        let length = s.orbit_radius(3) - s.orbit_radius(2);
+        let (slow, fast) = (
+            s.cruise_time(length, parking, parking),
+            instant.cruise_time(length, parking, parking),
+        );
+        assert!((5.0..20.0).contains(&(slow - fast)), "{slow} / {fast}");
     }
 }

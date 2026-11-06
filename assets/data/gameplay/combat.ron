@@ -98,6 +98,10 @@
         defenders_delay: 25.0,
         escape_distance: 15000.0,
         cruise_lock_distance: 8000.0,
+        // M11 : le verrou de croisière posé ne se lève qu'au-delà de 9 km (8 + 1). La croisière
+        // monte en douceur depuis 250 m/s : sans marge, un pillard lancé à sa poursuite (jusqu'à
+        // 290 m/s) la rebloquerait avant qu'elle ne le distance (≈ 1 s, une vingtaine de mètres).
+        cruise_unlock_margin: 1000.0,
         condition_per_kill: 0.004,
     ),
     repair: (

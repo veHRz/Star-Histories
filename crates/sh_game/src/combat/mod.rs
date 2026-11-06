@@ -108,6 +108,19 @@ struct RaidChecked(Option<(Id<Place>, i64)>);
 #[derive(Resource, Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CruiseLock(pub bool);
 
+/// Le verrou de croisière, avec hystérésis (M11) : posé dès qu'un hostile est à moins de
+/// `distance` (m), il ne se lève qu'une fois le plus proche au-delà de `distance + margin`.
+/// La croisière monte en douceur : sans marge, un pillard qui poursuit la rebloquerait avant
+/// qu'elle ne le distance. `nearest` : distance du plus proche hostile, s'il y en a. Logique pure.
+pub fn cruise_locked(was_locked: bool, nearest: Option<f64>, distance: f64, margin: f64) -> bool {
+    let reach = if was_locked {
+        distance + margin.max(0.0)
+    } else {
+        distance
+    };
+    nearest.is_some_and(|d| d < reach)
+}
+
 fn cruise_lock(
     data: Res<Data>,
     texts: Res<Texts>,
@@ -118,13 +131,20 @@ fn cruise_lock(
     mut notices: MessageWriter<Notice>,
 ) {
     let here = ships.get(sector.root).map(|(c, p)| (c.side, p.0));
-    let locked = here.is_ok_and(|(side, at)| {
-        ships.iter().any(|(c, p)| {
-            side.hostile(c.side)
-                && !c.hull.destroyed()
-                && p.0.distance(at) < data.combat.raid.cruise_lock_distance
-        })
+    let nearest = here.ok().and_then(|(side, at)| {
+        ships
+            .iter()
+            .filter(|(c, _)| side.hostile(c.side) && !c.hull.destroyed())
+            .map(|(_, p)| p.0.distance(at))
+            .min_by(f64::total_cmp)
     });
+    let rules = &data.combat.raid;
+    let locked = cruise_locked(
+        lock.0,
+        nearest,
+        rules.cruise_lock_distance,
+        rules.cruise_unlock_margin,
+    );
     if locked && intent.cruise && !lock.0 {
         notices.write(Notice(texts.get("combat.cruise_locked")));
     }
@@ -602,4 +622,85 @@ fn tick_death(
 pub fn player_section_state(hull: &Hull, section: sh_data::SectionId) -> f64 {
     hull.section(section)
         .map_or(0.0, |s| s.structure / s.max_structure.max(1e-9))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn le_verrou_de_croisiere_ne_bat_pas_autour_du_seuil() {
+        // Un pillard qui oscille autour de 8 km : posé à 7,9 km, le verrou tient jusqu'au-delà
+        // de 9 km, puis ne revient qu'en deçà de 8 km. Trois bascules, pas une par frame.
+        let distances = [
+            7_900.0, 8_050.0, 7_990.0, 8_500.0, 8_990.0, 9_010.0, 8_999.0, 8_010.0, 7_999.0,
+        ];
+        let expected = [true, true, true, true, true, false, false, false, true];
+        let mut locked = false;
+        for (d, want) in distances.iter().zip(expected) {
+            locked = cruise_locked(locked, Some(*d), 8_000.0, 1_000.0);
+            assert_eq!(locked, want, "à {d} m");
+        }
+        // Plus d'hostile : levé ; sans marge, le seuil d'avant M11.
+        assert!(!cruise_locked(true, None, 8_000.0, 1_000.0));
+        assert!(!cruise_locked(true, Some(8_050.0), 8_000.0, 0.0));
+    }
+
+    /// Le joueur file en ligne droite devant un pillard qui le poursuit à `chaser` m/s (pire cas :
+    /// en vrai, le verrou ne se lève que si les pillards ne le serrent plus), en
+    /// partant juste au-delà de la distance où le verrou se lève ; bridé à 250 m/s sous le
+    /// verrou, en croisière (montée de `space.ron`) sinon. Rend le nombre de fois où le verrou
+    /// revient et l'écart final après 20 s.
+    fn flee(margin: f64, chaser: f64) -> (u32, f64) {
+        let scale = sh_data::SystemScale {
+            au: 1.496e9,
+            first_orbit_au: 0.4,
+            orbit_ratio: 1.7,
+            star_radius: 7.0e7,
+            planet_radius: 6.4e5,
+            gas_giant_radius: 7.0e6,
+            moon_radius: 1.7e5,
+            moon_orbit_radii: 12.0,
+            parking_orbit_radii: 1.5,
+            cruise_rate: 0.15,
+            cruise_min_speed: 2000.0,
+            cruise_max_speed: 3.0e7,
+            cruise_spool_accel: 30.0,
+            cruise_spool_time: 1.5,
+            manoeuvre_max_speed: 1000.0,
+        };
+        let (lock, dt) = (8_000.0, 1.0 / 60.0);
+        let (mut gap, mut speed, mut spool) = (lock + margin + 1.0, 250.0f64, None);
+        // Le verrou était posé : il se lève au premier frame.
+        let (mut locked, mut relocks) = (true, 0);
+        for _ in 0..(20.0 / dt) as usize {
+            let now = cruise_locked(locked, Some(gap), lock, margin);
+            relocks += u32::from(now && !locked);
+            locked = now;
+            if locked {
+                (speed, spool) = (speed.min(250.0), None);
+            } else {
+                let level = spool.unwrap_or_else(|| scale.cruise_spool_level(speed));
+                let (next, level) = scale.cruise_climb(speed, level, scale.cruise_max_speed, dt);
+                (speed, spool) = (next, Some(level));
+            }
+            gap += (speed - chaser) * dt;
+        }
+        (relocks, gap)
+    }
+
+    #[test]
+    fn la_fuite_reussit_malgre_la_montee_douce_de_la_croisiere() {
+        // Le pire cas : un pillard (`pirate_corvette`, `combat.ron`) lancé à sa pleine vitesse,
+        // 290 m/s (il attaque à 0,85 × cette vitesse, `space::ai_pilots`).
+        let chaser = 290.0;
+        // Avec la marge de 1 km : le verrou levé ne revient pas, la croisière distance le
+        // pillard bien au-delà de la distance de fuite (15 km).
+        let (relocks, gap) = flee(1_000.0, chaser);
+        assert_eq!(relocks, 0);
+        assert!(gap > 15_000.0, "{gap}");
+        // Sans marge, il revient aussitôt : la croisière n'a pas le temps de monter.
+        let (relocks, _) = flee(0.0, chaser);
+        assert!(relocks >= 1);
+    }
 }

@@ -1720,7 +1720,9 @@ const TUTORIAL: &[Step] = &[
     Step::Shot("m8-tuto-1-commandes"),
     Step::Turn(3.0),
     Step::Thrust(4.0),
-    Step::Cruise(2.0),
+    // La croisière monte en douceur (M11) : de ≈ 180 m/s, une fois et demie la poussée
+    // (1,5 km/s, le seuil du tutoriel) en ≈ 5 s.
+    Step::Cruise(7.0),
     Step::Tutorial(4),
     // 4. La balise du spatioport, l'amarrage.
     Step::JumpAboveBeacon(25_000.0),
@@ -3107,11 +3109,10 @@ const CONSOLE_DISTANCE: f32 = 1.4;
 /// Délai maximal d'une transition de vue (amarrage, départ) dans un scénario.
 const TRANSITION_SECONDS: f32 = 30.0;
 /// Durée maximale d'un trajet de l'autopilote dans un système (s). D'une planète à l'autre de
-/// Vorrh (≈ 3,7 millions de km) : ≈ 4 min mesurées en M10 (05/11/2026) ; M11 (lot V, P33) : la
-/// croisière plafonne à 0,05 c (15 000 km/s) et monte plus doucement (`cruise_rate` 0,10), le
-/// trajet est estimé à ≈ 416 s (≈ 6,9 min, l'approche finale aussi se fait en croisière) ; marge
-/// de 50 %.
-const AUTOPILOT_SECONDS: f32 = 630.0;
+/// Vorrh (≈ 3,7 millions de km) : ≈ 4 min mesurées en M10 (05/11/2026) ; M11 (lot V2) : mêmes
+/// vitesses de croisière, montée progressive (`cruise_spool_*`, ≈ 20 s jusqu'à 0,1 c) : le
+/// trajet est estimé à ≈ 253 s (simulation de l'autopilote) ; marge de 50 %.
+const AUTOPILOT_SECONDS: f32 = 390.0;
 
 /// Les phases de vol du scénario `fly_ship`, chronométrées.
 #[derive(Default)]
@@ -4864,8 +4865,9 @@ fn fly_phase(
     // (durée, commande) de chaque phase ; la vérification se fait à la fin de la phase. M11 (lot
     // V, P33) : la poussée monte à 1 km/s (≈ 5,6 s jusqu'à 250 m/s, puis trois fois plus vite :
     // ≈ 11 s en tout) ; le retour au calme ralentit depuis la croisière, puis depuis 1 km/s
-    // (≈ 20 s de freinage).
-    let duration = [12.0, 4.0, 35.0, 5.0, 2.5][usize::from(flight.step)];
+    // (≈ 20 s de freinage). M11 (lot V2) : la croisière monte en douceur depuis 1 km/s (≈ 1,3 km/s
+    // à 3 s, 2 km/s à ≈ 4,8 s, ≈ 5,8 km/s à 7 s) : sa phase dure 7 s.
+    let duration = [12.0, 7.0, 35.0, 5.0, 2.5][usize::from(flight.step)];
     match flight.step {
         0 => pilot.thrust = Vec3::NEG_Z,
         1 => pilot.cruise = true,

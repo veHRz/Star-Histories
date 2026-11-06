@@ -212,6 +212,11 @@ pub struct RaidRules {
     /// Pas de croisière à moins de cette distance d'une coque hostile (m) : fuir, c'est
     /// d'abord distancer les pillards.
     pub cruise_lock_distance: f64,
+    /// Une fois posé, le verrou de croisière ne se lève qu'au-delà de `cruise_lock_distance`
+    /// plus cette marge (m, M11) : la croisière monte en douceur, un pillard qui poursuit ne
+    /// doit pas la rebloquer à la première seconde (pas de va-et-vient autour du seuil).
+    #[serde(default)]
+    pub cruise_unlock_margin: f64,
     /// Perte d'état de la flotte de pillards par coque détruite.
     pub condition_per_kill: f64,
 }

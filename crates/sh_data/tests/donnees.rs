@@ -384,8 +384,9 @@ fn hexis_a_le_spatioport_par_defaut() {
     assert_eq!(banque.map(|d| d.id.as_str()), Some("hexis_bank"));
 }
 
-/// L'échelle des systèmes (P2, croisière plus lente de M11) tient sa cible de jeu : de une à
-/// quatre minutes entre planètes voisines, moins de deux minutes pour un trajet local.
+/// L'échelle des systèmes (P2, avec la montée progressive de la croisière de M11) tient sa
+/// cible de jeu : quelques minutes entre planètes voisines, moins d'une minute et demie pour un
+/// trajet local.
 #[test]
 fn l_echelle_des_systemes_donne_des_trajets_de_quelques_minutes() {
     let sc = donnees().space.scale;
@@ -394,14 +395,14 @@ fn l_echelle_des_systemes_donne_des_trajets_de_quelques_minutes() {
         let length = sc.orbit_radius(rank + 1) - sc.orbit_radius(rank);
         let t = sc.cruise_time(length, parking, parking);
         assert!(
-            (60.0..=240.0).contains(&t),
+            (45.0..=180.0).contains(&t),
             "rang {rank} → {} : {t:.0} s",
             rank + 1
         );
     }
     let to_station = sc.cruise_time(2.0e7, parking, 0.0);
     assert!(
-        to_station <= 120.0,
+        to_station <= 90.0,
         "orbite → station à 20 000 km : {to_station:.0} s"
     );
     let to_moon = sc.cruise_time(
@@ -446,6 +447,40 @@ fn la_vitesse_de_combat_garde_les_raids_de_m6() {
             corvette.combat_max_speed
         );
     }
+}
+
+/// La montée de la croisière (M11, réponse de l'auteur à Q19) : depuis la poussée maximale, pas
+/// plus de quelques g la première seconde, puis de plus en plus vite, jusqu'à 0,1 c en 15 à
+/// 25 s ; le tutoriel voit la croisière (une fois et demie la poussée) en quelques secondes.
+#[test]
+fn la_croisiere_monte_en_douceur() {
+    let data = donnees();
+    let sc = &data.space.scale;
+    let thrust = data
+        .flight
+        .ships
+        .get("corvette")
+        .map_or(sc.manoeuvre_max_speed, |h| h.max_speed);
+    let dt = 1.0 / 60.0;
+    // Le temps (s) pour passer de `from` à `to` m/s loin de toute surface, et l'accélération la
+    // plus forte de la première seconde.
+    let climb = |from: f64, to: f64| {
+        let (mut v, mut spool, mut t, mut first) = (from, sc.cruise_spool_level(from), 0.0, 0.0f64);
+        while v < to && t < 120.0 {
+            let (next, level) = sc.cruise_climb(v, spool, sc.cruise_max_speed, dt);
+            if t < 1.0 {
+                first = first.max((next - v) / dt);
+            }
+            (v, spool, t) = (next, level, t + dt);
+        }
+        (t, first)
+    };
+    let (to_max, first) = climb(thrust, 0.99 * sc.cruise_max_speed);
+    assert!(first <= 10.0 * 9.81, "{first} m/s² la première seconde");
+    assert!((15.0..=25.0).contains(&to_max), "0,1 c en {to_max:.1} s");
+    // Tutoriel (`tutorial.rs`, `CRUISE_FACTOR`) : depuis 180 m/s (son scénario pousse 4 s).
+    let (seen, _) = climb(180.0, 1.5 * thrust);
+    assert!(seen <= 8.0, "croisière reconnue en {seen:.1} s");
 }
 
 #[test]

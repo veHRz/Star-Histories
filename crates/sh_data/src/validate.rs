@@ -532,6 +532,8 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
         sc.parking_orbit_radii,
         sc.cruise_rate,
         sc.cruise_min_speed,
+        sc.cruise_spool_accel,
+        sc.cruise_spool_time,
         sc.manoeuvre_max_speed,
     ];
     c.check(
@@ -544,8 +546,8 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
         "space.ron",
         "échelle des systèmes : orbit_ratio > 1 et cruise_max_speed > cruise_min_speed",
     );
-    // La croisière va toujours plus vite que la poussée : le bandeau de pilotage et le tutoriel
-    // la reconnaissent à sa vitesse (M11).
+    // La croisière finit toujours plus vite que la poussée : le tutoriel la reconnaît à sa
+    // vitesse (M11).
     c.check(
         sc.cruise_min_speed > sc.manoeuvre_max_speed,
         "space.ron",
@@ -993,6 +995,15 @@ pub fn validate(data: &GameData) -> Result<(), ValidationReport> {
             format!("coque inconnue : {key}"),
         );
     }
+    // Le verrou de croisière se lève avant qu'on ait fui (M11) : sinon la croisière ne
+    // reviendrait qu'une fois le raid fini.
+    let raid = &combat.raid;
+    c.check(
+        raid.cruise_unlock_margin >= 0.0
+            && raid.cruise_lock_distance + raid.cruise_unlock_margin < raid.escape_distance,
+        "combat.ron : raid",
+        "cruise_unlock_margin : positive, et le verrou levé avant escape_distance",
+    );
     for (role, fighter) in &combat.fighters {
         let ctx = format!("combat.ron : combattant {role}");
         c.check(
